@@ -17,6 +17,9 @@
 
 ## Features
 
+### ⬢ All your ROMs in One Place
+- Support for dozens of consoles out of the box, just drag and drop your individual ROMs or ROM folder to start importing.
+  
 ### ⬢ Media & Metadata
 - **IGDB Integration**: Pull box art, backgrounds, and game data (developers, release dates, etc.) from IGDB.
 - **Video Explorer**: Search, stream, or download game trailers and clips using `yt-dlp`.
@@ -33,8 +36,7 @@
 ### ⬢ Linux & Proton Integration
 - **UMU Core**: Launcher based on the Universal Management Utility for Proton and Wine management.
 - **Runtime Environment**: Set specific Proton versions, Wine paths, and prefixes per game.
-- **Ecosystem Integration**: Built-in support for **Gamescope** compositing and **MangoHud** performance monitoring.
-- **Automation**: Execute custom shell scripts on game launch or exit.
+- **Full configuration**: set wrappers, env variable, gamesscope settings and more with per game profiles.
 
 ---
 
