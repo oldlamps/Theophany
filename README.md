@@ -11,7 +11,8 @@
 </p>
 
 <p align="center">
-  
+  <img width="800" height="429" alt="hero" src="https://github.com/user-attachments/assets/dc0535d1-1282-4a35-8468-07ebea687402" />
+
 </p>
 
 ## Features
