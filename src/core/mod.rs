@@ -1,0 +1,18 @@
+// Core module declaration
+pub mod scanner;
+pub mod ollama;
+pub mod db;
+pub mod hasher;
+pub mod models;
+pub mod launcher;
+pub mod parser;
+pub mod paths;
+pub mod scraper;
+pub mod retroachievements;
+pub mod ra_cache;
+pub mod ra_mapping;
+pub mod asset_scanner;
+pub mod store;
+pub mod metadata_manager;
+pub mod importer;
+pub mod runtime;
