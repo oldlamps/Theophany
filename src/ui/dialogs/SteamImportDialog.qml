@@ -48,12 +48,54 @@ Dialog {
                     "boxart_path": item.boxart_path || "",
                     "background_path": item.background_path || "",
                     "platform_id": item.platform_id || "",
-                    "tags": item.tags || ""
+                    "tags": item.tags || "",
+                    "installed": true
                 }
                 steamModel.append(sanitized)
             }
             loading = false
 
+        }
+
+        onRemoteSteamLibraryFinished: (resultsJson, success, message) => {
+            if (success) {
+                var results = JSON.parse(resultsJson)
+                
+                results.sort(function(a, b) {
+                    return a.title.localeCompare(b.title)
+                })
+
+                // Create a set of existing IDs
+                var existingIds = {}
+                for (var i = 0; i < steamModel.count; i++) {
+                    existingIds[steamModel.get(i).gameId] = true
+                }
+
+                for (var j = 0; j < results.length; j++) {
+                    var item = results[j]
+                    if (!existingIds[item.id]) {
+                        var sanitized = {
+                            "checked": false,
+                            "gameId": item.id || "",
+                            "title": item.title || "Unknown Game",
+                            "path": item.path || "",
+                            "filename": item.filename || "",
+                            "icon_path": item.icon_path || "",
+                            "boxart_path": item.boxart_path || "",
+                            "background_path": item.background_path || "",
+                            "platform_id": item.platform_id || "",
+                            "tags": item.tags || "",
+                            "installed": false
+                        }
+                        steamModel.append(sanitized)
+                    }
+                }
+                loading = false
+            } else {
+                loading = false
+                errorDialog.text = "Failed to fetch remote library:\n" + message
+                errorDialog.open()
+            }
         }
         
         onInstallProgress: (appName, progress, message) => {
@@ -201,7 +243,7 @@ Dialog {
                 }
 
                 TheophanyButton {
-                    text: "Refresh Library"
+                    text: "Refresh Installed Library"
                     Layout.alignment: Qt.AlignBottom
                     onClicked: {
 
@@ -210,6 +252,35 @@ Dialog {
                     }
                 }
             }
+
+            // Remote Library Row
+            RowLayout {
+                Layout.fillWidth: true
+                visible: appSettings.steamId !== "" && appSettings.steamApiKey !== ""
+                spacing: 15
+
+                Text {
+                    text: "Remote API config found (Steam ID: " + appSettings.steamId + ")"
+                    color: Theme.accent
+                    font.pixelSize: 11
+                    Layout.fillWidth: true
+                }
+                
+                TheophanyButton {
+                    text: "Fetch Remote Library"
+                    enabled: !root.loading
+                    onClicked: {
+                        appSettings.save()
+                        root.loading = true
+                        storeBridge.refresh_remote_steam_library(appSettings.steamId, appSettings.steamApiKey)
+                    }
+                }
+            }
+
+            Rectangle { 
+                Layout.fillWidth: true; height: 1; color: Theme.border; opacity: 0.5 
+            }
+
 
             // Selection Controls Row
             RowLayout {
@@ -340,6 +411,11 @@ Dialog {
                                     font.pixelSize: 11
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true                                    
+                                }
+                                Text {
+                                    text: model.installed ? "Installed Locally" : "Remote (Not Installed)"
+                                    color: model.installed ? Theme.accent : Theme.secondaryText
+                                    font.pixelSize: 10
                                 }
                             }
                         }

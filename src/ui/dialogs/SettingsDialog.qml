@@ -124,6 +124,7 @@ Dialog {
     }
 
     AppInfo { id: appInfo }
+    StoreBridge { id: storeBridge }
 
     ListModel {
         id: llmModelList
@@ -850,6 +851,80 @@ Dialog {
                                              }
                                          }
                                      }
+                                }
+
+                                Rectangle { height: 1; Layout.fillWidth: true; color: Theme.border; opacity: 0.3 }
+
+                                // STEAM ACCOUNT SECTION
+                                ColumnLayout {
+                                    id: steamContent
+                                    Layout.fillWidth: true
+                                    spacing: 30
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        height: 100
+                                        color: Theme.sidebar
+                                        radius: 10
+                                        border.color: Theme.border
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 20
+                                            spacing: 20
+                                            Text { text: "♨️"; font.pixelSize: 32 }
+                                            ColumnLayout {
+                                                Label { text: "Steam Account"; font.bold: true; font.pixelSize: 18; color: Theme.text }
+                                                Label { text: "Fetch uninstalled games from your public Steam library."; color: Theme.secondaryText; font.pixelSize: 12 }
+                                            }
+                                        }
+                                    }
+
+                                    GridLayout {
+                                        columns: 2
+                                        rowSpacing: 20
+                                        columnSpacing: 20
+                                        Layout.fillWidth: true
+
+                                        Label { text: "Steam ID (64-bit)"; color: Theme.secondaryText; font.bold: true }
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 10
+                                            TheophanyTextField {
+                                                id: steamIdField
+                                                Layout.fillWidth: true
+                                                text: appSettings.steamId
+                                                onTextChanged: appSettings.steamId = text
+                                            }
+                                            TheophanyButton {
+                                                text: "Auto-detect"
+                                                onClicked: {
+                                                    var detected = storeBridge.auto_detect_steam_id()
+                                                    if (detected !== "") {
+                                                        steamIdField.text = detected
+                                                        appSettings.steamId = detected
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Label { text: "Web API Key"; color: Theme.secondaryText; font.bold: true }
+                                        TheophanyTextField {
+                                            id: steamKeyField
+                                            Layout.fillWidth: true
+                                            echoMode: TextInput.Password
+                                            text: appSettings.steamApiKey
+                                            onTextChanged: appSettings.steamApiKey = text
+                                        }
+                                        
+                                        Item { Layout.fillWidth: true }
+                                        Text {
+                                            text: "<a href='https://steamcommunity.com/dev/apikey'>Get API Key from Steam</a>"
+                                            color: Theme.accent
+                                            linkColor: Theme.accent
+                                            font.pixelSize: 11
+                                            onLinkActivated: Qt.openUrlExternally(link)
+                                        }
+                                    }
                                 }
 
                                 Rectangle { height: 1; Layout.fillWidth: true; color: Theme.border; opacity: 0.3 }

@@ -108,6 +108,10 @@ struct SettingsData {
     pub first_run_completed: bool,
     #[serde(default = "default_true")]
     pub check_for_updates_on_startup: bool,
+    #[serde(default)]
+    pub steam_id: String,
+    #[serde(default)]
+    pub steam_api_key: String,
 }
 
 impl Default for SettingsData {
@@ -164,6 +168,8 @@ impl Default for SettingsData {
             hide_platforms_sidebar: false,
             first_run_completed: false,
             check_for_updates_on_startup: true,
+            steam_id: String::new(),
+            steam_api_key: String::new(),
         }
     }
 }
@@ -275,6 +281,8 @@ pub struct AppSettings {
     hidePlatformsSidebar: qt_property!(bool; NOTIFY settingsChanged),
     firstRunCompleted: qt_property!(bool; NOTIFY settingsChanged),
     checkForUpdatesOnStartup: qt_property!(bool; NOTIFY settingsChanged),
+    steamId: qt_property!(QString; NOTIFY settingsChanged),
+    steamApiKey: qt_property!(QString; NOTIFY settingsChanged),
     closeToTrayChanged: qt_signal!(),
     settingsChanged: qt_signal!(),
     defaultPlatformsJson: qt_property!(QString; CONST),
@@ -382,6 +390,8 @@ impl AppSettings {
             hide_platforms_sidebar: self.hidePlatformsSidebar,
             first_run_completed: self.firstRunCompleted,
             check_for_updates_on_startup: self.checkForUpdatesOnStartup,
+            steam_id: self.steamId.to_string(),
+            steam_api_key: self.steamApiKey.to_string(),
         };
         
         if let Ok(json) = serde_json::to_string_pretty(&data) {
@@ -473,6 +483,8 @@ impl AppSettings {
                     self.hidePlatformsSidebar = data.hide_platforms_sidebar;
                     self.firstRunCompleted = data.first_run_completed;
                     self.checkForUpdatesOnStartup = data.check_for_updates_on_startup;
+                    self.steamId = QString::from(data.steam_id);
+                    self.steamApiKey = QString::from(data.steam_api_key);
                     
                     self.settingsChanged();
                 }
@@ -552,6 +564,8 @@ impl Default for AppSettings {
             hidePlatformsSidebar: false,
             firstRunCompleted: false,
             checkForUpdatesOnStartup: true,
+            steamId: Default::default(),
+            steamApiKey: Default::default(),
             saveHeroicAssetsLocally: false,
             autoRescanOnStartup: false,
             confirmOnQuit: true,
@@ -637,6 +651,8 @@ impl Default for AppSettings {
         s.hidePlatformsSidebar = s.data.hide_platforms_sidebar;
         s.firstRunCompleted = s.data.first_run_completed;
         s.checkForUpdatesOnStartup = s.data.check_for_updates_on_startup;
+        s.steamId = QString::from(s.data.steam_id.clone());
+        s.steamApiKey = QString::from(s.data.steam_api_key.clone());
  
         s
     }

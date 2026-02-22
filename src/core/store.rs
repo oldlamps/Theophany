@@ -516,6 +516,100 @@ impl StoreManager {
 
         None
     }
+    pub fn detect_local_steam_ids() -> Vec<String> {
+        let mut ids = Vec::new();
+        if let Ok(home) = std::env::var("HOME") {
+            let config_paths = vec![
+                PathBuf::from(&home).join(".steam/steam/config/loginusers.vdf"),
+                PathBuf::from(&home).join(".local/share/Steam/config/loginusers.vdf"),
+                PathBuf::from(&home).join(".var/app/com.valvesoftware.Steam/.steam/steam/config/loginusers.vdf"),
+            ];
+
+            for path in config_paths {
+                if path.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        for line in content.lines() {
+                            let trimmed = line.trim();
+                            if trimmed.starts_with("\"7656") && trimmed.ends_with("\"") {
+                                let id = trimmed.trim_matches('"').to_string();
+                                if !ids.contains(&id) {
+                                    ids.push(id);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ids
+    }
+
+    pub fn fetch_remote_steam_games(steam_id: &str, api_key: &str) -> anyhow::Result<Vec<Rom>> {
+        let client = reqwest::blocking::Client::new();
+        let url = format!(
+            "http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={}&steamid={}&format=json&include_appinfo=true&include_played_free_games=true",
+            api_key, steam_id
+        );
+
+        let resp = client.get(&url).send()?.json::<serde_json::Value>()?;
+        
+        let mut apps = Vec::new();
+        if let Some(games) = resp["response"]["games"].as_array() {
+            for game in games {
+                if let Some(appid) = game["appid"].as_i64() {
+                    let title = game["name"].as_str().unwrap_or("Unknown Game").to_string();
+                    let playtime = game["playtime_forever"].as_i64().unwrap_or(0);
+                    
+                    if title.starts_with("Proton") || 
+                       title.starts_with("Steam Linux Runtime") ||
+                       title.ends_with("Soundtrack") ||
+                       title.ends_with("Bonus Content") {
+                        continue;
+                    }
+
+                    let icon_hash = game["img_icon_url"].as_str().unwrap_or("");
+                    let icon_url = if !icon_hash.is_empty() {
+                        format!("http://media.steampowered.com/steamcommunity/public/images/apps/{}/{}.png", appid, icon_hash)
+                    } else {
+                        String::new()
+                    };
+
+                    apps.push(Rom {
+                        id: format!("steam-{}", appid),
+                        platform_id: "steam".to_string(), 
+                        path: format!("steam://rungameid/{}", appid),
+                        filename: format!("{}.acf", appid),
+                        file_size: 0,
+                        hash_sha1: None,
+                        title: Some(title),
+                        region: None,
+                        platform_name: Some("Steam".to_string()),
+                        platform_type: Some("PC (Linux)".to_string()),
+                        boxart_path: None,
+                        date_added: None,
+                        play_count: Some(0),
+                        total_play_time: Some(playtime * 60),
+                        last_played: None,
+                        platform_icon: Some("steam".to_string()),
+                        is_favorite: Some(false),
+                        genre: None,
+                        developer: None,
+                        publisher: None,
+                        rating: None,
+                        tags: Some("Steam".to_string()),
+                        icon_path: if !icon_url.is_empty() { Some(icon_url) } else { None },
+                        background_path: None,
+                        release_date: None,
+                        description: None,
+                    });
+                }
+            }
+        } else {
+            return Err(anyhow::anyhow!("Failed to parse response or no games found"));
+        }
+
+        Ok(apps)
+    }
 
     /// Scans for installed Steam games across all library folders.
     pub fn scan_steam_games() -> Vec<Rom> {

@@ -16,6 +16,7 @@ pub struct StoreBridge {
     installFinished: qt_signal!(app_id: QString, success: bool, message: QString),
     localAppsFinished: qt_signal!(results: QString),
     steamLibraryFinished: qt_signal!(results: QString),
+    remoteSteamLibraryFinished: qt_signal!(results: QString, success: bool, message: QString),
     heroicLibraryFinished: qt_signal!(results: QString),
     lutrisLibraryFinished: qt_signal!(results: QString),
     appDetailsReceived: qt_signal!(json: QString),
@@ -30,6 +31,8 @@ pub struct StoreBridge {
     import_steam_games_bulk: qt_method!(fn(&self, roms_json_array: String, platform_id: String)),
     refresh_local_apps: qt_method!(fn(&self)),
     refresh_steam_library: qt_method!(fn(&self)),
+    refresh_remote_steam_library: qt_method!(fn(&self, steam_id: QString, api_key: QString)),
+    auto_detect_steam_id: qt_method!(fn(&self) -> QString),
     refresh_heroic_library: qt_method!(fn(&self)),
     refresh_lutris_library: qt_method!(fn(&self)),
     find_icon_path: qt_method!(fn(&self, icon_name: String) -> String),
@@ -51,6 +54,7 @@ enum StoreMsg {
     InstallFinished(String, bool, String),
     LocalAppsFinished(String),
     SteamLibraryFinished(String),
+    RemoteSteamLibraryFinished(String, bool, String),
     HeroicLibraryFinished(String),
     LutrisLibraryFinished(String),
     AppDetailsReceived(String),
@@ -78,6 +82,7 @@ impl StoreBridge {
                     StoreMsg::InstallFinished(id, s, m) => self.installFinished(id.into(), s, m.into()),
                     StoreMsg::LocalAppsFinished(j) => self.localAppsFinished(j.into()),
                     StoreMsg::SteamLibraryFinished(j) => self.steamLibraryFinished(j.into()),
+                    StoreMsg::RemoteSteamLibraryFinished(j, s, m) => self.remoteSteamLibraryFinished(j.into(), s, m.into()),
                     StoreMsg::HeroicLibraryFinished(j) => self.heroicLibraryFinished(j.into()),
                     StoreMsg::LutrisLibraryFinished(j) => self.lutrisLibraryFinished(j.into()),
                     StoreMsg::AppDetailsReceived(j) => self.appDetailsReceived(j.into()),
@@ -301,6 +306,36 @@ impl StoreBridge {
             let results = StoreManager::scan_steam_games();
             let json = serde_json::to_string(&results).unwrap_or_default();
             let _ = tx.send(StoreMsg::SteamLibraryFinished(json));
+        });
+    }
+
+    fn auto_detect_steam_id(&self) -> QString {
+        let ids = StoreManager::detect_local_steam_ids();
+        if !ids.is_empty() {
+            QString::from(ids[0].clone())
+        } else {
+            QString::from("")
+        }
+    }
+
+    fn refresh_remote_steam_library(&self, steam_id: QString, api_key: QString) {
+        let sid = steam_id.to_string();
+        let key = api_key.to_string();
+        log::info!("Fetching remote Steam library for: {}", sid);
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        
+        std::thread::spawn(move || {
+            match StoreManager::fetch_remote_steam_games(&sid, &key) {
+                Ok(results) => {
+                    let json = serde_json::to_string(&results).unwrap_or_default();
+                    let _ = tx.send(StoreMsg::RemoteSteamLibraryFinished(json, true, "Success".into()));
+                }
+                Err(e) => {
+                    log::error!("Failed to fetch remote Steam games: {}", e);
+                    let _ = tx.send(StoreMsg::RemoteSteamLibraryFinished("[]".into(), false, e.to_string()));
+                }
+            }
         });
     }
 
