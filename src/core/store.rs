@@ -611,6 +611,78 @@ impl StoreManager {
         Ok(apps)
     }
 
+    pub fn fetch_steam_game_achievements(app_id: &str, steam_id: &str, api_key: &str) -> anyhow::Result<serde_json::Value> {
+        let client = reqwest::blocking::Client::new();
+        
+        // 1. Fetch User Achievements (Unlocked status)
+        let stats_url = format!(
+            "http://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/?appid={}&key={}&steamid={}&format=json",
+            app_id, api_key, steam_id
+        );
+        let stats_resp = client.get(&stats_url).send()?.json::<serde_json::Value>()?;
+        
+        // 2. Fetch Game Schema (Titles, Descriptions, Icons)
+        let schema_url = format!(
+            "http://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/?key={}&appid={}&format=json",
+            api_key, app_id
+        );
+        let schema_resp = client.get(&schema_url).send()?.json::<serde_json::Value>()?;
+        
+        let mut results = serde_json::Map::new();
+        let mut unlocked_count = 0;
+        let mut total_count = 0;
+        let mut merged_list = Vec::new();
+
+        // Create a map of API name -> Unlocked (bool)
+        let mut user_achievements = std::collections::HashMap::new();
+        
+        if let Some(success) = stats_resp["playerstats"]["success"].as_bool() {
+            if success {
+                if let Some(achievements) = stats_resp["playerstats"]["achievements"].as_array() {
+                    for ach in achievements {
+                        if let Some(apiname) = ach["apiname"].as_str() {
+                            let achieved = ach["achieved"].as_i64().unwrap_or(0) == 1;
+                            let unlock_time = ach["unlocktime"].as_u64().unwrap_or(0);
+                            user_achievements.insert(apiname.to_string(), (achieved, unlock_time));
+                        }
+                    }
+                }
+            } else {
+                return Err(anyhow::anyhow!("Failed or hidden achievements. Steam user might not have profile public."));
+            }
+        } else {
+            return Err(anyhow::anyhow!("Failed or hidden achievements. Request failed."));
+        }
+
+        // Merge with Schema
+        if let Some(schema_achievements) = schema_resp["game"]["availableGameStats"]["achievements"].as_array() {
+            for ach in schema_achievements {
+                total_count += 1;
+                let mut merged_ach = ach.as_object().unwrap().clone();
+                let apiname = ach["name"].as_str().unwrap_or("");
+                
+                let (is_unlocked, unlock_time) = user_achievements.get(apiname).unwrap_or(&(false, 0));
+                
+                if *is_unlocked {
+                    unlocked_count += 1;
+                }
+                
+                merged_ach.insert("unlocked".to_string(), serde_json::Value::Bool(*is_unlocked));
+                merged_ach.insert("unlock_time".to_string(), serde_json::Value::Number(serde_json::Number::from(*unlock_time)));
+                
+                // Keep naming consistent with QML expectations (badgeName -> icon, title -> displayName)
+                merged_list.push(serde_json::Value::Object(merged_ach));
+            }
+        }
+
+        results.insert("success".to_string(), serde_json::Value::Bool(true));
+        results.insert("unlocked_count".to_string(), serde_json::Value::Number(serde_json::Number::from(unlocked_count)));
+        results.insert("total_count".to_string(), serde_json::Value::Number(serde_json::Number::from(total_count)));
+        results.insert("achievements".to_string(), serde_json::Value::Array(merged_list));
+        
+        Ok(serde_json::Value::Object(results))
+    }
+
     /// Scans for installed Steam games across all library folders.
     pub fn scan_steam_games() -> Vec<Rom> {
         let mut apps = Vec::new();

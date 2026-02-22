@@ -22,6 +22,7 @@ pub struct StoreBridge {
     appDetailsReceived: qt_signal!(json: QString),
     featuredContentReceived: qt_signal!(json: QString),
     folderAnalyzed: qt_signal!(json: QString),
+    steamAchievementsFinished: qt_signal!(json: QString, success: bool, message: QString),
 
     // Methods
     search_store: qt_method!(fn(&self, query: String)),
@@ -33,6 +34,7 @@ pub struct StoreBridge {
     refresh_steam_library: qt_method!(fn(&self)),
     refresh_remote_steam_library: qt_method!(fn(&self, steam_id: QString, api_key: QString)),
     auto_detect_steam_id: qt_method!(fn(&self) -> QString),
+    refresh_steam_achievements: qt_method!(fn(&self, app_id: QString, steam_id: QString, api_key: QString)),
     refresh_heroic_library: qt_method!(fn(&self)),
     refresh_lutris_library: qt_method!(fn(&self)),
     find_icon_path: qt_method!(fn(&self, icon_name: String) -> String),
@@ -61,6 +63,7 @@ enum StoreMsg {
     CategoryFinished(String, String), // Category, JSON
     FeaturedContentReceived(String),
     FolderAnalyzed(String),
+    SteamAchievementsFinished(String, bool, String),
 }
 
 impl StoreBridge {
@@ -92,6 +95,7 @@ impl StoreBridge {
                     }
                     StoreMsg::FeaturedContentReceived(j) => self.featuredContentReceived(j.into()),
                     StoreMsg::FolderAnalyzed(j) => self.folderAnalyzed(j.into()),
+                    StoreMsg::SteamAchievementsFinished(j, s, m) => self.steamAchievementsFinished(j.into(), s, m.into()),
                 }
             }
         }
@@ -306,6 +310,28 @@ impl StoreBridge {
             let results = StoreManager::scan_steam_games();
             let json = serde_json::to_string(&results).unwrap_or_default();
             let _ = tx.send(StoreMsg::SteamLibraryFinished(json));
+        });
+    }
+
+    fn refresh_steam_achievements(&self, app_id: QString, steam_id: QString, api_key: QString) {
+        let aid = app_id.to_string();
+        let sid = steam_id.to_string();
+        let key = api_key.to_string();
+        
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        
+        std::thread::spawn(move || {
+            match StoreManager::fetch_steam_game_achievements(&aid, &sid, &key) {
+                Ok(results) => {
+                    let json = serde_json::to_string(&results).unwrap_or_default();
+                    let _ = tx.send(StoreMsg::SteamAchievementsFinished(json, true, "Success".into()));
+                }
+                Err(e) => {
+                    log::error!("Failed to fetch Steam achievements: {}", e);
+                    let _ = tx.send(StoreMsg::SteamAchievementsFinished("{}".into(), false, e.to_string()));
+                }
+            }
         });
     }
 

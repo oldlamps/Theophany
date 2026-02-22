@@ -118,6 +118,8 @@ Rectangle {
         }
     }
     
+    StoreBridge { id: storeBridge }
+
     Timer {
         id: pollTimer
         interval: 100
@@ -125,6 +127,7 @@ Rectangle {
         running: true // Always poll for background events
         onTriggered: {
             videoProxy.poll()
+            storeBridge.poll()
         }
     }
 
@@ -164,6 +167,9 @@ Rectangle {
         root.currentVideoIndex = 0
         root.currentVideoTitle = ""
         root._recentBadges = []
+        root._steamAchievementsUnlocked = 0
+        root._steamAchievementsCount = 0
+        root._steamRecentBadges = []
     }
 
     onGameFilenameChanged: {
@@ -189,20 +195,37 @@ Rectangle {
                   updateImageList(data)
                   updateResources(data)
                   
-                  // Load persistent RA data
-                  root.achievementCount = data.achievement_count || 0
-                  root.achievementUnlocked = data.achievement_unlocked || 0
-                  if (data.ra_recent_badges) {
-                      try {
-                          var badges = JSON.parse(data.ra_recent_badges)
-                          var wrapped = []
-                          for (var i=0; i<badges.length; i++) {
-                              wrapped.push({ "badgeName": badges[i] })
-                          }
-                          root._recentBadges = wrapped
-                      } catch(e) { root._recentBadges = [] }
+                  // Load persistent RA data or Steam data
+                  if (root.gamePlatformType.toLowerCase() === "steam") {
+                      root._steamAchievementsCount = data.achievement_count || 0
+                      root._steamAchievementsUnlocked = data.achievement_unlocked || 0
+                      if (data.ra_recent_badges) {
+                          try {
+                              var badges = JSON.parse(data.ra_recent_badges)
+                              var wrapped = []
+                              for (var i=0; i<badges.length; i++) {
+                                  wrapped.push({ "iconUrl": badges[i] })
+                              }
+                              root._steamRecentBadges = wrapped
+                          } catch(e) { root._steamRecentBadges = [] }
+                      } else {
+                          root._steamRecentBadges = []
+                      }
                   } else {
-                      root._recentBadges = []
+                      root.achievementCount = data.achievement_count || 0
+                      root.achievementUnlocked = data.achievement_unlocked || 0
+                      if (data.ra_recent_badges) {
+                          try {
+                              var badges = JSON.parse(data.ra_recent_badges)
+                              var wrapped = []
+                              for (var i=0; i<badges.length; i++) {
+                                  wrapped.push({ "badgeName": badges[i] })
+                              }
+                              root._recentBadges = wrapped
+                          } catch(e) { root._recentBadges = [] }
+                      } else {
+                          root._recentBadges = []
+                      }
                   }
               } catch(e) {
 
@@ -379,6 +402,9 @@ Rectangle {
 
     property bool _silentRefresh: false
     property bool isLaunching: false
+    property int _steamAchievementsUnlocked: 0
+    property int _steamAchievementsCount: 0
+    property var _steamRecentBadges: []
     
     Timer {
         id: launchTimer
@@ -395,10 +421,75 @@ Rectangle {
     function refreshAchievements(silent) {
         _silentRefresh = !!silent
         var rs = window.appSettingsRef
-        var user = rs.retroAchievementsUser
-        var key = rs.retroAchievementsToken
-        if (user !== "" && key !== "" && root.fullRomPath !== "" && rs.retroAchievementsEnabled) {
-            raBridge.fetchGameData(root.gameId, root.fullRomPath, root.gameTitle, root.platformFolder, user, key)
+        
+        if (root.gamePlatformType.toLowerCase() === "steam") {
+            var steamUser = rs.steamId
+            var steamKey = rs.steamApiKey
+            if (steamUser !== "" && steamKey !== "") {
+                var appid = root.gameFilename.replace(".acf", "")
+                storeBridge.refresh_steam_achievements(appid, steamUser, steamKey)
+            }
+        } else {
+            var user = rs.retroAchievementsUser
+            var key = rs.retroAchievementsToken
+            if (user !== "" && key !== "" && root.fullRomPath !== "" && rs.retroAchievementsEnabled) {
+                raBridge.fetchGameData(root.gameId, root.fullRomPath, root.gameTitle, root.platformFolder, user, key)
+            }
+        }
+    }
+
+    Connections {
+        target: storeBridge
+        function onSteamAchievementsFinished(json, success, message) {
+            if (success) {
+                try {
+                    var data = JSON.parse(json)
+                    root._steamAchievementsUnlocked = data.unlocked_count || 0
+                    root._steamAchievementsCount = data.total_count || 0
+                    
+                    achievementModel.clear()
+                    
+                    var newBadges = []
+                    if (data.achievements && data.achievements.length > 0) {
+                        var list = data.achievements
+                        for (var i = 0; i < list.length; i++) {
+                            var ach = list[i]
+                            var iconUrl = ach.unlocked ? (ach.icon || "") : (ach.icongray || "")
+                            
+                            achievementModel.append({
+                                id: ach.name || "",
+                                title: ach.displayName || ach.name || "Hidden Achievement",
+                                description: ach.description || "",
+                                points: 0,
+                                badgeName: iconUrl, // Steam provides full HTTP URLs here
+                                unlocked: !!ach.unlocked,
+                                dateEarned: ach.unlock_time ? (new Date(ach.unlock_time * 1000).toISOString()) : ""
+                            })
+                            
+                            if (ach.unlocked) {
+                                newBadges.push({ "iconUrl": iconUrl })
+                            }
+                        }
+                    }
+                    
+                    // Sort recent badges by unlock time (assuming recent pushes to end, or just take first 8)
+                    root._steamRecentBadges = newBadges.slice(Math.max(newBadges.length - 8, 0)).reverse()
+                    
+                    // Persist to DB
+                    var badgeUrls = root._steamRecentBadges.map(b => b.iconUrl)
+                    gameModel.updateGameAchievements(root.gameId, root._steamAchievementsCount, root._steamAchievementsUnlocked, JSON.stringify(badgeUrls))
+                    
+                    raOverlay.infoText = "Steam Progress"
+                    raOverlay.unlockedCount = root._steamAchievementsUnlocked
+                    raOverlay.totalCount = root._steamAchievementsCount
+                    if (!root._silentRefresh) raOverlay.visible = true
+                    
+                } catch(e) {
+                    if (!root._silentRefresh) raOverlay.infoText = "Error parsing Steam output"
+                }
+            } else {
+                 if (!root._silentRefresh) raOverlay.infoText = "Steam API Error: " + message
+            }
         }
     }
 
@@ -1157,6 +1248,115 @@ Rectangle {
                 }
             }
             
+            // Steam Achievement Card
+            Rectangle {
+                id: steamCard
+                Layout.fillWidth: true
+                Layout.preferredHeight: 80
+                Layout.topMargin: 5
+                visible: root.gamePlatformType.toLowerCase() === "steam" && 
+                         appSettings.steamId !== "" && appSettings.steamApiKey !== ""
+                color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.05)
+                border.color: steamCardMouse.containsMouse ? Theme.accent : Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, 0.3)
+                border.width: 1
+                radius: 8
+                clip: true
+
+                Behavior on border.color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: 150 } }
+
+                MouseArea {
+                    id: steamCardMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        raOverlay.infoText = "Checking Steam Achievements..."
+                        raOverlay.visible = true
+                        root.refreshAchievements(false)
+                    }
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 15
+
+                    // Icon / Progress Circle
+                    Item {
+                        width: 44; height: 44
+                        
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 22
+                            color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.15)
+                            
+                            Image {
+                                anchors.centerIn: parent
+                                source: "file://" + appInfo.getAssetsDir() + "/systems/steam.png"
+                                width: 28; height: 28
+                                fillMode: Image.PreserveAspectFit
+                            }
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        Text {
+                            text: "Steam Achievements"
+                            color: Theme.accent
+                            font.pixelSize: 14
+                            font.bold: true
+                        }
+
+                        Text {
+                            text: root._steamAchievementsCount > 0 ? (root._steamAchievementsUnlocked + " / " + root._steamAchievementsCount + " Unlocked") : (root._steamAchievementsUnlocked > 0 ? (root._steamAchievementsUnlocked + " Unlocked") : "Click to check achievements")
+                            color: Theme.text
+                            font.pixelSize: 12
+                            opacity: 0.8
+                        }
+                    }
+
+                    // Badge Artwork Row
+                    Row {
+                        spacing: -8
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: root._steamAchievementsUnlocked > 0
+                        
+                        Repeater {
+                            model: root._steamRecentBadges
+                            delegate: Item {
+                                width: 34; height: 34
+                                
+                                Rectangle {
+                                    width: 32; height: 32; radius: 4
+                                    color: "#111"
+                                    border.color: Theme.accent
+                                    border.width: 1
+                                    clip: true
+                                    
+                                    Image {
+                                        anchors.fill: parent
+                                        source: modelData.iconUrl !== "" ? modelData.iconUrl : "file://" + appInfo.getAssetsDir() + "/steam.png"
+                                        fillMode: Image.PreserveAspectFit
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    Text {
+                        text: "❯"
+                        color: Theme.accent
+                        font.pixelSize: 16
+                        opacity: steamCardMouse.containsMouse ? 1 : 0.4
+                        Behavior on opacity { NumberAnimation { duration: 150 } }
+                    }
+                }
+            }
+            
             Text {
                 text: "Played: " + root.gamePlayCount + " times\nTotal Time: " + root.formatTime(root.gameTotalTime)
                 color: Theme.secondaryText
@@ -1602,10 +1802,10 @@ Rectangle {
                             color: Theme.background
                             border.color: Theme.border
                             
-                            // Badge URL logic usually: https://media.retroachievements.org/Badge/{BadgeName}.png
+                            // Badge URL logic: RetroAchievements use /Badge/{BadgeName}.png, Steam provides full URL
                             Image {
                                 anchors.fill: parent
-                                source: model.badgeName ? "https://media.retroachievements.org/Badge/" + model.badgeName + ".png" : ""
+                                source: model.badgeName ? (model.badgeName.startsWith("http") ? model.badgeName : "https://media.retroachievements.org/Badge/" + model.badgeName + ".png") : ""
                                 fillMode: Image.PreserveAspectFit
                                 opacity: model.unlocked ? 1.0 : 0.3
                             }
