@@ -28,7 +28,9 @@
 ---
 
 ### ⬢ Storefront & System Bridges
-- **Library Imports**: Sync and import installed games from Steam, Heroic, and Lutris. Includes Heroic playtime syncing.
+- **Storefront Sync**: Comprehensive integration for **Steam**, **Heroic**, and **Lutris**.
+  - **Steam**: Full cloud library import (installed & uninstalled), achievement tracking, and playtime sync.
+  - **Heroic/Lutris**: Sync installed games and playtime data.
 - **Flatpak Integration**: Manage and install Flatpak apps directly within the interface.
 
 ---
@@ -56,8 +58,7 @@
 ---
 
 ### ⬢ Coming Soon
-- **Cloud Library Import**: Connect to Steam, Epic, and GOG to view your full library of uninstalled games.
-- **More Metadata Sources**
+- **Cloud Library Import**: Expand full library views to **Epic Games Store** and **GOG**.
 - **Advanced Playlists**: Automated grouping based on dynamic filters.
 - **Feature Requests Encouraged!**
 

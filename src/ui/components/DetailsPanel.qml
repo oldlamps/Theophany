@@ -458,7 +458,7 @@ Rectangle {
                             var iconUrl = ach.unlocked ? (ach.icon || "") : (ach.icongray || "")
                             
                             achievementModel.append({
-                                id: ach.name || "",
+                                id: String(ach.name || ""),
                                 title: ach.displayName || ach.name || "Hidden Achievement",
                                 description: ach.description || "",
                                 points: 0,
@@ -1897,7 +1897,7 @@ Rectangle {
                         // Check if unlocked: If "DateEarned" is present (non-null in JSON)
                         var isUnlocked = !!ach.DateEarned
                         list.push({
-                            id: ach.ID,
+                            id: String(ach.ID),
                             title: ach.Title,
                             description: ach.Description,
                             points: ach.Points,
