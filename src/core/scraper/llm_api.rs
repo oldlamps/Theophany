@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::core::scraper::{ScrapedMetadata, ScraperSearchResult, ScraperProvider, client::ScraperClient};
 use async_trait::async_trait;
 use std::sync::Arc;

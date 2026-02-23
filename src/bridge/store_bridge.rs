@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use qmetaobject::prelude::*;
 use crate::core::store::StoreManager;
 use std::sync::mpsc;
@@ -7,6 +8,7 @@ use crate::core::metadata_manager::MetadataManager;
 use std::path::Path;
 
 #[derive(QObject, Default)]
+#[allow(non_snake_case)]
 pub struct StoreBridge {
     base: qt_base_class!(trait QObject),
     
@@ -66,6 +68,7 @@ enum StoreMsg {
     SteamAchievementsFinished(String, bool, String),
 }
 
+#[allow(non_snake_case)]
 impl StoreBridge {
     fn ensure_channels(&self) {
         if self.tx.borrow().is_none() {

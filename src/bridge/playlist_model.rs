@@ -1,9 +1,11 @@
+#![allow(non_snake_case)]
 use crate::core::db::DbManager;
 use crate::core::models::Playlist;
 use qmetaobject::prelude::*;
 use std::cell::RefCell;
 
 #[derive(QObject, Default)]
+#[allow(non_snake_case)]
 pub struct PlaylistModel {
     // Parent class: QAbstractListModel
     base: qt_base_class!(trait QAbstractListModel),
@@ -60,6 +62,7 @@ impl QAbstractListModel for PlaylistModel {
     }
 }
 
+#[allow(non_snake_case)]
 impl PlaylistModel {
     fn init(&mut self, db_path: String) {
         *self.db_path.borrow_mut() = db_path;

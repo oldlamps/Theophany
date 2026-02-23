@@ -1,6 +1,8 @@
+#![allow(non_snake_case)]
 use qmetaobject::prelude::*;
 
 #[derive(QObject, Default)]
+#[allow(non_snake_case)]
 pub struct AppInfo {
     base: qt_base_class!(trait QObject),
     getDataPath: qt_method!(fn(&self) -> QString),
@@ -13,6 +15,7 @@ pub struct AppInfo {
     updateAvailable: qt_signal!(version: String, notes: String, url: String),
 }
 
+#[allow(non_snake_case)]
 impl AppInfo {
     fn getDataPath(&self) -> QString {
         crate::core::paths::get_data_dir().to_string_lossy().to_string().into()
@@ -70,30 +73,49 @@ impl AppInfo {
 
         let latest_url = "https://api.github.com/repos/oldlamps/theophany/releases/latest";
         
+        log::info!("[AppInfo] Checking for updates at: {}", latest_url);
+        log::info!("[AppInfo] Current version: {}", current_version);
+
         match client.get(latest_url).send() {
             Ok(response) => {
+                log::info!("[AppInfo] GitHub Response Status: {}", response.status());
                 if let Ok(json) = response.json::<serde_json::Value>() {
                     if let Some(tag_name) = json["tag_name"].as_str() {
                         let latest_version = tag_name.trim_start_matches('v');
+                        log::info!("[AppInfo] Latest release version found: {}", latest_version);
                         
                         if is_version_greater(latest_version, current_version) {
+                            log::info!("[AppInfo] New update available! {} > {}", latest_version, current_version);
                             let notes = json["body"].as_str().unwrap_or("").to_string();
                             let url = json["html_url"].as_str().unwrap_or("").to_string();
                             self.updateAvailable(latest_version.to_string(), notes, url);
+                        } else {
+                            log::info!("[AppInfo] App is up to date ({} <= {})", latest_version, current_version);
                         }
+                    } else {
+                        log::warn!("[AppInfo] No tag_name found in GitHub response");
                     }
+                } else {
+                    log::error!("[AppInfo] Failed to parse GitHub JSON response");
                 }
             }
             Err(e) => {
-                log::error!("Failed to check for updates: {}", e);
+                log::error!("[AppInfo] Failed to check for updates: {}", e);
             }
         }
     }
 }
 
 fn is_version_greater(latest: &str, current: &str) -> bool {
-    let latest_parts: Vec<&str> = latest.split('.').collect();
-    let current_parts: Vec<&str> = current.split('.').collect();
+    fn sanitize(v: &str) -> &str {
+        v.trim_start_matches('v').split('-').next().unwrap_or("0")
+    }
+    
+    let latest_clean = sanitize(latest);
+    let current_clean = sanitize(current);
+
+    let latest_parts: Vec<&str> = latest_clean.split('.').collect();
+    let current_parts: Vec<&str> = current_clean.split('.').collect();
 
     for i in 0..std::cmp::max(latest_parts.len(), current_parts.len()) {
         let latest_part = latest_parts.get(i).and_then(|&s| s.parse::<u32>().ok()).unwrap_or(0);

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use serde::{Deserialize, Serialize, Deserializer};
 use reqwest::blocking::Client;
 use reqwest::header::USER_AGENT;

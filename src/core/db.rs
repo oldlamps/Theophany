@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::core::models::{Platform, Rom, GameResource};
 use rusqlite::{params, Connection, Result};
 use std::path::Path;

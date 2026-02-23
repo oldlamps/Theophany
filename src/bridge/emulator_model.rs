@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use crate::core::db::DbManager;
 use crate::core::models::EmulatorProfile;
 use qmetaobject::prelude::*;

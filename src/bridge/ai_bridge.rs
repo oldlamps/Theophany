@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+#![allow(dead_code)]
 use qmetaobject::prelude::*;
 use crate::core::ollama::OllamaClient;
 use crate::core::models::AiContext;

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use sha1::{Digest, Sha1};
 use std::fs::File;
 use std::io::{self, Read, BufRead};

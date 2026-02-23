@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use qmetaobject::prelude::*;
 use crate::core::retroachievements::RetroAchievementsClient;
 use crate::core::hasher::Hasher;

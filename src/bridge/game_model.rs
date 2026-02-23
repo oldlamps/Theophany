@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+#![allow(dead_code)]
 use crate::core::db::DbManager;
 use crate::core::models::{Platform, Rom, GameResource};
 use crate::core::scanner::Scanner;
@@ -2252,7 +2254,7 @@ impl GameListModel {
                 if platform_type == "steam" || platform_type == "heroic" || platform_type == "lutris" {
                     log::info!("[Rescan] Specialized rescan for store platform: {}", platform_type);
                     
-                    let mut scanned_roms = match platform_type.as_str() {
+                    let scanned_roms = match platform_type.as_str() {
                         "steam" => {
                             let mut local = crate::core::store::StoreManager::scan_steam_games();
                             let (steam_id, api_key) = crate::bridge::settings::AppSettings::get_steam_credentials();
@@ -2406,7 +2408,7 @@ impl GameListModel {
                   else if p_type.contains("PC") {
                       let mut env_prefix = String::new();
                      let mut wrapper_cmd = String::new();
-                     let mut extra;
+                     let extra;
                      let mut pre_script = None;
                      let mut post_script = None;
 

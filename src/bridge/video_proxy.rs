@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use qmetaobject::prelude::*;
 use std::process::Command;
 use std::thread;

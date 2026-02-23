@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use std::fs;
 use std::io::Write;
 use std::collections::HashMap;
@@ -221,6 +222,7 @@ fn default_true() -> bool { true }
 
 
 #[derive(QObject)]
+#[allow(non_snake_case)]
 pub struct AppSettings {
     base: qt_base_class!(trait QObject),
     
