@@ -815,6 +815,23 @@ impl DbManager {
         Ok(())
     }
 
+    pub fn bulk_update_playtimes(&self, updates: &[(String, i64, i64)]) -> Result<()> {
+        self.conn.execute_batch("BEGIN;")?;
+        
+        let mut ins_stmt = self.conn.prepare("INSERT OR IGNORE INTO metadata (rom_id) VALUES (?1)")?;
+        let mut upd_stmt = self.conn.prepare("UPDATE metadata SET total_play_time = MAX(COALESCE(total_play_time, 0), ?1), last_played = MAX(COALESCE(last_played, 0), ?2) WHERE rom_id = ?3")?;
+        
+        for (rom_id, playtime, last_played) in updates {
+            let _ = ins_stmt.execute(params![rom_id]);
+            let _ = upd_stmt.execute(params![playtime, last_played, rom_id]);
+        }
+        
+        drop(ins_stmt);
+        drop(upd_stmt);
+        self.conn.execute_batch("COMMIT;")?;
+        Ok(())
+    }
+
     pub fn update_game_metadata_if_empty(&self, rom_id: &str, meta: &crate::core::models::GameMetadata) -> Result<()> {
         // Ensure row exists so UPDATE works
         self.conn.execute("INSERT OR IGNORE INTO metadata (rom_id) VALUES (?1)", params![rom_id])?;

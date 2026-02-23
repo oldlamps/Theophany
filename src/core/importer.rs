@@ -366,9 +366,11 @@ impl AssetTask {
                 // Use async reqwest for parallel downloads
                 let client = reqwest::Client::new();
                 if let Ok(resp) = client.get(&self.src).send().await {
-                    if let Ok(bytes) = resp.bytes().await {
-                        if fs::write(&dest_path, &bytes).is_ok() {
-                             return Some((self.rom_id, self.asset_type, dest_path.to_string_lossy().to_string(), self.src));
+                    if resp.status().is_success() {
+                        if let Ok(bytes) = resp.bytes().await {
+                            if fs::write(&dest_path, &bytes).is_ok() {
+                                 return Some((self.rom_id, self.asset_type, dest_path.to_string_lossy().to_string(), self.src));
+                            }
                         }
                     }
                 }

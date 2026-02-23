@@ -308,6 +308,16 @@ impl AppSettings {
         false
     }
 
+    pub fn get_steam_credentials() -> (String, String) {
+        let path = crate::core::paths::get_config_dir().join("settings.json");
+        if let Ok(content) = fs::read_to_string(&path) {
+            if let Ok(data) = serde_json::from_str::<SettingsData>(&content) {
+                return (data.steam_id, data.steam_api_key);
+            }
+        }
+        (String::new(), String::new())
+    }
+
     pub fn get_pc_defaults() -> (String, String, String, bool, bool, String, String, String, String, String, String, i32, i32, bool) {
         let path = crate::core::paths::get_config_dir().join("settings.json");
         if let Ok(content) = fs::read_to_string(&path) {

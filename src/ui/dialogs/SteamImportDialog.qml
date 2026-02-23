@@ -27,7 +27,6 @@ Dialog {
     StoreBridge {
         id: storeBridge
         onSteamLibraryFinished: (resultsJson) => {
-
             var results = JSON.parse(resultsJson)
             
             // Sort alphabetically
@@ -35,26 +34,33 @@ Dialog {
                 return a.title.localeCompare(b.title)
             })
 
-            steamModel.clear()
+            // Create a set of existing IDs
+            var existingIds = {}
+            for (var k = 0; k < steamModel.count; k++) {
+                existingIds[steamModel.get(k).gameId] = true
+            }
+
             for (var i = 0; i < results.length; i++) {
                 var item = results[i]
-                var sanitized = {
-                    "checked": true,
-                    "gameId": item.id || "",
-                    "title": item.title || "Unknown Game",
-                    "path": item.path || "",
-                    "filename": item.filename || "",
-                    "icon_path": item.icon_path || "",
-                    "boxart_path": item.boxart_path || "",
-                    "background_path": item.background_path || "",
-                    "platform_id": item.platform_id || "",
-                    "tags": item.tags || "",
-                    "installed": true
+                if (!existingIds[item.id]) {
+                    var sanitized = {
+                        "checked": true,
+                        "gameId": item.id || "",
+                        "title": item.title || "Unknown Game",
+                        "path": item.path || "",
+                        "filename": item.filename || "",
+                        "icon_path": item.icon_path || "",
+                        "boxart_path": item.boxart_path || "",
+                        "background_path": item.background_path || "",
+                        "platform_id": item.platform_id || "",
+                        "tags": item.tags || "",
+                        "total_play_time": item.total_play_time || 0,
+                        "installed": true
+                    }
+                    steamModel.append(sanitized)
                 }
-                steamModel.append(sanitized)
             }
             loading = false
-
         }
 
         onRemoteSteamLibraryFinished: (resultsJson, success, message) => {
@@ -75,7 +81,7 @@ Dialog {
                     var item = results[j]
                     if (!existingIds[item.id]) {
                         var sanitized = {
-                            "checked": false,
+                            "checked": true,
                             "gameId": item.id || "",
                             "title": item.title || "Unknown Game",
                             "path": item.path || "",
@@ -85,14 +91,15 @@ Dialog {
                             "background_path": item.background_path || "",
                             "platform_id": item.platform_id || "",
                             "tags": item.tags || "",
+                            "total_play_time": item.total_play_time || 0,
                             "installed": false
                         }
                         steamModel.append(sanitized)
                     }
                 }
-                loading = false
+                remoteLoading = false
             } else {
-                loading = false
+                remoteLoading = false
                 errorDialog.text = "Failed to fetch remote library:\n" + message
                 errorDialog.open()
             }
@@ -134,6 +141,7 @@ Dialog {
     }
 
     property bool loading: false
+    property bool remoteLoading: false
     ListModel { id: steamModel }
     ListModel { id: filteredPlatforms }
 
@@ -183,9 +191,15 @@ Dialog {
     }
 
     function openImport() {
-
         loading = true
+        steamModel.clear()
         storeBridge.refresh_steam_library()
+        if (appSettings.steamId !== "" && appSettings.steamApiKey !== "") {
+            remoteLoading = true
+            storeBridge.refresh_remote_steam_library(appSettings.steamId, appSettings.steamApiKey)
+        } else {
+            remoteLoading = false
+        }
         refreshFilteredPlatforms()
         open()
     }
@@ -245,8 +259,8 @@ Dialog {
                 TheophanyButton {
                     text: "Refresh Installed Library"
                     Layout.alignment: Qt.AlignBottom
+                    visible: appSettings.steamId === "" || appSettings.steamApiKey === ""
                     onClicked: {
-
                         root.loading = true
                         storeBridge.refresh_steam_library()
                     }
@@ -256,23 +270,25 @@ Dialog {
             // Remote Library Row
             RowLayout {
                 Layout.fillWidth: true
-                visible: appSettings.steamId !== "" && appSettings.steamApiKey !== ""
                 spacing: 15
 
                 Text {
-                    text: "Remote API config found (Steam ID: " + appSettings.steamId + ")"
+                    text: (appSettings.steamId !== "" && appSettings.steamApiKey !== "") 
+                        ? "Remote API config found. Remote library auto-sourced." 
+                        : "No Steam API credentials found. Add them in Settings to import uninstalled games."
                     color: Theme.accent
                     font.pixelSize: 11
                     Layout.fillWidth: true
                 }
                 
                 TheophanyButton {
-                    text: "Fetch Remote Library"
-                    enabled: !root.loading
+                    text: "Open Settings"
+                    visible: appSettings.steamId === "" || appSettings.steamApiKey === ""
                     onClicked: {
-                        appSettings.save()
-                        root.loading = true
-                        storeBridge.refresh_remote_steam_library(appSettings.steamId, appSettings.steamApiKey)
+                        root.close()
+                        // Ensure settingsDialog exists in scope, it usually does from main
+                        settingsDialog.open()
+                        settingsDialog.openTab("Accounts")
                     }
                 }
             }
@@ -286,7 +302,7 @@ Dialog {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 15
-                visible: steamModel.count > 0 && !root.loading
+                visible: steamModel.count > 0 && !root.loading && !root.remoteLoading
 
                 TheophanyButton {
                     text: "Select All"
@@ -331,7 +347,7 @@ Dialog {
                     anchors.margins: 1
                     model: steamModel
                     spacing: 0
-                    visible: !root.loading && steamModel.count > 0
+                    visible: !root.loading && !root.remoteLoading && steamModel.count > 0
                     clip: true
 
                     ScrollBar.vertical: TheophanyScrollBar {
@@ -426,12 +442,12 @@ Dialog {
                     anchors.centerIn: parent
                     text: "No Steam games found. Ensure Steam is installed and configured."
                     color: Theme.secondaryText
-                    visible: !root.loading && steamModel.count === 0
+                    visible: !root.loading && !root.remoteLoading && steamModel.count === 0
                 }
 
                 BusyIndicator {
                     anchors.centerIn: parent
-                    running: root.loading
+                    running: root.loading || root.remoteLoading
                     visible: running
                 }
             }
@@ -488,7 +504,8 @@ Dialog {
                                     icon_path: item.icon_path || "",
                                     boxart_path: item.boxart_path || "",
                                     background_path: item.background_path || "",
-                                    tags: item.tags || ""
+                                    tags: item.tags || "",
+                                    total_play_time: item.total_play_time || 0
                                 })
                             }
                         }

@@ -367,6 +367,9 @@ impl StoreManager {
         }
 
         let mut resp = reqwest::blocking::get(url)?;
+        if !resp.status().is_success() {
+            return Err(anyhow::anyhow!("Download failed with status: {}", resp.status()));
+        }
         let mut file = std::fs::File::create(&target_path)?;
         std::io::copy(&mut resp, &mut file)?;
         
@@ -559,6 +562,7 @@ impl StoreManager {
                 if let Some(appid) = game["appid"].as_i64() {
                     let title = game["name"].as_str().unwrap_or("Unknown Game").to_string();
                     let playtime = game["playtime_forever"].as_i64().unwrap_or(0);
+                    let rtime_last_played = game["rtime_last_played"].as_i64().unwrap_or(0);
                     
                     if title.starts_with("Proton") || 
                        title.starts_with("Steam Linux Runtime") ||
@@ -569,7 +573,7 @@ impl StoreManager {
 
                     let icon_hash = game["img_icon_url"].as_str().unwrap_or("");
                     let icon_url = if !icon_hash.is_empty() {
-                        format!("http://media.steampowered.com/steamcommunity/public/images/apps/{}/{}.png", appid, icon_hash)
+                        format!("https://steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/{}/{}.jpg", appid, icon_hash)
                     } else {
                         String::new()
                     };
@@ -589,7 +593,7 @@ impl StoreManager {
                         date_added: None,
                         play_count: Some(0),
                         total_play_time: Some(playtime * 60),
-                        last_played: None,
+                        last_played: if rtime_last_played > 0 { Some(rtime_last_played) } else { None },
                         platform_icon: Some("steam".to_string()),
                         is_favorite: Some(false),
                         genre: None,

@@ -565,6 +565,9 @@ impl GameListModel {
 
                 match sort_method.as_str() {
                     "Recent" => {
+                        query.push_str(" ORDER BY r.date_added DESC");
+                    },
+                    "LastPlayed" => {
                         query.push_str(" ORDER BY m.last_played DESC");
                     },
                     "TitleZA" | "TitleDESC" => {
@@ -1370,6 +1373,7 @@ impl GameListModel {
                     
                     let r_year = rom_val.get("year").and_then(|v| v.as_str()).map(|s| s.to_string());
                     let r_rating = rom_val.get("rating").and_then(|v| v.as_str()).and_then(|s| s.parse::<f32>().ok()).filter(|&r| r > 0.0);
+                    let r_playtime = rom_val.get("total_play_time").and_then(|v| v.as_i64());
                     
                     let mut rom = Rom {
                         id: Uuid::new_v4().to_string(),
@@ -1385,7 +1389,7 @@ impl GameListModel {
                         boxart_path: None,
                         date_added: None,
                         play_count: None,
-                        total_play_time: None,
+                        total_play_time: r_playtime,
                         last_played: None,
                         platform_icon: None,
                         is_favorite: None,
@@ -1618,7 +1622,7 @@ impl GameListModel {
                 map.insert("play_count".to_string(), serde_json::json!(meta.play_count));
                 map.insert("last_played".to_string(), serde_json::json!(meta.last_played.unwrap_or(0)));
                 
-                let play_time = if rom_path.starts_with("steam://") { -1 } else { meta.total_play_time };
+                let play_time = meta.total_play_time;
                 map.insert("total_play_time".to_string(), serde_json::json!(play_time));
                 
                 map.insert("is_favorite".to_string(), serde_json::json!(meta.is_favorite));
@@ -2204,14 +2208,42 @@ impl GameListModel {
                 if platform_type == "steam" || platform_type == "heroic" || platform_type == "lutris" {
                     log::info!("[Rescan] Specialized rescan for store platform: {}", platform_type);
                     
-                    let scanned_roms = match platform_type.as_str() {
-                        "steam" => crate::core::store::StoreManager::scan_steam_games(),
+                    let mut scanned_roms = match platform_type.as_str() {
+                        "steam" => {
+                            let mut local = crate::core::store::StoreManager::scan_steam_games();
+                            let (steam_id, api_key) = crate::bridge::settings::AppSettings::get_steam_credentials();
+                            if !steam_id.is_empty() && !api_key.is_empty() {
+                                if let Ok(remote) = crate::core::store::StoreManager::fetch_remote_steam_games(&steam_id, &api_key) {
+                                    local.extend(remote);
+                                }
+                            }
+                            local
+                        },
                         "heroic" => crate::core::store::StoreManager::scan_heroic_games(),
                         "lutris" => crate::core::store::StoreManager::scan_lutris_games(),
                         _ => Vec::new(),
                     };
 
-                    let existing_paths = db.get_rom_paths_by_platform(&platform_id).unwrap_or_default();
+                    let existing_roms = db.get_roms_by_platform(&platform_id).unwrap_or_default();
+                    let existing_paths: std::collections::HashSet<String> = existing_roms.iter().map(|r| r.path.clone()).collect();
+                    
+                    if platform_type == "steam" {
+                        let existing_map: std::collections::HashMap<String, String> = existing_roms.into_iter().map(|r| (r.path, r.id)).collect();
+                        let mut updates = Vec::new(); // will be Vec<(String, i64, i64)>
+                        for remote_rom in &scanned_roms {
+                            if let Some(existing_id) = existing_map.get(&remote_rom.path) {
+                                let remote_time = remote_rom.total_play_time.unwrap_or(0);
+                                let remote_last_played = remote_rom.last_played.unwrap_or(0);
+                                if remote_time > 0 || remote_last_played > 0 {
+                                    updates.push((existing_id.clone(), remote_time, remote_last_played));
+                                }
+                            }
+                        }
+                        if !updates.is_empty() {
+                            let _ = db.bulk_update_playtimes(&updates);
+                        }
+                    }
+
                     let ignored_paths = db.get_ignore_list(&platform_id).unwrap_or_default();
                     
                     let to_import: Vec<crate::core::models::Rom> = scanned_roms.into_iter()
@@ -2490,6 +2522,10 @@ impl GameListModel {
                                  );
                                   let _ = db.insert_metadata(&meta);
                                   self.update_row_by_id(&rom_id_clone);
+                                   let should_refresh = *self.current_recent_only.borrow() || *self.current_sort_method.borrow() == "Recent" || *self.current_sort_method.borrow() == "LastPlayed";
+                                   if should_refresh {
+                                       self.refresh();
+                                   }
                                   self.calculateStats();
                              }
                          }
@@ -2514,7 +2550,8 @@ impl GameListModel {
                                        self.playtimeUpdated(rom_id_clone.clone().into());
                                        
                                        // If in Recent mode, refresh to update list order
-                                       if *self.current_recent_only.borrow() || *self.current_sort_method.borrow() == "Recent" {
+                                       let should_refresh = *self.current_recent_only.borrow() || *self.current_sort_method.borrow() == "Recent" || *self.current_sort_method.borrow() == "LastPlayed";
+                                       if should_refresh {
                                            self.refresh();
                                        }
                                    }
@@ -3633,7 +3670,8 @@ impl GameListModel {
                       self.playtimeUpdated(rom_id.into());
                       
                       // Refresh list order if in Recent mode
-                      if *self.current_recent_only.borrow() || *self.current_sort_method.borrow() == "Recent" {
+                      let should_refresh = *self.current_recent_only.borrow() || *self.current_sort_method.borrow() == "Recent" || *self.current_sort_method.borrow() == "LastPlayed";
+                      if should_refresh {
                           self.refresh();
                       }
                  }

@@ -1230,7 +1230,7 @@ Rectangle {
                                     
                                     Image {
                                         anchors.fill: parent
-                                        source: modelData.badgeName ? "https://media.retroachievements.org/Badge/" + modelData.badgeName + ".png" : ""
+                                        source: modelData.badgeName ? (modelData.badgeName.startsWith("http") ? modelData.badgeName : "https://media.retroachievements.org/Badge/" + modelData.badgeName + ".png") : ""
                                         fillMode: Image.PreserveAspectFit
                                     }
                                 }
@@ -1729,7 +1729,7 @@ Rectangle {
                     spacing: 2
                     
                     Label {
-                        text: "RetroAchievements"
+                        text: "Achievements"
                         color: Theme.accent
                         font.bold: true
                         font.pixelSize: 20

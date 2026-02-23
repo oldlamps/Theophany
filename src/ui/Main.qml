@@ -1015,13 +1015,13 @@ ApplicationWindow {
                         gameModel.setPlaylistFilter(realId)
                         // Do NOT call batchSetFilters here - setPlaylistFilter already handles refresh
                     } else if (pid === "favorites") {
-                        gameModel.batchSetFilters("", true, "TitleAZ", false)
+                        gameModel.batchSetFilters("", true, gameModel.sortMethod, false)
                     } else if (pid === "recent") {
-                        gameModel.batchSetFilters("", false, "Recent", true)
+                        gameModel.batchSetFilters("", false, "LastPlayed", true)
                     } else if (pid === "") { // All Games
-                        gameModel.batchSetFilters("", false, "TitleAZ", false)
+                        gameModel.batchSetFilters("", false, gameModel.sortMethod, false)
                     } else { // System UUID
-                        gameModel.batchSetFilters(pid, false, "TitleAZ", false)
+                        gameModel.batchSetFilters(pid, false, gameModel.sortMethod, false)
                     }
                     
                     // 3. Queue selection restoration for the INCOMING platform
@@ -1481,12 +1481,13 @@ ApplicationWindow {
                              visible: viewStack.currentIndex === 0
                              Layout.preferredWidth: 150
                              Layout.preferredHeight: 36
-                             model: ["Title (A-Z)", "Title (Z-A)", "Recently Added"]
+                             model: ["Title (A-Z)", "Title (Z-A)", "Recently Added", "Last Played"]
                              onActivated: {
                                  if (gameModel) {
                                      var method = "TitleAZ"
                                      if (index === 1) method = "TitleZA"
                                      else if (index === 2) method = "Recent"
+                                     else if (index === 3) method = "LastPlayed"
                                      gameModel.setSortMethod(method)
                                      window.refocusList()
                                  }
@@ -1499,6 +1500,7 @@ ApplicationWindow {
                                      if (method === "TitleAZ") topSortBox.currentIndex = 0
                                      else if (method === "TitleZA" || method === "TitleDESC") topSortBox.currentIndex = 1
                                      else if (method === "Recent") topSortBox.currentIndex = 2
+                                     else if (method === "LastPlayed") topSortBox.currentIndex = 3
                                  }
                              }
                          }
