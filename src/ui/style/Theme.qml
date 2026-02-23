@@ -1,7 +1,7 @@
 pragma Singleton
 import QtQuick
 
-QtObject {
+Item {
     id: theme
 
     property string currentTheme: "Default"
@@ -232,6 +232,10 @@ QtObject {
     }
 
     function setTheme(name) {
+        if (name === "System") {
+            currentTheme = name
+            return
+        }
         if (themes[name]) {
             currentTheme = name
             var t = themes[name]
@@ -246,8 +250,20 @@ QtObject {
             buttonBackground = t.buttonBackground
             buttonText = t.buttonText
             bodyText = t.bodyText
-        } else {
-
         }
     }
+
+    SystemPalette { id: sysPalette; colorGroup: SystemPalette.Active }
+
+    Binding { target: theme; property: "background"; value: sysPalette.window; when: currentTheme === "System" }
+    Binding { target: theme; property: "secondaryBackground"; value: sysPalette.base; when: currentTheme === "System" }
+    Binding { target: theme; property: "sidebar"; value: sysPalette.alternateBase; when: currentTheme === "System" }
+    Binding { target: theme; property: "accent"; value: sysPalette.highlight; when: currentTheme === "System" }
+    Binding { target: theme; property: "text"; value: sysPalette.windowText; when: currentTheme === "System" }
+    Binding { target: theme; property: "secondaryText"; value: Qt.hsla(sysPalette.windowText.hslHue, sysPalette.windowText.hslSaturation, sysPalette.windowText.hslLightness, 0.7); when: currentTheme === "System" }
+    Binding { target: theme; property: "border"; value: sysPalette.mid; when: currentTheme === "System" }
+    Binding { target: theme; property: "hover"; value: Qt.hsla(sysPalette.highlight.hslHue, sysPalette.highlight.hslSaturation, sysPalette.highlight.hslLightness, 0.2); when: currentTheme === "System" }
+    Binding { target: theme; property: "buttonBackground"; value: sysPalette.button; when: currentTheme === "System" }
+    Binding { target: theme; property: "buttonText"; value: sysPalette.buttonText; when: currentTheme === "System" }
+    Binding { target: theme; property: "bodyText"; value: sysPalette.text; when: currentTheme === "System" }
 }

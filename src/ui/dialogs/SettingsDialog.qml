@@ -603,7 +603,7 @@ Dialog {
                                 Label { text: "Visual Theme"; color: Theme.secondaryText; font.bold: true }
                                 TheophanyComboBox {
                                     id: themeBox
-                                    model: ["Default", "Nord", "Dracula", "Catppuccin", "Tokyo Night", "Gruvbox Dark", "One Dark Pro", "Latte", "Frost", "Pearl", "That 70's Theme", "That 70's Theme Light", "That 80's Theme", "That 80's Theme Light", "That 90's Theme", "That 90's Theme Light"]
+                                    model: ["System", "Default", "Nord", "Dracula", "Catppuccin", "Tokyo Night", "Gruvbox Dark", "One Dark Pro", "Latte", "Frost", "Pearl", "That 70's Theme", "That 70's Theme Light", "That 80's Theme", "That 80's Theme Light", "That 90's Theme", "That 90's Theme Light"]
                                     Layout.fillWidth: true
                                     onActivated: {
                                         // Apply theme immediately for live preview
