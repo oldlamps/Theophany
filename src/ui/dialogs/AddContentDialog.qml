@@ -192,6 +192,21 @@ Dialog {
                     }
 
                     TheophanyButton {
+                        text: "Import from Epic Games"
+                        iconSource: "assets/systems/epic.png"
+                        Layout.fillWidth: true
+                        onClicked: {
+                            root.close()
+                            epicImportDialog.openImport()
+                        }
+                    }
+                }
+
+                RowLayout {
+                    spacing: 10
+                    Layout.fillWidth: true
+
+                    TheophanyButton {
                         text: "Import from Heroic"
                         iconSource: "assets/systems/heroic.png"
                         Layout.fillWidth: true
@@ -200,11 +215,6 @@ Dialog {
                             heroicImportDialog.openImport()
                         }
                     }
-                }
-
-                RowLayout {
-                    spacing: 10
-                    Layout.fillWidth: true
 
                     TheophanyButton {
                         text: "Import from Lutris"
@@ -215,6 +225,11 @@ Dialog {
                             lutrisImportDialog.openImport()
                         }
                     }
+                }
+
+                RowLayout {
+                    spacing: 10
+                    Layout.fillWidth: true
 
                     TheophanyButton {
                         text: "Import Local Apps"
@@ -225,6 +240,8 @@ Dialog {
                             localAppImportDialog.openImport()
                         }
                     }
+                    
+                    Item { Layout.fillWidth: true } // Spacer to keep it half width
                 }
             }
 

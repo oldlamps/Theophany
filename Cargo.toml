@@ -30,6 +30,7 @@ rand = "0.8"
 urlencoding = "2.1"
 linicon = "2.3"
 cpp = "0.5.10"
+which = "6.0"
 
 
 [dev-dependencies]

@@ -69,7 +69,12 @@ impl BulkImporter {
                 meta.is_installed = final_rom.is_installed.unwrap_or_else(|| {
                     if final_rom.id.starts_with("steam-") {
                         crate::core::store::StoreManager::get_local_steam_appids().contains(&final_rom.id.replace("steam-", ""))
+                    } else if final_rom.id.starts_with("legendary-") {
+                        // For legendary, if it's not explicitly marked, it might be from a cloud scan
+                        // We default to false for store platforms if unknown during bulk import
+                        false
                     } else {
+                        // Generic ROMs (SNES, etc) are assumed to be "installed" (existent)
                         true
                     }
                 });
@@ -85,9 +90,15 @@ impl BulkImporter {
                     rom_stem_temp = final_rom.id.replace("steam-", "");
                 }
 
-                if let Some(sidecar) = MetadataManager::load_sidecar(&platform_folder, &rom_stem_temp) {
+                if let Some(mut sidecar) = MetadataManager::load_sidecar(&platform_folder, &rom_stem_temp) {
+                    sidecar.rom_id = final_rom.id.clone();
+                    // Preserving local status: if the incoming ROM has an explicit is_installed, keep it.
+                    // Sidecars might have stale "installed=true" from previous defaults.
+                    if final_rom.is_installed.is_some() {
+                        sidecar.is_installed = meta.is_installed;
+                    }
                     meta = sidecar;
-                    meta.rom_id = final_rom.id.clone();
+                    
                     // Ensure resources from sidecar are correctly associated with the new rom_id
                     if let Some(ref mut resources) = meta.resources {
                         for r in resources {

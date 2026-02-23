@@ -1369,6 +1369,40 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
+            
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 5
+                visible: window.isStoreInstalling && (root.gameId.indexOf(window.storeInstallAppId) !== -1 || window.storeInstallAppId === root.gameFilename || window.storeInstallAppId === root.fullRomPath.replace("flatpak://", ""))
+
+                Text {
+                    text: window.storeInstallStatus || "Installing..."
+                    color: Theme.accent
+                    font.bold: true
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 4
+                    Layout.fillWidth: true
+                }
+
+                ProgressBar {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 6
+                    value: window.storeInstallProgress
+                    background: Rectangle {
+                        color: Theme.secondaryBackground
+                        radius: 3
+                    }
+                    contentItem: Item {
+                        Rectangle {
+                            width: parent.visualPosition * parent.width
+                            height: parent.height
+                            radius: 3
+                            color: Theme.accent
+                        }
+                    }
+                }
+            }
 
             TheophanyButton {
                 text: root.gameIsInstalled ? "PLAY" : "INSTALL"
@@ -1378,7 +1412,7 @@ Rectangle {
                 Layout.preferredHeight: 45
                 focusPolicy: Qt.NoFocus
                 loading: root.isLaunching
-                enabled: !root.isLaunching
+                enabled: !root.isLaunching && !(window.isStoreInstalling && (root.gameId.indexOf(window.storeInstallAppId) !== -1 || window.storeInstallAppId === root.gameFilename || window.storeInstallAppId === root.fullRomPath.replace("flatpak://", "")))
                 tooltipText: root.isLaunching ? "Launching Game..." : (root.gameIsInstalled ? ("Launch " + root.gameTitle) : ("Install " + root.gameTitle))
                 
                 onClicked: {
@@ -1408,6 +1442,26 @@ Rectangle {
                             }
                         }
                     }
+                }
+            }
+
+            // Epic Uninstall Button
+            TheophanyButton {
+                visible: root.fullRomPath.startsWith("epic://") && root.gameIsInstalled
+                text: "🗑"
+                Layout.preferredWidth: 45
+                Layout.preferredHeight: 45
+                focusPolicy: Qt.NoFocus
+                onClicked: {
+                    var appName = root.fullRomPath.substring(7)
+                    if (confirmUninstallDialog.opened) return
+                    confirmUninstallDialog.appName = appName
+                    confirmUninstallDialog.open()
+                }
+                
+                TheophanyTooltip {
+                    visible: parent.hovered
+                    text: "Uninstall Epic Game"
                 }
             }
 
@@ -2047,6 +2101,59 @@ Rectangle {
                 onClicked: imageViewer.close()
             }
             
+        }
+    }
+
+    Dialog {
+        id: confirmUninstallDialog
+        modal: true
+        x: (parent.width - width) / 2
+        y: (parent.height - height) / 2
+        width: 400
+        padding: 25
+        
+        property string appName: ""
+
+        background: Rectangle {
+            color: Theme.secondaryBackground
+            border.color: Theme.border
+            border.width: 1
+            radius: 12
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 20
+            Text {
+                text: "Uninstall Game"
+                color: Theme.text
+                font.pixelSize: 20
+                font.bold: true
+            }
+            Label {
+                text: "Are you sure you want to uninstall <b>" + root.gameTitle + "</b>?<br><br>This will remove the game files from your system via Legendary."
+                color: Theme.text
+                font.pixelSize: 14
+                wrapMode: Text.WordWrap
+                textFormat: Text.RichText
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                Item { Layout.fillWidth: true }
+                TheophanyButton {
+                    text: "Cancel"
+                    onClicked: confirmUninstallDialog.close()
+                }
+                TheophanyButton {
+                    text: "Uninstall"
+                    primary: true
+                    onClicked: {
+                        storeBridge.uninstall_legendary_game(confirmUninstallDialog.appName)
+                        confirmUninstallDialog.close()
+                    }
+                }
+            }
         }
     }
 

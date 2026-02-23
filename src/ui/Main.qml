@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import Qt5Compat.GraphicalEffects
 import Qt.labs.platform as Platform
@@ -81,11 +82,11 @@ ApplicationWindow {
     
 
     
-    // Flatpak Installation Global State
-    property string flatpakInstallAppId: ""
-    property real flatpakInstallProgress: 0.0
-    property bool isFlatpakInstalling: false
-    property string flatpakInstallStatus: ""
+    // Store Install Tracking Properties (Generic)
+    property string storeInstallAppId: ""
+    property real storeInstallProgress: 0.0
+    property bool isStoreInstalling: false
+    property string storeInstallStatus: ""
 
     Shortcut {
         sequence: window.hotkeyMap["Settings"]
@@ -711,8 +712,60 @@ ApplicationWindow {
         else gameList.forceActiveFocus()
     }
 
+    StoreBridge {
+        id: storeBridge
+        
+        onInstallProgress: (appId, progress, status) => {
+            window.storeInstallAppId = appId
+            window.storeInstallProgress = progress
+            window.isStoreInstalling = true
+            window.storeInstallStatus = status
+        }
+        
+        onInstallFinished: (appId, success, message) => {
+            window.isStoreInstalling = false
+            window.storeInstallStatus = message
+            
+            if (success) {
+                gameModel.refresh()
+                // Refresh details if this was the selected game
+                if (detailsPanel.gameId.includes(appId)) {
+                     var idx = gameModel.getRowById(detailsPanel.gameId)
+                     if (idx >= 0) window.loadGameDetails(idx)
+                }
+            } else {
+                 mainAutoScrapeErrorDialog.text = "Installation Failed: " + message
+                 mainAutoScrapeErrorDialog.open()
+            }
+        }
+    }
+
     function launchGame(id) {
         if (!id) return
+        
+        // Handle Legendary Installation Trigger
+        var path = ""
+        var isInstalled = true
+        var idx = gameModel.getRowById(id)
+        if (idx >= 0) {
+            path = gameModel.data(gameModel.index(idx, 0), 258) // PathRole
+            var metaJson = gameModel.getGameMetadata(id)
+            try {
+                var meta = JSON.parse(metaJson)
+                isInstalled = (typeof meta.is_installed !== "undefined") ? meta.is_installed : true
+            } catch(e) {}
+        }
+        
+        if (path.startsWith("epic://") && !isInstalled) {
+            // Correct App ID extraction for epic://launch/AppId
+            var appName = path.split("/").pop()
+            if (appName) {
+                epicInstallPathDialog.pendingAppId = appName
+                epicInstallPathDialog.open()
+                return
+            }
+        }
+
         gameModel.launchGame(id)
         if (detailsPanel) detailsPanel.triggerLaunchFeedback()
     }
@@ -752,8 +805,11 @@ ApplicationWindow {
                 detailsPanel.gameReleaseDate = ""
             }
             detailsPanel.gamePlatformId = gameModel.data(gameModel.index(index, 0), 264)
+            detailsPanel.gamePlatformType = data.platform_type || "Unknown Platform"
+            detailsPanel.gamePlatformId = data.platform_id || ""
+            
             detailsPanel.gameIsFavorite = data.is_favorite || false
-            detailsPanel.gameIsInstalled = (typeof data.is_installed !== "undefined") ? data.is_installed : true
+            detailsPanel.gameIsInstalled = (typeof data.is_installed !== "undefined") ? data.is_installed : (detailsPanel.gamePlatformType.toLowerCase() !== "steam" && detailsPanel.gamePlatformId.toLowerCase() !== "epic")
             detailsPanel.achievementCount = data.achievement_count || 0
             detailsPanel.achievementUnlocked = data.achievement_unlocked || 0
             if (data.ra_recent_badges) {
@@ -1677,6 +1733,7 @@ ApplicationWindow {
                     running: true
                     onTriggered: {
                         gameModel.checkAsyncResponses()
+                        storeBridge.poll()
                     }
                 }
 
@@ -2338,18 +2395,18 @@ ApplicationWindow {
                                 font.pixelSize: 12
                                 font.bold: true
                             }
-                            Text { text: "|"; color: Theme.border; visible: gameModel.bulkScraping || window.isFlatpakInstalling }
+                            Text { text: "|"; color: Theme.border; visible: gameModel.bulkScraping || window.isStoreInstalling }
                         }
 
-                        // Universal Progress Indicator (Scraping or Flatpak Install)
+                        // Universal Progress Indicator (Scraping or Store Install)
                         RowLayout {
                             id: universalProgressRow
-                            visible: gameModel.bulkScraping || window.isFlatpakInstalling
+                            visible: gameModel.bulkScraping || window.isStoreInstalling
                             spacing: 10
                             
                             Text {
-                                text: window.isFlatpakInstalling ? 
-                                      "Installing " + window.flatpakInstallAppId + ": " + Math.round(window.flatpakInstallProgress * 100) + "%" :
+                                text: window.isStoreInstalling ? 
+                                      "Installing " + window.storeInstallAppId + ": " + Math.round(window.storeInstallProgress * 100) + "%" :
                                       "Scraping: " + Math.round(gameModel.bulkProgress * 100) + "%"
                                 color: Theme.accent
                                 font.pixelSize: 12
@@ -2359,7 +2416,7 @@ ApplicationWindow {
                             ProgressBar {
                                 Layout.preferredWidth: 100
                                 Layout.preferredHeight: 4
-                                value: window.isFlatpakInstalling ? window.flatpakInstallProgress : gameModel.bulkProgress
+                                value: window.isStoreInstalling ? window.storeInstallProgress : gameModel.bulkProgress
                                 background: Rectangle {
                                     implicitWidth: 100
                                     implicitHeight: 4
@@ -2390,7 +2447,7 @@ ApplicationWindow {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        if (window.isFlatpakInstalling) flatpakStoreDialog.open()
+                                        if (window.isStoreInstalling && window.storeInstallAppId.includes(".")) flatpakStoreDialog.open()
                                         else bulkScrapeDialog.open()
                                     }
                                 }
@@ -2599,12 +2656,33 @@ ApplicationWindow {
         id: heroicImportDialog
     }
 
+    EpicImportDialog {
+        id: epicImportDialog
+    }
+
     LutrisImportDialog {
         id: lutrisImportDialog
     }
     
     BulkScrapeDialog {
         id: bulkScrapeDialog
+    }
+    
+    FolderDialog {
+        id: epicInstallPathDialog
+        title: "Select Target Installation Folder (or Cancel for Default Location)"
+        property string pendingAppId: ""
+        onAccepted: {
+            var pathStr = selectedFolder.toString()
+            if (pathStr.startsWith("file://")) {
+                pathStr = pathStr.substring(7)
+            }
+            storeBridge.install_legendary_game(pendingAppId, pathStr)
+        }
+        onRejected: {
+            // Proceed with empty path (default)
+            storeBridge.install_legendary_game(pendingAppId, "")
+        }
     }
     
     function openBulkScrape(ids, mode) {

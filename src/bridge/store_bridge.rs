@@ -21,6 +21,9 @@ pub struct StoreBridge {
     remoteSteamLibraryFinished: qt_signal!(results: QString, success: bool, message: QString),
     heroicLibraryFinished: qt_signal!(results: QString),
     lutrisLibraryFinished: qt_signal!(results: QString),
+    legendaryLibraryFinished: qt_signal!(results: QString),
+    legendaryAuthUrlReceived: qt_signal!(url: QString),
+    legendaryAuthFinished: qt_signal!(success: bool, message: QString),
     appDetailsReceived: qt_signal!(json: QString),
     featuredContentReceived: qt_signal!(json: QString),
     folderAnalyzed: qt_signal!(json: QString),
@@ -39,6 +42,12 @@ pub struct StoreBridge {
     refresh_steam_achievements: qt_method!(fn(&self, app_id: QString, steam_id: QString, api_key: QString)),
     refresh_heroic_library: qt_method!(fn(&self)),
     refresh_lutris_library: qt_method!(fn(&self)),
+    refresh_legendary_library: qt_method!(fn(&self)),
+    check_legendary_auth: qt_method!(fn(&self) -> bool),
+    get_legendary_auth_url: qt_method!(fn(&self)),
+    authenticate_legendary: qt_method!(fn(&self, code: String)),
+    install_legendary_game: qt_method!(fn(&self, app_name: String, path: String)),
+    uninstall_legendary_game: qt_method!(fn(&self, app_name: String)),
     find_icon_path: qt_method!(fn(&self, icon_name: String) -> String),
     get_app_details: qt_method!(fn(&self, app_id: String)),
     analyze_folder: qt_method!(fn(&self, path: String)),
@@ -61,6 +70,9 @@ enum StoreMsg {
     RemoteSteamLibraryFinished(String, bool, String),
     HeroicLibraryFinished(String),
     LutrisLibraryFinished(String),
+    LegendaryLibraryFinished(String),
+    LegendaryAuthUrlReceived(String),
+    LegendaryAuthFinished(bool, String),
     AppDetailsReceived(String),
     CategoryFinished(String, String), // Category, JSON
     FeaturedContentReceived(String),
@@ -91,6 +103,9 @@ impl StoreBridge {
                     StoreMsg::RemoteSteamLibraryFinished(j, s, m) => self.remoteSteamLibraryFinished(j.into(), s, m.into()),
                     StoreMsg::HeroicLibraryFinished(j) => self.heroicLibraryFinished(j.into()),
                     StoreMsg::LutrisLibraryFinished(j) => self.lutrisLibraryFinished(j.into()),
+                    StoreMsg::LegendaryLibraryFinished(j) => self.legendaryLibraryFinished(j.into()),
+                    StoreMsg::LegendaryAuthUrlReceived(url) => self.legendaryAuthUrlReceived(url.into()),
+                    StoreMsg::LegendaryAuthFinished(s, m) => self.legendaryAuthFinished(s, m.into()),
                     StoreMsg::AppDetailsReceived(j) => self.appDetailsReceived(j.into()),
                     StoreMsg::CategoryFinished(cat, json) => {
                         self.category_cache.borrow_mut().insert(cat, json.clone());
@@ -389,6 +404,182 @@ impl StoreBridge {
             let results = StoreManager::scan_lutris_games();
             let json = serde_json::to_string(&results).unwrap_or_default();
             let _ = tx.send(StoreMsg::LutrisLibraryFinished(json));
+        });
+    }
+
+    fn refresh_legendary_library(&self) {
+        log::info!("Scanning Legendary library...");
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            let results = StoreManager::scan_legendary_games();
+            let json = serde_json::to_string(&results).unwrap_or_default();
+            let _ = tx.send(StoreMsg::LegendaryLibraryFinished(json));
+        });
+    }
+
+    fn check_legendary_auth(&self) -> bool {
+        crate::core::legendary::LegendaryWrapper::is_authenticated()
+    }
+
+    fn get_legendary_auth_url(&self) {
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            match crate::core::legendary::LegendaryWrapper::get_auth_url() {
+                Ok(url) => {
+                    let _ = tx.send(StoreMsg::LegendaryAuthUrlReceived(url));
+                },
+                Err(e) => {
+                    log::error!("Failed to get Legendary auth URL: {}", e);
+                    let _ = tx.send(StoreMsg::LegendaryAuthFinished(false, e.to_string()));
+                }
+            }
+        });
+    }
+
+    fn authenticate_legendary(&self, code: String) {
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            match crate::core::legendary::LegendaryWrapper::authenticate(&code) {
+                Ok(_) => {
+                    let _ = tx.send(StoreMsg::LegendaryAuthFinished(true, "Authentication successful".into()));
+                },
+                Err(e) => {
+                    log::error!("Legendary authentication failed: {}", e);
+                    let _ = tx.send(StoreMsg::LegendaryAuthFinished(false, e.to_string()));
+                }
+            }
+        });
+    }
+
+    fn install_legendary_game(&self, app_name: String, path: String) {
+        log::info!("[LegendaryBridge] Starting install for: {} at {:?}", app_name, path);
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        let app_name_clone = app_name.clone();
+        let install_path = if path.trim().is_empty() { None } else { Some(path.clone()) };
+
+        std::thread::spawn(move || {
+            let _ = tx.send(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Initializing Legendary...".into()));
+            
+            match StoreManager::install_legendary_game(app_name_clone.clone(), install_path) {
+                Ok(mut child) => {
+                    use std::io::{BufRead, BufReader};
+                    
+                    let stdout = child.stdout.take().unwrap();
+                    let stderr = child.stderr.take().unwrap();
+                    let reader = BufReader::new(stdout);
+                    let stderr_reader = BufReader::new(stderr);
+                    
+                    let tx_clone = tx.clone();
+                    let app_name_inner = app_name_clone.clone();
+                    
+                    // Legendary usually uses stderr, but can use stdout. Read byte-by-byte to handle both \n and \r
+                    std::thread::spawn(move || {
+                        use std::io::Read;
+                        let mut buf = Vec::new();
+                        let mut last_progress = 0.0;
+                        
+                        for byte_result in stderr_reader.bytes() {
+                            if let Ok(b) = byte_result {
+                                if b == b'\r' || b == b'\n' {
+                                    if !buf.is_empty() {
+                                        if let Ok(line) = String::from_utf8(buf.clone()) {
+                                            let trimmed = line.trim();
+                                            if !trimmed.is_empty() {
+                                                if let Some(progress) = crate::core::legendary::LegendaryWrapper::parse_progress(trimmed) {
+                                                    last_progress = progress;
+                                                    let _ = tx_clone.send(StoreMsg::InstallProgress(app_name_inner.clone(), progress, trimmed.to_string()));
+                                                } else if trimmed.contains("INFO") || trimmed.contains("Downloading") || trimmed.contains("Installing") || trimmed.contains("WARNING") || trimmed.contains("ERROR") {
+                                                    let _ = tx_clone.send(StoreMsg::InstallProgress(app_name_inner.clone(), last_progress, trimmed.to_string()));
+                                                }
+                                            }
+                                        }
+                                        buf.clear();
+                                    }
+                                } else {
+                                    buf.push(b);
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                    });
+
+                    use std::io::Read;
+                    let mut buf2 = Vec::new();
+                    let mut last_progress2 = 0.0;
+                    for byte_result in reader.bytes() {
+                        if let Ok(b) = byte_result {
+                            if b == b'\r' || b == b'\n' {
+                                if !buf2.is_empty() {
+                                    if let Ok(line) = String::from_utf8(buf2.clone()) {
+                                        let trimmed = line.trim();
+                                        if !trimmed.is_empty() {
+                                            if let Some(progress) = crate::core::legendary::LegendaryWrapper::parse_progress(trimmed) {
+                                                last_progress2 = progress;
+                                                let _ = tx.send(StoreMsg::InstallProgress(app_name_clone.clone(), progress, trimmed.to_string()));
+                                            } else if trimmed.contains("INFO") || trimmed.contains("Downloading") || trimmed.contains("Installing") || trimmed.contains("WARNING") || trimmed.contains("ERROR") {
+                                                let _ = tx.send(StoreMsg::InstallProgress(app_name_clone.clone(), last_progress2, trimmed.to_string()));
+                                            }
+                                        }
+                                    }
+                                    buf2.clear();
+                                }
+                            } else {
+                                buf2.push(b);
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+
+                    match child.wait() {
+                        Ok(status) if status.success() => {
+                            // Update DB to mark as installed
+                            let db_path = crate::core::paths::get_data_dir().join("games.db");
+                            if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                                let rom_id = format!("legendary-{}", app_name_clone);
+                                let conn = db.get_connection();
+                                let _ = conn.execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id]);
+                                let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
+                            }
+                            let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, true, "Installed successfully".into()));
+                        },
+                        Ok(status) => {
+                            let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, format!("Legendary exited with status: {}", status).into()));
+                        },
+                        Err(e) => {
+                            let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                        }
+                    }
+                },
+                Err(e) => {
+                    log::error!("Legendary install failed to start: {}", e);
+                    let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                }
+            }
+        });
+    }
+
+    fn uninstall_legendary_game(&self, app_name: String) {
+        log::info!("[LegendaryBridge] Starting uninstall for: {}", app_name);
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        let app_name_clone = app_name.clone();
+
+        std::thread::spawn(move || {
+            match StoreManager::uninstall_legendary_game(app_name_clone.clone()) {
+                Ok(_) => {
+                    let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, true, "Uninstalled successfully".into()));
+                },
+                Err(e) => {
+                    log::error!("Legendary uninstall failed: {}", e);
+                    let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                }
+            }
         });
     }
 

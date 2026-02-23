@@ -40,11 +40,12 @@ Dialog {
     // PC Config Properties
     property string platformType: ""
     property string platformName: ""
+    property string platformId: ""
     property var currentConfig: ({})
     property var platformDefaults: ({})
     property bool advancedCollapsed: true
-    property bool isPc: platformType.includes("PC")
-    property bool isWindows: platformType === "PC (Windows)"
+    property bool isPc: platformType.includes("PC") || platformId === "epic" || gameId.includes("legendary-")
+    property bool isWindows: platformType === "PC (Windows)" || platformId === "epic" || gameId.includes("legendary-")
 
 
 
@@ -76,6 +77,7 @@ Dialog {
             currentData = JSON.parse(json)
             platformType = currentData.platform_type || ""
             platformName = currentData.platform_name || ""
+            platformId = currentData.platform_id || ""
             
             // Populate Fields
             titleField.text = currentData.title || ""

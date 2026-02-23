@@ -179,19 +179,19 @@ Dialog {
             installOverlay.status = status
             
             // Update global state in Main.qml
-            window.isFlatpakInstalling = true
-            window.flatpakInstallAppId = appId
-            window.flatpakInstallProgress = progress
-            window.flatpakInstallStatus = status
+            window.isStoreInstalling = true
+            window.storeInstallAppId = appId
+            window.storeInstallProgress = progress
+            window.storeInstallStatus = status
         }
         onInstallFinished: (appId, success, message) => {
             installOverlay.visible = false
             
             // Clear global state
-            window.isFlatpakInstalling = false
-            window.flatpakInstallAppId = ""
-            window.flatpakInstallProgress = 0.0
-            window.flatpakInstallStatus = ""
+            window.isStoreInstalling = false
+            window.storeInstallAppId = ""
+            window.storeInstallProgress = 0.0
+            window.storeInstallStatus = ""
             
             if (!success) {
                 statusDialog.title = "Installation Error"

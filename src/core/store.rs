@@ -1529,6 +1529,44 @@ impl StoreManager {
 
         Ok(updated_count)
     }
+
+    /// Scans for games available via Legendary CLI (Epic Games Store).
+    pub fn scan_legendary_games() -> Vec<Rom> {
+        log::info!("[Legendary] Scanning for Epic Games via Legendary CLI...");
+        match crate::core::legendary::LegendaryWrapper::list_games() {
+            Ok(games) => {
+                log::info!("[Legendary] Found {} games in Legendary library", games.len());
+                games.iter()
+                    .map(crate::core::legendary::LegendaryWrapper::to_rom)
+                    .collect()
+            },
+            Err(e) => {
+                log::warn!("[Legendary] Failed to list games: {}", e);
+                Vec::new()
+            }
+        }
+    }
+
+    /// Triggers installation of a Legendary game.
+    pub fn install_legendary_game(app_name: String, install_path: Option<String>) -> anyhow::Result<std::process::Child> {
+        crate::core::legendary::LegendaryWrapper::install(&app_name, install_path.as_deref())
+    }
+
+    /// Triggers uninstallation of a Legendary game and updates DB.
+    pub fn uninstall_legendary_game(app_name: String) -> anyhow::Result<()> {
+        crate::core::legendary::LegendaryWrapper::uninstall(&app_name)?;
+        
+        // Update database to reflect uninstalled status
+        let db_path = crate::core::paths::get_data_dir().join("games.db");
+        if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+            let rom_id = format!("legendary-{}", app_name);
+            let conn = db.get_connection();
+            let _ = conn.execute("UPDATE roms SET is_installed = 0 WHERE id = ?1", [&rom_id]);
+            let _ = conn.execute("UPDATE metadata SET is_installed = 0 WHERE rom_id = ?1", [&rom_id]);
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone)]

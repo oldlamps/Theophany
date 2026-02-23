@@ -76,7 +76,7 @@ impl IGDBProvider {
 
         // Others
         if p.contains("arcade") || p.contains("mame") { return Some(52); }
-        if p.contains("windows") || p.contains("pc") || p.contains("dos") || p.contains("heroic") || p.contains("lutris") || p.contains("steam") || p.contains("linux") { return Some(6); }
+        if p.contains("windows") || p.contains("pc") || p.contains("dos") || p.contains("heroic") || p.contains("lutris") || p.contains("steam") || p.contains("linux") || p.contains("epic") || p.contains("legendary") { return Some(6); }
         if p.contains("amiga") { return Some(16); }
         if p.contains("commodore 64") || p == "c64" { return Some(15); }
         if p.contains("atari 2600") || p == "a2600" { return Some(59); }

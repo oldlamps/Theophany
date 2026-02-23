@@ -340,7 +340,13 @@ impl QAbstractListModel for GameListModel {
             },
             274 => QVariant::from(QString::from(rom.icon_path.as_deref().map(resolve_asset_path).unwrap_or_default())), // gameIcon
             275 => QVariant::from(QString::from(rom.background_path.as_deref().map(resolve_asset_path).unwrap_or_default())), // gameBackground
-            276 => QVariant::from(rom.is_installed.unwrap_or(true)), // gameIsInstalled role
+            276 => QVariant::from(rom.is_installed.unwrap_or_else(|| {
+                if rom.id.starts_with("steam-") || rom.id.starts_with("legendary-") {
+                    false
+                } else {
+                    true
+                }
+            })), // gameIsInstalled role
             _ => QVariant::default(),
         }
     }
@@ -1622,16 +1628,28 @@ impl GameListModel {
             let mut rom_filename = String::new();
             let mut rom_file_size: i64 = 0;
             
-            if let Ok(mut stmt) = conn.prepare("SELECT r.platform_id, p.platform_type, p.name, r.path, r.filename, r.file_size FROM roms r JOIN platforms p ON r.platform_id = p.id WHERE r.id = ?1") {
+            if let Ok(mut stmt) = conn.prepare("SELECT r.platform_id, p.platform_type, p.name, r.path, r.filename, r.file_size FROM roms r LEFT JOIN platforms p ON r.platform_id = p.id WHERE r.id = ?1") {
                 if let Ok(mut rows) = stmt.query([&rom_id]) {
                     if let Ok(Some(row)) = rows.next() {
-                         platform_id = row.get(0).unwrap_or_default();
-                         platform_type = row.get(1).unwrap_or_default();
-                         platform_name = row.get(2).unwrap_or_default();
-                         rom_path = row.get(3).unwrap_or_default();
-                         rom_filename = row.get(4).unwrap_or_default();
-                         rom_file_size = row.get(5).unwrap_or_default();
+                         platform_id = row.get::<_, Option<String>>(0).unwrap_or_default().unwrap_or_default();
+                         platform_type = row.get::<_, Option<String>>(1).unwrap_or_default().unwrap_or_default();
+                         platform_name = row.get::<_, Option<String>>(2).unwrap_or_default().unwrap_or_default();
+                         rom_path = row.get::<_, Option<String>>(3).unwrap_or_default().unwrap_or_default();
+                         rom_filename = row.get::<_, Option<String>>(4).unwrap_or_default().unwrap_or_default();
+                         rom_file_size = row.get::<_, Option<i64>>(5).unwrap_or_default().unwrap_or_default();
                     }
+                }
+            }
+            
+            if platform_id.is_empty() {
+                if rom_id.starts_with("legendary-") {
+                    platform_id = "epic".to_string();
+                    platform_type = "PC (Windows)".to_string();
+                    platform_name = "Epic Games".to_string();
+                } else if rom_id.starts_with("steam-") {
+                    platform_id = "steam".to_string();
+                    platform_type = "PC (Windows)".to_string();
+                    platform_name = "Steam".to_string();
                 }
             }
             
@@ -1669,6 +1687,10 @@ impl GameListModel {
                  map.insert("title".to_string(), serde_json::Value::String(String::new()));
                  map.insert("is_installed".to_string(), serde_json::json!(if rom_id.starts_with("steam-") {
                      crate::core::store::StoreManager::get_local_steam_appids().contains(&rom_id.replace("steam-", ""))
+                 } else if rom_id.starts_with("legendary-") {
+                     // For Legendary, if metadata is missing, we check if it's in the installed list
+                     // but for now we default to false as store games need explicit installation
+                     false
                  } else {
                      true
                  }));
@@ -2229,7 +2251,7 @@ impl GameListModel {
                 let cmd = format!("{} {}", exe, args);
                 // println!("DEBUG: Launching via UI selected profile: {}", cmd);
                 let wd = std::path::Path::new(&rom_path).parent().map(|p| p.to_string_lossy().to_string());
-                let _ = crate::core::launcher::Launcher::launch(&cmd, &rom_path, wd.as_deref());
+                let _ = crate::core::launcher::Launcher::launch(&cmd, &rom_path, wd.as_deref(), None, None);
                 
                 let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
                 let _ = conn.execute(
@@ -2398,20 +2420,15 @@ impl GameListModel {
                  let mut working_dir = std::path::Path::new(&rom_path).parent().map(|p| p.to_string_lossy().to_string());
 
                   let p_type = platform_type.unwrap_or_default();
+                  let is_pc = p_type.contains("PC") || rom_path.starts_with("epic://");
                   
-                  // Special handling for URIs and Native Apps - Launchers handle their own wrappers/runners
-                  if rom_path.starts_with("heroic://") || rom_path.starts_with("lutris:") || rom_path.ends_with(".desktop") {
-                      command_template = "%ROM%".to_string();
-                      // println!("DEBUG: Native/URI Launcher detected ({}). Bypassing wrappers/emulators.", rom_path);
-                  } 
-                  // Handle PC Platform types (Universal for Linux/Windows where applicable)
-                  else if p_type.contains("PC") {
-                      let mut env_prefix = String::new();
-                     let mut wrapper_cmd = String::new();
-                     let extra;
-                     let mut pre_script = None;
-                     let mut post_script = None;
+                  let mut env_prefix = String::new();
+                  let mut wrapper_cmd = String::new();
+                  let mut extra = String::new();
+                  let mut pre_script = None;
+                  let mut post_script = None;
 
+                  if is_pc {
                       // 1. Get platform defaults
                           let pc_config = db.get_pc_config(&rom_id).ok().flatten();
                           let platform_defaults = platform_pc_defaults.as_ref().and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok());
@@ -2452,13 +2469,27 @@ impl GameListModel {
 
                               extra = c.extra_args.clone().unwrap_or_default();
 
-                              if p_type == "PC (Windows)" {
+                              if p_type == "PC (Windows)" || rom_path.starts_with("epic://") {
                                   env_prefix.push_str("UMU_LOG=1 ");
                                   
-                                  if let Some(v) = c.umu_proton_version.as_ref().filter(|s| !s.trim().is_empty()) { env_prefix.push_str(&format!("PROTONPATH=\"{}\" ", v)); }
+                                  if let Some(v) = c.umu_proton_version.as_ref().filter(|s| !s.trim().is_empty()) { 
+                                      env_prefix.push_str(&format!("PROTONPATH=\"{}\" ", v)); 
+                                      if rom_path.starts_with("epic://") && !wrapper_cmd.contains("umu-run") {
+                                          wrapper_cmd.push_str("umu-run ");
+                                      }
+                                  }
                                   if let Some(s) = c.umu_store.as_ref().filter(|s| !s.trim().is_empty()) { env_prefix.push_str(&format!("UMU_STORE=\"{}\" ", s)); }
                                   if let Some(p) = c.wine_prefix.as_ref().filter(|s| !s.trim().is_empty()) { env_prefix.push_str(&format!("WINEPREFIX=\"{}\" ", p)); }
-                                  if let Some(uid) = c.umu_id.as_ref().filter(|s| !s.trim().is_empty()) { env_prefix.push_str(&format!("GAMEID=\"{}\" ", uid)); }
+                                  
+                                  if let Some(uid) = c.umu_id.as_ref().filter(|s| !s.trim().is_empty()) { 
+                                      env_prefix.push_str(&format!("GAMEID=\"{}\" ", uid)); 
+                                  } else if rom_path.starts_with("epic://") {
+                                      let app_id = rom_path.split('/').last().unwrap_or_default();
+                                      if !app_id.is_empty() {
+                                          env_prefix.push_str(&format!("GAMEID=\"{}\" ", app_id));
+                                      }
+                                  }
+
                                   if let Some(v) = c.proton_verb.as_ref().filter(|s| !s.trim().is_empty()) { env_prefix.push_str(&format!("PROTON_VERB=\"{}\" ", v)); }
 
                                   if c.disable_fixes.unwrap_or(false) { env_prefix.push_str("PROTONFIXES_DISABLE=1 "); }
@@ -2492,11 +2523,16 @@ impl GameListModel {
 
                               extra = platform_defaults.as_ref().and_then(|d| d["extra_args"].as_str().map(|s| s.to_string())).unwrap_or_default();
 
-                              if p_type == "PC (Windows)" {
+                              if p_type == "PC (Windows)" || rom_path.starts_with("epic://") {
                                   env_prefix.push_str("UMU_LOG=1 ");
                                   
                                   let proton = platform_defaults.as_ref().and_then(|d| d["umu_proton_version"].as_str().map(|s| s.to_string())).filter(|s| !s.trim().is_empty());
-                                  if let Some(v) = proton { env_prefix.push_str(&format!("PROTONPATH=\"{}\" ", v)); }
+                                  if let Some(v) = proton { 
+                                      env_prefix.push_str(&format!("PROTONPATH=\"{}\" ", v)); 
+                                      if rom_path.starts_with("epic://") && !wrapper_cmd.contains("umu-run") {
+                                          wrapper_cmd.push_str("umu-run ");
+                                      }
+                                  }
 
                                   let store = platform_defaults.as_ref().and_then(|d| d["umu_store"].as_str().map(|s| s.to_string())).filter(|s| !s.trim().is_empty());
                                   if let Some(s) = store { env_prefix.push_str(&format!("UMU_STORE=\"{}\" ", s)); }
@@ -2505,7 +2541,14 @@ impl GameListModel {
                                   if let Some(p) = prefix { env_prefix.push_str(&format!("WINEPREFIX=\"{}\" ", p)); }
 
                                   let umu_id = platform_defaults.as_ref().and_then(|d| d["umu_id"].as_str().map(|s| s.to_string())).filter(|s| !s.trim().is_empty());
-                                  if let Some(uid) = umu_id { env_prefix.push_str(&format!("GAMEID=\"{}\" ", uid)); }
+                                  if let Some(uid) = umu_id { 
+                                      env_prefix.push_str(&format!("GAMEID=\"{}\" ", uid)); 
+                                  } else if rom_path.starts_with("epic://") {
+                                      let app_id = rom_path.split('/').last().unwrap_or_default();
+                                      if !app_id.is_empty() {
+                                          env_prefix.push_str(&format!("GAMEID=\"{}\" ", app_id));
+                                      }
+                                  }
 
                                   let verb = platform_defaults.as_ref().and_then(|d| d["proton_verb"].as_str().map(|s| s.to_string())).filter(|s| !s.trim().is_empty());
                                   if let Some(v) = verb { env_prefix.push_str(&format!("PROTON_VERB=\"{}\" ", v)); }
@@ -2526,42 +2569,60 @@ impl GameListModel {
                                   }
                               }
                           }
+                  }
 
-                          // 3. Command Template Construction
-                          // println!("DEBUG Launch Info: EnvPrefix='{}', Wrapper='{}', Extra='{}', Template='{}'", env_prefix.trim(), wrapper_cmd.trim(), extra.trim(), command_template);
+                  // 3. Command Template Construction
+                  
+                  if rom_path.starts_with("heroic://") || rom_path.starts_with("lutris:") || rom_path.ends_with(".desktop") || rom_path.starts_with("steam://") || rom_path.starts_with("flatpak://") {
+                      // These still bypass wrappers and use %ROM%
+                      command_template = "%ROM%".to_string();
+                  } else if rom_path.starts_with("epic://") {
+                      command_template = "%ROM%".to_string();
+                      // Keep env_prefix and wrapper_cmd to pass to Launcher::launch via options
+                  } else if is_pc {
+                      let base_cmd = if command_template.is_empty() || command_template == "%ROM%" { "%ROM%" } else { &command_template };
+                      
+                      if p_type == "PC (Windows)" {
+                          let runner = if base_cmd.contains("umu-run") { "" } else { "umu-run " };
+                          command_template = format!("{} {}{}{} {}", env_prefix.trim(), wrapper_cmd, runner, base_cmd, extra).trim().to_string();
+                      } else {
+                          // PC (Linux)
+                          command_template = format!("{} {} {} {}", env_prefix.trim(), wrapper_cmd, base_cmd, extra).trim().to_string();
+                      }
 
-                          let base_cmd = if command_template.is_empty() || command_template == "%ROM%" { "%ROM%" } else { &command_template };
-                          
-                          if p_type == "PC (Windows)" {
-                              let runner = if base_cmd.contains("umu-run") { "" } else { "umu-run " };
-                              command_template = format!("{} {}{}{} {}", env_prefix.trim(), wrapper_cmd, runner, base_cmd, extra).trim().to_string();
+                      // Envs and wrappers are already integrated into command_template for regular PC Games
+                      env_prefix.clear();
+                      wrapper_cmd.clear();
+                  }
 
-                          } else {
-                              // PC (Linux)
-                              command_template = format!("{} {} {} {}", env_prefix.trim(), wrapper_cmd, base_cmd, extra).trim().to_string();
+                  // Wrap with scripts if present
+                  let mut final_cmd = command_template.clone();
+                  if let Some(pre) = pre_script {
+                      final_cmd = format!("{} && {}", pre, final_cmd);
+                  }
+                  if let Some(post) = post_script {
+                      final_cmd = format!("{} ; {}", final_cmd, post);
+                  }
+                  command_template = final_cmd;
 
-                          }
-
-                          // Wrap with scripts if present
-                          let mut final_cmd = command_template.clone();
-                          if let Some(pre) = pre_script {
-                              final_cmd = format!("{} && {}", pre, final_cmd);
-                          }
-                          if let Some(post) = post_script {
-                              final_cmd = format!("{} ; {}", final_cmd, post);
-                          }
-                          command_template = final_cmd;
-
-                     // Clean up double spaces
-                     command_template = command_template.split_whitespace().collect::<Vec<_>>().join(" ");
+                  // Clean up double spaces if not empty
+                  if !command_template.is_empty() {
+                      // Avoid this breaking quoted strings by doing basic multi-space to single space
+                      while command_template.contains("  ") {
+                          command_template = command_template.replace("  ", " ");
+                      }
                   }
 
                  if command_template.is_empty() {
                      log::error!("Launch failed: No command template or emulator defined for this platform.");
                      return;
                  }
+                 
+                 let env_vars_opt = if env_prefix.trim().is_empty() { None } else { Some(env_prefix.as_str()) };
+                 let wrapper_opt = if wrapper_cmd.trim().is_empty() { None } else { Some(wrapper_cmd.as_str()) };
+
                  // Launch process
-                 match Launcher::launch(&command_template, &rom_path, working_dir.as_deref()) {
+                 match Launcher::launch(&command_template, &rom_path, working_dir.as_deref(), env_vars_opt, wrapper_opt) {
                      Ok(mut child) => {
                          log::info!("Launched successfully.");
                          

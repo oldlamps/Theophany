@@ -3,7 +3,7 @@ use std::process::Command;
 pub struct Launcher;
 
 impl Launcher {
-    pub fn launch(command_template: &str, rom_path: &str, mut working_dir: Option<&str>) -> Result<std::process::Child, String> {
+    pub fn launch(command_template: &str, rom_path: &str, mut working_dir: Option<&str>, env_vars: Option<&str>, wrapper: Option<&str>) -> Result<std::process::Child, String> {
         if command_template.trim().is_empty() {
             return Err("Command template is empty.".to_string());
         }
@@ -30,6 +30,29 @@ impl Launcher {
             } else {
                 launch_cmd
             }
+        } else if rom_path.starts_with("epic://") {
+            let app_id = rom_path.split('/').last().unwrap_or(rom_path);
+            let binary = crate::core::legendary::LegendaryWrapper::find_binary()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "legendary".to_string());
+                
+            let mut extra_args = String::new();
+            let wrapper_arg = match wrapper {
+                Some(w) if !w.trim().is_empty() => {
+                    // When using a wrapper (like umu-run), we usually want legendary 
+                    // to not prepend 'wine' itself, as the wrapper handles it.
+                    extra_args.push_str(" --no-wine");
+                    format!(" --wrapper \"{}\"", w.trim())
+                },
+                _ => String::new(),
+            };
+                
+            let launch_cmd = format!("{} launch \"{}\"{}{}", binary, app_id, wrapper_arg, extra_args);
+            if command_template.contains("%ROM%") {
+                command_template.replace("%ROM%", &launch_cmd)
+            } else {
+                launch_cmd
+            }
         } else if rom_path.ends_with(".desktop") {
             // Parse desktop file for direct execution
             if let Some(exec) = Self::parse_desktop_exec(rom_path) {
@@ -43,7 +66,13 @@ impl Launcher {
         };
 
         let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg(&cmd_string);
+        
+        let final_cmd_string = match env_vars {
+            Some(env) if !env.trim().is_empty() => format!("{} {}", env.trim(), cmd_string),
+            _ => cmd_string,
+        };
+        
+        cmd.arg("-c").arg(&final_cmd_string);
 
         if let Some(wd) = working_dir {
             if !wd.is_empty() && std::path::Path::new(wd).exists() {

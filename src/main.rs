@@ -79,8 +79,8 @@ fn main() {
     // Force Basic style to avoid platform-specific QML bugs (like KDE's ComboBox positionToRectangle error)
     std::env::set_var("QT_QUICK_CONTROLS_STYLE", "Basic");
 
-    // Enable logging
-    env_logger::init();
+    // Enable logging with default level 'info' if RUST_LOG is not set
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     // Register struct with QML
     qml_register_type::<crate::bridge::game_model::GameListModel>(

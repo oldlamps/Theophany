@@ -14,5 +14,6 @@ pub mod ra_mapping;
 pub mod asset_scanner;
 pub mod store;
 pub mod metadata_manager;
+pub mod legendary;
 pub mod importer;
 pub mod runtime;
