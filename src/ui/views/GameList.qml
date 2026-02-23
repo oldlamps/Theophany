@@ -382,6 +382,7 @@ FocusScope {
                     Item {
                         x: rootRoot.getX("icon"); width: colWidths.icon; height: parent.height
                         Image {
+                            id: listGameIcon
                             anchors.centerIn: parent
                             width: Math.min(parent.width, 24); height: 24
                             source: gameIcon
@@ -390,6 +391,31 @@ FocusScope {
                             cache: true
                             asynchronous: true
                             sourceSize: Qt.size(24, 24)
+                            opacity: (typeof gameIsInstalled !== "undefined" && !gameIsInstalled) ? 0.5 : 1.0
+                        }
+
+                        // Cloud badge for uninstalled games
+                        Rectangle {
+                            visible: typeof gameIsInstalled !== "undefined" && !gameIsInstalled
+                            anchors.bottom: parent.bottom
+                            anchors.right: parent.right
+                            anchors.bottomMargin: 2
+                            anchors.rightMargin: 0
+                            width: 16; height: 16
+                            radius: 8
+                            color: Qt.rgba(0, 0, 0, 0.65)
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "☁"
+                                color: "white"
+                                font.pixelSize: 9
+                                lineHeight: 1.0
+                                lineHeightMode: Text.FixedHeight
+                                height: 14
+                                verticalAlignment: Text.AlignVCenter
+                                horizontalAlignment: Text.AlignHCenter
+                            }
                         }
                     }
 
@@ -575,6 +601,14 @@ FocusScope {
                                 iconSource: "🚀"
                                 visible: rootRoot.selectedIndices.length === 1
                                 onTriggered: window.launchGame(gameId)
+                            }
+                            TheophanyMenuItem {
+                                text: "Uninstall Game"
+                                iconSource: "🗑️"
+                                visible: rootRoot.selectedIndices.length === 1
+                                         && (typeof gamePlatformType !== "undefined" && gamePlatformType.toLowerCase() === "steam")
+                                         && (typeof gameIsInstalled !== "undefined" && gameIsInstalled)
+                                onTriggered: gameModel.uninstallSteamGame(gameId)
                             }
                             TheophanyMenuSeparator { visible: rootRoot.selectedIndices.length === 1 }
                             TheophanyMenu {

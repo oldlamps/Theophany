@@ -871,7 +871,12 @@ Dialog {
                                             anchors.fill: parent
                                             anchors.margins: 20
                                             spacing: 20
-                                            Text { text: "♨️"; font.pixelSize: 32 }
+                                            Image {
+                                                source: "file://" + appInfo.getAssetsDir() + "/systems/steam.png"
+                                                Layout.preferredWidth: 50
+                                                Layout.preferredHeight: 50
+                                                fillMode: Image.PreserveAspectFit
+                                            }
                                             ColumnLayout {
                                                 Label { text: "Steam Account"; font.bold: true; font.pixelSize: 18; color: Theme.text }
                                                 Label { text: "Fetch uninstalled games from your public Steam library."; color: Theme.secondaryText; font.pixelSize: 12 }
@@ -893,7 +898,7 @@ Dialog {
                                                 id: steamIdField
                                                 Layout.fillWidth: true
                                                 text: appSettings.steamId
-                                                onTextChanged: appSettings.steamId = text
+                                                onEditingFinished: appSettings.steamId = text
                                             }
                                             TheophanyButton {
                                                 text: "Auto-detect"
@@ -913,7 +918,7 @@ Dialog {
                                             Layout.fillWidth: true
                                             echoMode: TextInput.Password
                                             text: appSettings.steamApiKey
-                                            onTextChanged: appSettings.steamApiKey = text
+                                            onEditingFinished: appSettings.steamApiKey = text
                                         }
                                         
                                         Item { Layout.fillWidth: true }

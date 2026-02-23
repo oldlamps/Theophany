@@ -66,6 +66,13 @@ impl BulkImporter {
                 if let Some(total_time) = final_rom.total_play_time {
                     meta.total_play_time = total_time;
                 }
+                meta.is_installed = final_rom.is_installed.unwrap_or_else(|| {
+                    if final_rom.id.starts_with("steam-") {
+                        crate::core::store::StoreManager::get_local_steam_appids().contains(&final_rom.id.replace("steam-", ""))
+                    } else {
+                        true
+                    }
+                });
 
                 // Sidecar Recovery
                 let mut rom_stem_temp = Path::new(&final_rom.filename)

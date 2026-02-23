@@ -69,6 +69,7 @@ impl DbManager {
                 achievement_unlocked INTEGER DEFAULT 0,
                 ra_game_id INTEGER,
                 ra_recent_badges TEXT,
+                is_installed INTEGER DEFAULT 1,
                 FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
             );
 
@@ -187,7 +188,7 @@ impl DbManager {
                     rom_id TEXT PRIMARY KEY,
                     title TEXT, description TEXT, rating REAL, release_date TEXT, developer TEXT, publisher TEXT, genre TEXT, tags TEXT, region TEXT,
                     is_favorite INTEGER DEFAULT 0, play_count INTEGER DEFAULT 0, last_played INTEGER, total_play_time INTEGER DEFAULT 0,
-                    achievement_count INTEGER DEFAULT 0, achievement_unlocked INTEGER DEFAULT 0, ra_game_id INTEGER, ra_recent_badges TEXT,
+                    achievement_count INTEGER DEFAULT 0, achievement_unlocked INTEGER DEFAULT 0, ra_game_id INTEGER, ra_recent_badges TEXT, is_installed INTEGER DEFAULT 1,
                     FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
                  );
                  INSERT OR IGNORE INTO metadata_new SELECT * FROM metadata;
@@ -310,6 +311,16 @@ impl DbManager {
         if !has_default_emulator_id {
             log::info!("[Migration] Adding default_emulator_id column to platforms table...");
             let _ = self.conn.execute("ALTER TABLE platforms ADD COLUMN default_emulator_id TEXT", []);
+        }
+
+        // Migration: Add is_installed to metadata if missing
+        let has_is_installed = self.conn.prepare("SELECT is_installed FROM metadata LIMIT 1")
+            .is_ok();
+        
+        if !has_is_installed {
+            log::info!("[Migration] Adding is_installed column to metadata table...");
+            let _ = self.conn.execute("ALTER TABLE metadata ADD COLUMN is_installed INTEGER DEFAULT 1", []);
+            let _ = self.conn.execute("UPDATE metadata SET is_installed = 1 WHERE is_installed IS NULL", []);
         }
 
         Ok(())
@@ -506,7 +517,7 @@ impl DbManager {
     }
 
     pub fn get_all_roms(&self) -> Result<Vec<Rom>> {
-        let mut stmt = self.conn.prepare("SELECT id, platform_id, path, filename, file_size, hash_sha1, date_added, boxart_path, icon_path, background_path FROM roms")?;
+        let mut stmt = self.conn.prepare("SELECT r.id, r.platform_id, r.path, r.filename, r.file_size, r.hash_sha1, r.date_added, r.boxart_path, r.icon_path, r.background_path, m.is_installed FROM roms r LEFT JOIN metadata m ON r.id = m.rom_id")?;
         let rom_iter = stmt.query_map([], |row| {
             Ok(Rom {
                 id: row.get(0)?,
@@ -527,6 +538,14 @@ impl DbManager {
                 total_play_time: None,
                 last_played: None,
                 platform_icon: None,
+                is_installed: Some(row.get::<_, Option<i32>>(10).ok().flatten().map(|v| v != 0).unwrap_or_else(|| {
+                    let r_id: String = row.get(0).unwrap_or_default();
+                    if r_id.starts_with("steam-") {
+                        crate::core::store::StoreManager::get_local_steam_appids().contains(&r_id.replace("steam-", ""))
+                    } else {
+                        true
+                    }
+                })),
                 is_favorite: None,
                 genre: None,
                 developer: None,
@@ -546,7 +565,7 @@ impl DbManager {
     }
 
     pub fn get_roms_by_platform(&self, platform_id: &str) -> Result<Vec<Rom>> {
-        let mut stmt = self.conn.prepare("SELECT id, platform_id, path, filename, file_size, hash_sha1, date_added, boxart_path, icon_path, background_path FROM roms WHERE platform_id = ?1")?;
+        let mut stmt = self.conn.prepare("SELECT r.id, r.platform_id, r.path, r.filename, r.file_size, r.hash_sha1, r.date_added, r.boxart_path, r.icon_path, r.background_path, m.is_installed FROM roms r LEFT JOIN metadata m ON r.id = m.rom_id WHERE r.platform_id = ?1")?;
         let rom_iter = stmt.query_map(params![platform_id], |row| {
             Ok(Rom {
                 id: row.get(0)?,
@@ -575,6 +594,14 @@ impl DbManager {
                 tags: None,
                 release_date: None,
                 description: None,
+                is_installed: Some(row.get::<_, Option<i32>>(10).ok().flatten().map(|v| v != 0).unwrap_or_else(|| {
+                    let r_id: String = row.get(0).unwrap_or_default();
+                    if r_id.starts_with("steam-") {
+                        crate::core::store::StoreManager::get_local_steam_appids().contains(&r_id.replace("steam-", ""))
+                    } else {
+                        true
+                    }
+                })),
             })
         })?;
 
@@ -586,7 +613,7 @@ impl DbManager {
     }
 
     pub fn get_metadata(&self, rom_id: &str) -> Result<Option<crate::core::models::GameMetadata>> {
-        let mut stmt = self.conn.prepare("SELECT rom_id, title, description, rating, release_date, developer, publisher, genre, tags, region, is_favorite, play_count, last_played, total_play_time, achievement_count, achievement_unlocked, ra_game_id, ra_recent_badges FROM metadata WHERE rom_id = ?1")?;
+        let mut stmt = self.conn.prepare("SELECT rom_id, title, description, rating, release_date, developer, publisher, genre, tags, region, is_favorite, play_count, last_played, total_play_time, achievement_count, achievement_unlocked, ra_game_id, ra_recent_badges, is_installed FROM metadata WHERE rom_id = ?1")?;
         
         let mut rows = stmt.query(params![rom_id])?;
         
@@ -619,6 +646,7 @@ impl DbManager {
                 achievement_unlocked: row.get(15).unwrap_or(Some(0)),
                 ra_game_id: row.get::<_, Option<u64>>(16).unwrap_or(None),
                 ra_recent_badges: row.get(17).unwrap_or(None),
+                is_installed: row.get::<_, i32>(18)? != 0,
                 resources: Some(resources),
             }))
         } else {
@@ -772,8 +800,8 @@ impl DbManager {
 
     pub fn insert_metadata(&self, meta: &crate::core::models::GameMetadata) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO metadata (rom_id, title, description, rating, release_date, developer, publisher, genre, tags, region, is_favorite, play_count, last_played, total_play_time, achievement_count, achievement_unlocked, ra_game_id, ra_recent_badges)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+            "INSERT OR REPLACE INTO metadata (rom_id, title, description, rating, release_date, developer, publisher, genre, tags, region, is_favorite, play_count, last_played, total_play_time, achievement_count, achievement_unlocked, ra_game_id, ra_recent_badges, is_installed)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
             params![
                 meta.rom_id,
                 meta.title,
@@ -792,7 +820,8 @@ impl DbManager {
                 meta.achievement_count.unwrap_or(0),
                 meta.achievement_unlocked.unwrap_or(0),
                 meta.ra_game_id,
-                meta.ra_recent_badges
+                meta.ra_recent_badges,
+                meta.is_installed as i32
             ],
         )?;
 
@@ -1218,7 +1247,8 @@ impl DbManager {
                     m.title, m.region, m.play_count, m.total_play_time, m.last_played, p.icon, m.is_favorite,
                     COALESCE(r.boxart_path, a_box.local_path), 
                     COALESCE(r.icon_path, a_icon.local_path),
-                    COALESCE(r.background_path, a_bg.local_path, a_ss.local_path)
+                    COALESCE(r.background_path, a_bg.local_path, a_ss.local_path),
+                    m.is_installed
              FROM roms r
              JOIN platforms p ON r.platform_id = p.id
              LEFT JOIN metadata m ON r.id = m.rom_id 
@@ -1345,6 +1375,7 @@ impl DbManager {
             boxart_path: row.get(16).ok(), 
             icon_path: row.get(17).ok(),
             background_path: row.get(18).ok(),
+            is_installed: Some(row.get::<_, i32>(19).unwrap_or(1) != 0),
             genre: None,
             developer: None,
             publisher: None,

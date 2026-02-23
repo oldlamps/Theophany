@@ -16,6 +16,7 @@ Rectangle {
     property alias publisherBox: publisherBox
     property alias yearBox: yearBox
     property alias ratingBox: ratingBox
+    property alias installedButton: installedButton
     property alias favButton: favButton
     
     // property alias searchFieldRef: searchField // Removed, moving to Top Bar
@@ -28,6 +29,7 @@ Rectangle {
                                        (publisherBox.currentIndex > 0) || 
                                        (yearBox.currentIndex > 0) || 
                                        (ratingBox.currentIndex > 0) || 
+                                       (installedButton.checked) ||
                                        (favButton.checked)
 
     function clearFilters() {
@@ -37,6 +39,7 @@ Rectangle {
         publisherBox.currentIndex = 0
         yearBox.currentIndex = 0
         ratingBox.currentIndex = 0
+        installedButton.checked = false
         favButton.checked = false
         
         if (gameModel) {
@@ -46,6 +49,7 @@ Rectangle {
             gameModel.setPublisherFilter("All Publishers")
             gameModel.setYearFilter("All Years")
             gameModel.setRatingFilter(0)
+            gameModel.setInstalledOnly(false)
             gameModel.setFavoritesOnly(false)
         }
     }
@@ -160,6 +164,22 @@ Rectangle {
                     // Rust divides by 10.0 for the f32 comparison (e.g., 10 -> 1.0)
                     gameModel.setRatingFilter(index * 10)
                 }
+            }
+        }
+
+        // Installed Toggle
+        TheophanyButton {
+            id: installedButton
+            checkable: true
+            text: "☁"
+            font.pixelSize: 18
+            Layout.preferredWidth: 40
+            Layout.preferredHeight: 35
+            primary: checked
+            tooltipText: checked ? "Show All Games" : "Show Installed Only"
+            
+            onClicked: {
+                if (gameModel) gameModel.setInstalledOnly(checked)
             }
         }
 

@@ -73,7 +73,9 @@ pub struct Rom {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub release_date: Option<String>, // Changed to String
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>, // Added for transport
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_installed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -96,6 +98,7 @@ pub struct GameMetadata {
     pub achievement_unlocked: Option<i32>,
     pub ra_game_id: Option<u64>,
     pub ra_recent_badges: Option<String>, // JSON list of badge names
+    pub is_installed: bool,
     pub resources: Option<Vec<GameResource>>,
 }
 

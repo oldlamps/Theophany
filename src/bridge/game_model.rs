@@ -117,6 +117,7 @@ pub struct GameListModel {
     current_search_text: RefCell<String>,
     current_platform_type_filter: RefCell<Option<String>>,
     current_recent_only: RefCell<bool>,
+    current_installed_only: RefCell<bool>,
     
     pub sortMethod: qt_property!(QString; NOTIFY sortMethodChanged),
     pub sortMethodChanged: qt_signal!(),
@@ -179,6 +180,7 @@ pub struct GameListModel {
     setSortMethod: qt_method!(fn(&mut self, method: String)),
     setRecentOnly: qt_method!(fn(&mut self, recent_only: bool)),
     setSearchFilter: qt_method!(fn(&mut self, text: String)),
+    setInstalledOnly: qt_method!(fn(&mut self, installed_only: bool)),
     setPlatformTypeFilter: qt_method!(fn(&mut self, platform_type: String)),
     toggleFavorite: qt_method!(fn(&mut self, rom_id: String)),
     startBulkScrape: qt_method!(fn(&mut self, json_ids: String, json_categories: String, json_fields: String, min_delay_ms: i32, max_delay_ms: i32, ra_user: String, ra_key: String, metadata_provider: String, prefer_ra: bool, ollama_url: String, ollama_model: String, gemini_key: String, openai_key: String, llm_provider: String)),
@@ -207,6 +209,7 @@ pub struct GameListModel {
     getGameId: qt_method!(fn(&mut self, row: i32) -> QString),
     getRowById: qt_method!(fn(&mut self, rom_id: String) -> i32),
     launchGame: qt_method!(fn(&mut self, rom_id: String)),
+    uninstallSteamGame: qt_method!(fn(&mut self, rom_id: String)),
     getEmulatorProfiles: qt_method!(fn(&mut self, platform_id: String) -> QString),
     launchWithProfile: qt_method!(fn(&mut self, rom_id: String, profile_id: String)),
     rescanSystem: qt_method!(fn(&mut self, platform_id: String)),
@@ -230,7 +233,7 @@ pub struct GameListModel {
 
     getPlatformTypes: qt_method!(fn(&mut self) -> QVariantList),
 
-    batchSetFilters: qt_method!(fn(&mut self, platform_id: String, favorites: bool, sort: String, recent_only: bool)),
+    batchSetFilters: qt_method!(fn(&mut self, platform_id: String, favorites: bool, sort: String, recent_only: bool, installed_only: bool)),
     checkAsyncResponses: qt_method!(fn(&mut self)),
     
     // System Import (New Flow)
@@ -335,6 +338,7 @@ impl QAbstractListModel for GameListModel {
             },
             274 => QVariant::from(QString::from(rom.icon_path.as_deref().map(resolve_asset_path).unwrap_or_default())), // gameIcon
             275 => QVariant::from(QString::from(rom.background_path.as_deref().map(resolve_asset_path).unwrap_or_default())), // gameBackground
+            276 => QVariant::from(rom.is_installed.unwrap_or(true)), // gameIsInstalled role
             _ => QVariant::default(),
         }
     }
@@ -361,6 +365,7 @@ impl QAbstractListModel for GameListModel {
         roles.insert(273, QByteArray::from("gameReleaseYear"));
         roles.insert(274, QByteArray::from("gameIcon"));
         roles.insert(275, QByteArray::from("gameBackground"));
+        roles.insert(276, QByteArray::from("gameIsInstalled"));
         roles
     }
 }
@@ -435,6 +440,7 @@ impl GameListModel {
         let platform_type_filter = self.current_platform_type_filter.borrow().clone();
         let recent_only = *self.current_recent_only.borrow();
         let ignore_the = *self.ignore_the_in_sort.borrow();
+        let installed_only = *self.current_installed_only.borrow();
 
         // Unique ID for this request to avoid race conditions
         let my_id = {
@@ -466,7 +472,7 @@ impl GameListModel {
                     let conn = db.get_connection();
                 // ... logic to build query ...
                 // I will use a simplified version for this chunk but it will be full content
-                let mut query = String::from("SELECT r.id, r.platform_id, r.path, r.filename, m.title, m.region, p.name, p.platform_type, COALESCE(r.boxart_path, a.local_path), r.date_added, m.play_count, m.total_play_time, m.last_played, p.icon, m.is_favorite, m.genre, m.developer, m.publisher, m.rating, m.tags, m.release_date, COALESCE(r.icon_path, a_icon.local_path), COALESCE(r.background_path, a_bg.local_path, a_ss.local_path)
+                let mut query = String::from("SELECT r.id, r.platform_id, r.path, r.filename, m.title, m.region, p.name, p.platform_type, COALESCE(r.boxart_path, a.local_path), r.date_added, m.play_count, m.total_play_time, m.last_played, p.icon, m.is_favorite, m.genre, m.developer, m.publisher, m.rating, m.tags, m.release_date, COALESCE(r.icon_path, a_icon.local_path), COALESCE(r.background_path, a_bg.local_path, a_ss.local_path), m.is_installed
                                               FROM roms r 
                                               LEFT JOIN metadata m ON r.id = m.rom_id 
                                               JOIN platforms p ON r.platform_id = p.id 
@@ -482,6 +488,10 @@ impl GameListModel {
                 }
 
                 query.push_str(" WHERE 1=1");
+
+                if installed_only {
+                    query.push_str(" AND m.is_installed = 1");
+                }
                 
                 let mut params: Vec<Box<dyn ToSql>> = Vec::new();
                 
@@ -649,6 +659,7 @@ impl GameListModel {
                             },
                             icon_path: row.get(21)?,
                             background_path: row.get(22)?,
+                            is_installed: Some(row.get::<_, Option<i32>>(23).ok().flatten().unwrap_or(1) != 0),
                             description: None,
                         })
                     }) {
@@ -789,7 +800,16 @@ impl GameListModel {
     }
 
     fn setGenreFilter(&mut self, genre: String) {
-        *self.current_genre_filter.borrow_mut() = if genre.is_empty() || genre == "All Genres" { None } else { Some(genre) };
+        let normalized = if genre.is_empty() || genre == "All Genres" { None } else { Some(genre) };
+        if *self.current_genre_filter.borrow() == normalized { return; }
+        *self.current_genre_filter.borrow_mut() = normalized;
+        self.refresh();
+    }
+
+    fn setInstalledOnly(&mut self, installed_only: bool) {
+        if *self.current_installed_only.borrow() == installed_only { return; }
+        log::info!("[GameListModel] Setting installed only filter: {}", installed_only);
+        *self.current_installed_only.borrow_mut() = installed_only;
         self.refresh();
     }
 
@@ -868,7 +888,7 @@ impl GameListModel {
             } else {
                 // Create basic metadata if it doesn't exist
                 let meta = crate::core::models::GameMetadata {
-                    rom_id,
+                    rom_id: rom_id.clone(),
                     title: None,
                     description: None,
                     rating: None,
@@ -886,6 +906,11 @@ impl GameListModel {
                     achievement_unlocked: None,
                     ra_game_id: None,
                     ra_recent_badges: None,
+                    is_installed: if rom_id.starts_with("steam-") {
+                        crate::core::store::StoreManager::get_local_steam_appids().contains(&rom_id.replace("steam-", ""))
+                    } else {
+                        true
+                    },
                     resources: None,
                 };
                 let _ = db.insert_metadata(&meta);
@@ -936,13 +961,14 @@ impl GameListModel {
     }
 
     #[allow(non_snake_case)]
-    fn batchSetFilters(&mut self, platform_id: String, favorites: bool, sort: String, recent_only: bool) {
-        log::info!("[GameListModel] batchSetFilters called for platform: {}", platform_id);
+    fn batchSetFilters(&mut self, platform_id: String, favorites: bool, sort: String, recent_only: bool, installed_only: bool) {
+        log::info!("[GameListModel] batchSetFilters called for platform: {}. InstalledOnly: {}", platform_id, installed_only);
         let p_filter = if platform_id.is_empty() { None } else { Some(platform_id) };
         *self.current_platform_filter.borrow_mut() = p_filter.clone();
         *self.current_favorites_only.borrow_mut() = favorites;
         *self.current_sort_method.borrow_mut() = sort;
         *self.current_recent_only.borrow_mut() = recent_only;
+        *self.current_installed_only.borrow_mut() = installed_only;
         *self.current_platform_type_filter.borrow_mut() = None;
         *self.current_playlist_filter.borrow_mut() = None;
 
@@ -985,6 +1011,11 @@ impl GameListModel {
                         region: None, is_favorite: false, play_count: 0, last_played: None,
                         total_play_time: 0, achievement_count: None, achievement_unlocked: None, ra_game_id: None,
                         ra_recent_badges: None,
+                        is_installed: if rom_id.starts_with("steam-") {
+                            crate::core::store::StoreManager::get_local_steam_appids().contains(&rom_id.replace("steam-", ""))
+                        } else {
+                            true
+                        },
                         resources: None,
                     }
                 };
@@ -1141,6 +1172,7 @@ impl GameListModel {
                         date_added: None, play_count: None, total_play_time: None, last_played: None,
                         platform_icon: None, is_favorite: None, genre: None, developer: None, publisher: None,
                         rating: None, tags: None, icon_path: None, background_path: None, release_date: None, description: None,
+                        is_installed: Some(true),
                     });
                 }
             }
@@ -1402,6 +1434,7 @@ impl GameListModel {
                         icon_path: None,
                         background_path: None,
                         description: None,
+                        is_installed: Some(true),
                     };
 
                     if platform_folder == "windows" || platform_folder == "PC (Windows)" {
@@ -1629,8 +1662,14 @@ impl GameListModel {
                 map.insert("achievement_count".to_string(), serde_json::json!(meta.achievement_count.unwrap_or(0)));
                 map.insert("achievement_unlocked".to_string(), serde_json::json!(meta.achievement_unlocked.unwrap_or(0)));
                 map.insert("ra_recent_badges".to_string(), serde_json::json!(meta.ra_recent_badges.unwrap_or("[]".to_string())));
+                map.insert("is_installed".to_string(), serde_json::json!(meta.is_installed));
             } else {
                  map.insert("title".to_string(), serde_json::Value::String(String::new()));
+                 map.insert("is_installed".to_string(), serde_json::json!(if rom_id.starts_with("steam-") {
+                     crate::core::store::StoreManager::get_local_steam_appids().contains(&rom_id.replace("steam-", ""))
+                 } else {
+                     true
+                 }));
             }
 
             let mut assets_map = serde_json::Map::new();
@@ -1769,6 +1808,11 @@ impl GameListModel {
                       achievement_count: None, achievement_unlocked: None,
                       ra_game_id: None,
                       ra_recent_badges: None,
+                      is_installed: if rom_id.starts_with("steam-") {
+                          crate::core::store::StoreManager::get_local_steam_appids().contains(&rom_id.replace("steam-", ""))
+                      } else {
+                          true
+                      },
                       resources: None,
                   });
 
@@ -2242,6 +2286,14 @@ impl GameListModel {
                         if !updates.is_empty() {
                             let _ = db.bulk_update_playtimes(&updates);
                         }
+
+                        // Sync is_installed status
+                        for remote_rom in &scanned_roms {
+                            if let Some(existing_id) = existing_map.get(&remote_rom.path) {
+                                let installed = remote_rom.is_installed.unwrap_or(true);
+                                let _ = db.get_connection().execute("UPDATE metadata SET is_installed = ?1 WHERE rom_id = ?2", rusqlite::params![installed as i32, existing_id]);
+                            }
+                        }
                     }
 
                     let ignored_paths = db.get_ignore_list(&platform_id).unwrap_or_default();
@@ -2563,6 +2615,7 @@ impl GameListModel {
                          
                          // Spawn a thread to wait for the process and track time
                          let db_path_thread = path_str.clone();
+                         let rom_id_thread = rom_id_clone.clone();
                          let tx = self.tx.borrow().clone();
                          std::thread::spawn(move || {
 
@@ -2580,7 +2633,7 @@ impl GameListModel {
                              if let Ok(db) = DbManager::open(&db_path_thread) {
 
                                  // We need to fetch existing metadata first to increment
-                                 if let Ok(Some(mut meta)) = db.get_metadata(&rom_id_clone) {
+                                 if let Ok(Some(mut meta)) = db.get_metadata(&rom_id_thread) {
                                      meta.play_count += 1;
                                      meta.total_play_time += duration;
                                      meta.last_played = Some(
@@ -2593,7 +2646,7 @@ impl GameListModel {
                                      if let Err(e) = db.insert_metadata(&meta) {
                                          log::error!("Failed to update playtime metadata: {}", e);
                                      } else {
-                                         log::info!("Playtime updated for {}.", rom_id_clone);
+                                         log::info!("Playtime updated for {}.", rom_id_thread);
                                      }
                                  } else {
                                      // Create new metadata if missing (unlikely if game exists)
@@ -2604,7 +2657,7 @@ impl GameListModel {
                                          .as_secs() as i64;
                                          
                                      let meta = crate::core::models::GameMetadata {
-                                         rom_id: rom_id_clone.clone(),
+                                         rom_id: rom_id_thread.clone(),
                                          title: None, description: None, rating: None, release_date: None, developer: None, 
                                          publisher: None, genre: None, tags: None, region: None, 
                                          is_favorite: false,
@@ -2615,6 +2668,11 @@ impl GameListModel {
                                          achievement_unlocked: None,
                                          ra_game_id: None,
                                          ra_recent_badges: None,
+                                           is_installed: if rom_id_thread.starts_with("steam-") {
+                                               crate::core::store::StoreManager::get_local_steam_appids().contains(&rom_id_thread.replace("steam-", ""))
+                                           } else {
+                                               true
+                                           },
                                          resources: None,
                                      };
                                      if let Err(e) = db.insert_metadata(&meta) {
@@ -2624,7 +2682,7 @@ impl GameListModel {
                                  
                                  // Signal UI to update stats
                                  if let Some(sender) = tx {
-                                     let _ = sender.send(AsyncResponse::PlaytimeUpdated(rom_id_clone));
+                                     let _ = sender.send(AsyncResponse::PlaytimeUpdated(rom_id_thread));
                                  }
                              }
                          });
@@ -2635,6 +2693,49 @@ impl GameListModel {
                  log::error!("Could not find launch info for ROM: {}", rom_id);
              }
         }
+    }
+
+    #[allow(non_snake_case)]
+    fn uninstallSteamGame(&mut self, rom_id: String) {
+        // Only valid for Steam games
+        if !rom_id.starts_with("steam-") {
+            log::warn!("[uninstallSteamGame] Called on non-Steam game: {}", rom_id);
+            return;
+        }
+
+        let appid = rom_id.replacen("steam-", "", 1);
+        let steam_uri = format!("steam://uninstall/{}", appid);
+
+        // Open the Steam uninstall dialog
+        log::info!("[uninstallSteamGame] Opening Steam uninstall URI: {}", steam_uri);
+        let _ = Command::new("xdg-open").arg(&steam_uri).spawn();
+
+        // Immediately mark as uninstalled in the DB
+        let db_path = self.db_path.borrow().clone();
+        if let Ok(db) = DbManager::open(&db_path) {
+            let result = db.get_connection().execute(
+                "UPDATE metadata SET is_installed = 0 WHERE rom_id = ?1",
+                rusqlite::params![rom_id],
+            );
+            match result {
+                Ok(rows) => log::info!("[uninstallSteamGame] Marked uninstalled in DB ({} rows)", rows),
+                Err(e) => log::error!("[uninstallSteamGame] DB update failed: {}", e),
+            }
+        }
+
+        // Update the in-memory roms vec so the cloud icon shows immediately
+        {
+            let mut roms = self.roms.borrow_mut();
+            if let Some(rom) = roms.iter_mut().find(|r| r.id == rom_id) {
+                rom.is_installed = Some(false);
+            }
+        }
+
+        // Notify QML that this row changed
+        self.gameDataChanged(rom_id.clone().into());
+
+        // Trigger a full refresh so all views update consistently
+        self.refresh();
     }
 
     #[allow(non_snake_case)]
@@ -2696,7 +2797,7 @@ impl GameListModel {
         if db_path.is_empty() { return; }
         if let Ok(db) = DbManager::open(&db_path) {
             let conn = db.get_connection();
-            let filename = Path::new(&new_path).file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+            let filename = Path::new(&new_path).file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
             let size = std::fs::metadata(&new_path).map(|m| m.len() as i64).unwrap_or(0);
             
             let _ = conn.execute(
@@ -2971,6 +3072,11 @@ impl GameListModel {
                                                 achievement_unlocked: None,
                                                 ra_game_id: None,
                                                 ra_recent_badges: None,
+                                                is_installed: if r_id.starts_with("steam-") {
+                                                    crate::core::store::StoreManager::get_local_steam_appids().contains(&r_id.replace("steam-", ""))
+                                                } else {
+                                                    true
+                                                },
                                                 resources: None,
                                             };
                                             
@@ -4196,8 +4302,8 @@ impl GameListModel {
             let conn = db.get_connection();
             let query = "SELECT r.id, r.platform_id, r.path, r.filename, m.title, m.region, p.name, p.platform_type, 
                          COALESCE(r.boxart_path, a.local_path), r.date_added, m.play_count, m.total_play_time, m.last_played, 
-                         p.icon, m.is_favorite, m.genre, m.developer, m.publisher, m.rating, m.tags, m.release_date, 
-                         COALESCE(r.icon_path, a_icon.local_path), COALESCE(r.background_path, a_bg.local_path, a_ss.local_path)
+                         p.icon, m.is_favorite, m.genre, m.developer, m.publisher, m.rating, m.tags, m.release_date,                          COALESCE(r.icon_path, a_icon.local_path), COALESCE(r.background_path, a_bg.local_path, a_ss.local_path),
+                          m.is_installed, m.description
                          FROM roms r 
                          LEFT JOIN metadata m ON r.id = m.rom_id 
                          JOIN platforms p ON r.platform_id = p.id 
@@ -4243,8 +4349,15 @@ impl GameListModel {
                             }
                         },
                         icon_path: row.get(21)?,
+                        is_installed: Some(row.get::<_, Option<i32>>(23).ok().flatten().map(|v| v != 0).unwrap_or_else(|| {
+                            if rom_id.starts_with("steam-") {
+                                crate::core::store::StoreManager::get_local_steam_appids().contains(&rom_id.replace("steam-", ""))
+                            } else {
+                                true
+                            }
+                        })),
                         background_path: row.get(22)?,
-                        description: None,
+                        description: row.get(24).ok(),
                     })
                 }) {
                     if let Some(Ok(updated_rom)) = rows.next() {

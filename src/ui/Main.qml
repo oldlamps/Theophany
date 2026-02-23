@@ -753,6 +753,7 @@ ApplicationWindow {
             }
             detailsPanel.gamePlatformId = gameModel.data(gameModel.index(index, 0), 264)
             detailsPanel.gameIsFavorite = data.is_favorite || false
+            detailsPanel.gameIsInstalled = (typeof data.is_installed !== "undefined") ? data.is_installed : true
             detailsPanel.achievementCount = data.achievement_count || 0
             detailsPanel.achievementUnlocked = data.achievement_unlocked || 0
             if (data.ra_recent_badges) {
@@ -1015,13 +1016,13 @@ ApplicationWindow {
                         gameModel.setPlaylistFilter(realId)
                         // Do NOT call batchSetFilters here - setPlaylistFilter already handles refresh
                     } else if (pid === "favorites") {
-                        gameModel.batchSetFilters("", true, gameModel.sortMethod, false)
+                        gameModel.batchSetFilters("", true, gameModel.sortMethod, false, filterBar.installedButton.checked)
                     } else if (pid === "recent") {
-                        gameModel.batchSetFilters("", false, "LastPlayed", true)
+                        gameModel.batchSetFilters("", false, "LastPlayed", true, filterBar.installedButton.checked)
                     } else if (pid === "") { // All Games
-                        gameModel.batchSetFilters("", false, gameModel.sortMethod, false)
+                        gameModel.batchSetFilters("", false, gameModel.sortMethod, false, filterBar.installedButton.checked)
                     } else { // System UUID
-                        gameModel.batchSetFilters(pid, false, gameModel.sortMethod, false)
+                        gameModel.batchSetFilters(pid, false, gameModel.sortMethod, false, filterBar.installedButton.checked)
                     }
                     
                     // 3. Queue selection restoration for the INCOMING platform
@@ -1262,22 +1263,46 @@ ApplicationWindow {
                                  property string label
                                  property string value
                                  signal cleared()
-                                 
+
                                  height: 24
                                  width: contentRow.width + 20
                                  color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.15)
                                  radius: 12
                                  border.color: Theme.accent
                                  border.width: 1
-                                 
+
                                  Row {
                                      id: contentRow
                                      anchors.centerIn: parent
-                                     spacing: 6
+                                     spacing: 5
+
                                      Text {
                                          text: "<b>" + label + ":</b> " + value
                                          color: Theme.text
                                          font.pixelSize: 10
+                                         anchors.verticalCenter: parent.verticalCenter
+                                     }
+
+                                     // Dismiss × button
+                                     Item {
+                                         width: 14; height: 14
+                                         anchors.verticalCenter: parent.verticalCenter
+
+                                         Text {
+                                             anchors.centerIn: parent
+                                             text: "✕"
+                                             font.pixelSize: 9
+                                             color: dismissArea.containsMouse ? "white" : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.7)
+                                             Behavior on color { ColorAnimation { duration: 100 } }
+                                         }
+
+                                         MouseArea {
+                                             id: dismissArea
+                                             anchors.fill: parent
+                                             hoverEnabled: true
+                                             cursorShape: Qt.PointingHandCursor
+                                             onClicked: cleared()
+                                         }
                                      }
                                  }
                              }
@@ -1360,6 +1385,16 @@ ApplicationWindow {
                                  onCleared: {
                                      if (filterBar.favButton) filterBar.favButton.checked = false
                                      if (gameModel) gameModel.setFavoritesOnly(false)
+                                 }
+                             }
+
+                             FilterTag {
+                                 label: "Installed"
+                                 value: "Only"
+                                 visible: filterBar.installedButton && filterBar.installedButton.checked
+                                 onCleared: {
+                                     if (filterBar.installedButton) filterBar.installedButton.checked = false
+                                     if (gameModel) gameModel.setInstalledOnly(false)
                                  }
                              }
                          }
@@ -1848,8 +1883,28 @@ ApplicationWindow {
                                         visible: source != ""
                                         cache: true
                                         asynchronous: true
+                                        opacity: (typeof gameIsInstalled !== "undefined" && !gameIsInstalled) ? 0.4 : 1.0
                                         // Robust sourceSize: only set if dimensions are valid to avoid startup race crashes
                                         sourceSize: (poster.width > 0 && poster.height > 0) ? Qt.size(poster.width, poster.height) : undefined
+                                    }
+
+                                    // Cloud Icon for uninstalled games
+                                    Rectangle {
+                                        anchors.top: parent.top
+                                        anchors.right: parent.right
+                                        anchors.margins: 8
+                                        width: 24
+                                        height: 24
+                                        radius: 12
+                                        color: Qt.rgba(0,0,0,0.6)
+                                        visible: typeof gameIsInstalled !== "undefined" && !gameIsInstalled
+                                        
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "☁"
+                                            color: "white"
+                                            font.pixelSize: 14
+                                        }
                                     }
 
                                     Text {
@@ -1946,6 +2001,14 @@ ApplicationWindow {
                                                 iconSource: "🚀"
                                                 visible: rootViewStack.sharedSelectedIndices.length === 1
                                                 onTriggered: window.launchGame(gameId)
+                                            }
+                                            TheophanyMenuItem {
+                                                text: "Uninstall Game"
+                                                iconSource: "🗑️"
+                                                visible: rootViewStack.sharedSelectedIndices.length === 1
+                                                         && (typeof gamePlatformType !== "undefined" && gamePlatformType.toLowerCase() === "steam")
+                                                         && (typeof gameIsInstalled !== "undefined" && gameIsInstalled)
+                                                onTriggered: gameModel.uninstallSteamGame(gameId)
                                             }
                                             TheophanyMenuSeparator { visible: rootViewStack.sharedSelectedIndices.length === 1 }
                                             TheophanyMenu {

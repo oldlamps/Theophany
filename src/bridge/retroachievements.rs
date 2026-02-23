@@ -277,6 +277,11 @@ pub fn perform_ra_scrape(
                         achievement_unlocked,
                         ra_game_id: info.id,
                         ra_recent_badges: recent_badges_json.clone(),
+                        is_installed: if rom_id.starts_with("steam-") {
+                            crate::core::store::StoreManager::get_local_steam_appids().contains(&rom_id.replace("steam-", ""))
+                        } else {
+                            true
+                        },
                         resources: None,
                     };
                     

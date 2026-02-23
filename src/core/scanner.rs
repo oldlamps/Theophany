@@ -71,6 +71,7 @@ impl Scanner {
                             background_path: None,
                             release_date: None,
                             description: None,
+                            is_installed: Some(true),
                         });
                     }
                 }

@@ -514,6 +514,7 @@ impl StoreManager {
                 background_path: None,
                 release_date: None,
                 description: None,
+                is_installed: Some(true),
              });
         }
 
@@ -547,6 +548,70 @@ impl StoreManager {
         ids
     }
 
+    pub fn get_local_steam_appids() -> std::collections::HashSet<String> {
+        let mut appids = std::collections::HashSet::new();
+        // Use logic similar to scan_steam_games to find .acf files
+        let mut steam_roots = Vec::new();
+        if let Ok(home) = std::env::var("HOME") {
+            let home_p = PathBuf::from(home);
+            let paths = vec![
+                home_p.join(".steam/steam"),
+                home_p.join(".local/share/Steam"),
+                home_p.join(".var/app/com.valvesoftware.Steam/.steam/steam"),
+                home_p.join(".var/app/com.valvesoftware.Steam/.local/share/Steam"),
+                PathBuf::from("/usr/share/steam"),
+            ];
+            for p in paths {
+                if p.exists() && !steam_roots.contains(&p) {
+                    steam_roots.push(p);
+                }
+            }
+        }
+
+        let mut library_paths = Vec::new();
+        for root in &steam_roots {
+            let vdf_path = root.join("steamapps/libraryfolders.vdf");
+            if vdf_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&vdf_path) {
+                    for line in content.lines() {
+                        let trimmed = line.trim();
+                        if trimmed.starts_with("\"path\"") {
+                            let parts: Vec<&str> = trimmed.split('\"').collect();
+                            if parts.len() >= 4 {
+                                library_paths.push(PathBuf::from(parts[3]));
+                            }
+                        }
+                    }
+                }
+            }
+            let root_apps = root.join("steamapps");
+            if root_apps.exists() && !library_paths.contains(&root) {
+                if !library_paths.iter().any(|p| p.join("steamapps") == root_apps) {
+                    library_paths.push(root.clone());
+                }
+            }
+        }
+
+        for lib in library_paths {
+            let apps_dir = lib.join("steamapps");
+            if !apps_dir.exists() { continue; }
+            if let Ok(entries) = std::fs::read_dir(apps_dir) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    if path.extension().and_then(|s| s.to_str()) == Some("acf") {
+                        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                            if stem.starts_with("appmanifest_") {
+                                let id = stem.replace("appmanifest_", "");
+                                appids.insert(id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        appids
+    }
+
     pub fn fetch_remote_steam_games(steam_id: &str, api_key: &str) -> anyhow::Result<Vec<Rom>> {
         let client = reqwest::blocking::Client::new();
         let url = format!(
@@ -555,6 +620,7 @@ impl StoreManager {
         );
 
         let resp = client.get(&url).send()?.json::<serde_json::Value>()?;
+        let local_ids = Self::get_local_steam_appids();
         
         let mut apps = Vec::new();
         if let Some(games) = resp["response"]["games"].as_array() {
@@ -578,9 +644,12 @@ impl StoreManager {
                         String::new()
                     };
 
+                    let is_installed = local_ids.contains(&appid.to_string());
+                    let final_icon = if is_installed { None } else if !icon_url.is_empty() { Some(icon_url) } else { None };
+
                     apps.push(Rom {
                         id: format!("steam-{}", appid),
-                        platform_id: "steam".to_string(), 
+                        platform_id: "steam".to_string(),
                         path: format!("steam://rungameid/{}", appid),
                         filename: format!("{}.acf", appid),
                         file_size: 0,
@@ -601,10 +670,11 @@ impl StoreManager {
                         publisher: None,
                         rating: None,
                         tags: Some("Steam".to_string()),
-                        icon_path: if !icon_url.is_empty() { Some(icon_url) } else { None },
+                        icon_path: final_icon,
                         background_path: None,
                         release_date: None,
                         description: None,
+                        is_installed: Some(is_installed),
                     });
                 }
             }
@@ -699,6 +769,8 @@ impl StoreManager {
                 home_p.join(".steam/steam"),
                 home_p.join(".local/share/Steam"),
                 home_p.join(".var/app/com.valvesoftware.Steam/.steam/steam"),
+                home_p.join(".var/app/com.valvesoftware.Steam/.local/share/Steam"),
+                PathBuf::from("/usr/share/steam"),
             ];
             for p in paths {
                 if p.exists() {
@@ -849,6 +921,7 @@ impl StoreManager {
                 cache_dir.join(format!("{}_library_600x900.png", id)),
                 cache_dir.join(id).join("library_600x900.jpg"),
                 cache_dir.join(id).join("library_600x900.png"),
+                cache_dir.join(format!("{}_header.jpg", id)), // Vertical header fallback
             ];
 
             for p in candidates {
@@ -938,6 +1011,7 @@ impl StoreManager {
                 background_path,
                 release_date: None,
                 description: None,
+                is_installed: Some(true),
             });
         }
 
@@ -1004,6 +1078,7 @@ impl StoreManager {
                                     rating: None,
                                     release_date: None,
                                     description: None,
+                                    is_installed: Some(true),
                                 };
 
                                 // Enriched Metadata
@@ -1123,6 +1198,7 @@ impl StoreManager {
                                     background_path: None,
                                     release_date: None,
                                     description: None,
+                                    is_installed: Some(true),
                                 };
 
                                 // Enriched Metadata
@@ -1199,6 +1275,7 @@ impl StoreManager {
                                 background_path: None,
                                 release_date: None,
                                 description: None,
+                                is_installed: Some(true),
                             });
                         }
                     }
@@ -1357,6 +1434,7 @@ impl StoreManager {
                                 background_path: None,
                                 release_date: None,
                                 description: None,
+                                is_installed: Some(true),
                             });
                         }
                     }

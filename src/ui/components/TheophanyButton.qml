@@ -55,7 +55,10 @@ Button {
                     anchors.centerIn: parent
                     visible: control.iconEmoji !== "" && control.iconSource === ""
                     text: control.iconEmoji
-                    font.pixelSize: 16
+                    font.pixelSize: 14
+                    lineHeight: 1.0
+                    lineHeightMode: Text.FixedHeight
+                    height: 20
                     color: control.primary ? Theme.text : (control.hovered ? Theme.buttonText : Theme.secondaryText)
                     verticalAlignment: Text.AlignVCenter
                     horizontalAlignment: Text.AlignHCenter

@@ -339,6 +339,7 @@ Rectangle {
     property real gameRating: 0.0
     property string gameReleaseDate: ""
     property bool gameIsFavorite: false
+    property bool gameIsInstalled: true
     property string gamePlatformId: ""
     property string gamePlatformType: ""
     property var emulatorProfiles: []
@@ -1370,15 +1371,15 @@ Rectangle {
             spacing: 10
 
             TheophanyButton {
-                text: "PLAY"
-                iconEmoji: "▶"
+                text: root.gameIsInstalled ? "PLAY" : "INSTALL"
+                iconEmoji: root.gameIsInstalled ? "▶" : "☁"
                 primary: true
                 Layout.fillWidth: true
                 Layout.preferredHeight: 45
                 focusPolicy: Qt.NoFocus
                 loading: root.isLaunching
                 enabled: !root.isLaunching
-                tooltipText: root.isLaunching ? "Launching Game..." : "Launch " + root.gameTitle
+                tooltipText: root.isLaunching ? "Launching Game..." : (root.gameIsInstalled ? ("Launch " + root.gameTitle) : ("Install " + root.gameTitle))
                 
                 onClicked: {
                     root.triggerLaunchFeedback()

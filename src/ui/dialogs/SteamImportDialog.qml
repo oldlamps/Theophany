@@ -55,7 +55,7 @@ Dialog {
                         "platform_id": item.platform_id || "",
                         "tags": item.tags || "",
                         "total_play_time": item.total_play_time || 0,
-                        "installed": true
+                        "installed": (typeof item.is_installed !== "undefined") ? item.is_installed : true
                     }
                     steamModel.append(sanitized)
                 }
@@ -92,7 +92,7 @@ Dialog {
                             "platform_id": item.platform_id || "",
                             "tags": item.tags || "",
                             "total_play_time": item.total_play_time || 0,
-                            "installed": false
+                            "installed": (typeof item.is_installed !== "undefined") ? item.is_installed : false
                         }
                         steamModel.append(sanitized)
                     }
@@ -505,7 +505,8 @@ Dialog {
                                     boxart_path: item.boxart_path || "",
                                     background_path: item.background_path || "",
                                     tags: item.tags || "",
-                                    total_play_time: item.total_play_time || 0
+                                    total_play_time: item.total_play_time || 0,
+                                    is_installed: item.installed
                                 })
                             }
                         }

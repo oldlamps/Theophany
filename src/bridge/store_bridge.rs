@@ -180,6 +180,7 @@ impl StoreBridge {
                         tags: None,
                         release_date: None,
                         description: Some(description_clone.clone()),
+                        is_installed: Some(true),
                     };
 
                     let db_path = crate::core::paths::get_data_dir().join("games.db");
@@ -190,6 +191,7 @@ impl StoreBridge {
                         meta.title = Some(name_clone.clone());
                         meta.description = Some(description_clone);
                         meta.developer = Some(developer_clone);
+                        meta.is_installed = true;
                         let _ = db.insert_metadata(&meta);
                         
                         // Auto-scan for assets immediately so they show up
