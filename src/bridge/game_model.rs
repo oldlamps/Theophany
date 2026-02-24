@@ -96,6 +96,9 @@ enum AsyncResponse {
     
     // Generic Image Search
     ImagesSearchFinished(String), // JSON results
+
+    // Cloud Saves
+    CloudSaveSyncFinished(String, bool, String), // rom_id, success, message
 }
 
 #[derive(QObject, Default)]
@@ -263,6 +266,10 @@ pub struct GameListModel {
     getRomPath: qt_method!(fn(&mut self, rom_id: String) -> QString),
     updateRomPath: qt_method!(fn(&mut self, rom_id: String, new_path: String)),
 
+    // Cloud Saves
+    resolveCloudSavePath: qt_method!(fn(&mut self, rom_id: String, wine_prefix: String) -> QString),
+    syncCloudSaves: qt_method!(fn(&mut self, rom_id: String, direction: String)),
+
     // Signals
     loading: qt_property!(bool; READ is_loading NOTIFY loadingChanged),
     loadingChanged: qt_signal!(),
@@ -284,6 +291,7 @@ pub struct GameListModel {
     imagesSearchFinished: qt_signal!(json: String),
     gameDataChanged: qt_signal!(rom_id: String),
     platformTypesChanged: qt_signal!(),
+    cloudSaveSyncFinished: qt_signal!(rom_id: String, success: bool, message: String),
 }
 
 impl QAbstractListModel for GameListModel {
@@ -916,6 +924,8 @@ impl GameListModel {
                     ra_recent_badges: None,
                     is_installed: if rom_id.starts_with("steam-") {
                         crate::core::store::StoreManager::get_local_steam_appids().contains(&rom_id.replace("steam-", ""))
+                    } else if rom_id.starts_with("legendary-") {
+                        false
                     } else {
                         true
                     },
@@ -1021,6 +1031,8 @@ impl GameListModel {
                         ra_recent_badges: None,
                         is_installed: if rom_id.starts_with("steam-") {
                             crate::core::store::StoreManager::get_local_steam_appids().contains(&rom_id.replace("steam-", ""))
+                        } else if rom_id.starts_with("legendary-") {
+                            false // Default to false for Legendary if unknown
                         } else {
                             true
                         },
@@ -1479,9 +1491,12 @@ impl GameListModel {
                             use_gamescope: defaults.get("use_gamescope").and_then(|v| v.as_bool()),
                             gamescope_args: defaults.get("gamescope_args").and_then(|v| v.as_str()).map(|s| s.to_string()),
                             use_mangohud: defaults.get("use_mangohud").and_then(|v| v.as_bool()),
-                            pre_launch_script: None,
-                            post_launch_script: None,
-                        };
+                             pre_launch_script: None,
+                             post_launch_script: None,
+                             cloud_saves_enabled: None,
+                             cloud_save_path: None,
+                             cloud_save_auto_sync: None,
+                         };
                         
                         if let Err(e) = db.insert_pc_config(&new_config) {
                             log::error!("Failed to insert inherited PC config: {}", e);
@@ -1834,6 +1849,8 @@ impl GameListModel {
                       ra_recent_badges: None,
                       is_installed: if rom_id.starts_with("steam-") {
                           crate::core::store::StoreManager::get_local_steam_appids().contains(&rom_id.replace("steam-", ""))
+                      } else if rom_id.starts_with("legendary-") {
+                          false
                       } else {
                           true
                       },
@@ -2427,6 +2444,11 @@ impl GameListModel {
                   let mut extra = String::new();
                   let mut pre_script = None;
                   let mut post_script = None;
+                  // Cloud save values hoisted out of `if is_pc` so they survive to launch/exit
+                  let mut cloud_saves_enabled = false;
+                  let mut cloud_save_auto_sync = false;
+                  let mut cloud_save_path_opt: Option<String> = None;
+                  let mut cloud_wine_prefix_opt: Option<String> = None;
 
                   if is_pc {
                       // 1. Get platform defaults
@@ -2439,7 +2461,12 @@ impl GameListModel {
 
                           if let Some(c) = &pc_config {
                               // --- LOCAL CONFIG EXISTS: USE ONLY LOCAL VALUES ---
-                              
+                              // Extract cloud save settings while pc_config is in scope
+                              cloud_saves_enabled = c.cloud_saves_enabled.unwrap_or(false);
+                              cloud_save_auto_sync = c.cloud_save_auto_sync.unwrap_or(false);
+                              cloud_save_path_opt = c.cloud_save_path.clone().filter(|s: &String| !s.trim().is_empty());
+                              cloud_wine_prefix_opt = c.wine_prefix.clone().filter(|s: &String| !s.trim().is_empty());
+
                               if let Some(wd) = c.working_dir.as_ref().filter(|s| !s.trim().is_empty()) {
                                   working_dir = Some(wd.clone());
                               }
@@ -2621,6 +2648,25 @@ impl GameListModel {
                  let env_vars_opt = if env_prefix.trim().is_empty() { None } else { Some(env_prefix.as_str()) };
                  let wrapper_opt = if wrapper_cmd.trim().is_empty() { None } else { Some(wrapper_cmd.as_str()) };
 
+                 // ── Cloud Save: Pull before launch (blocking) ──────────────────────
+                 // Only for Epic games with auto-sync enabled
+                 if rom_path.starts_with("epic://") && cloud_saves_enabled && cloud_save_auto_sync {
+                     use crate::core::legendary::{LegendaryWrapper, SyncDirection};
+                     let app_name = rom_path.trim_start_matches("epic://launch/");
+                     let save_path_resolved: Option<std::path::PathBuf> =
+                         cloud_save_path_opt.as_deref().map(|p| std::path::PathBuf::from(p))
+                         .or_else(|| {
+                             let prefix = cloud_wine_prefix_opt.as_deref()?;
+                             LegendaryWrapper::resolve_cloud_save_path(app_name, prefix, None).ok()?
+                         });
+                     if let Some(sp) = save_path_resolved {
+                         log::info!("[cloud-save] Pulling saves before launch for {}", app_name);
+                         if let Err(e) = LegendaryWrapper::sync_saves(app_name, &sp, SyncDirection::Pull) {
+                             log::warn!("[cloud-save] Pull failed (launching anyway): {}", e);
+                         }
+                     }
+                 }
+
                  // Launch process
                  match Launcher::launch(&command_template, &rom_path, working_dir.as_deref(), env_vars_opt, wrapper_opt) {
                      Ok(mut child) => {
@@ -2680,12 +2726,32 @@ impl GameListModel {
                          let db_path_thread = path_str.clone();
                          let rom_id_thread = rom_id_clone.clone();
                          let tx = self.tx.borrow().clone();
-                         std::thread::spawn(move || {
-
-                             let start_time = std::time::SystemTime::now();
+                         // Clone cloud save info for the exit thread
+                         let cloud_app_name: Option<String> = if rom_path.starts_with("epic://") {
+                             Some(rom_path.trim_start_matches("epic://launch/").to_string())
+                         } else { None };
+                         let cloud_save_path_for_push: Option<std::path::PathBuf> = if cloud_saves_enabled && cloud_save_auto_sync {
+                             cloud_save_path_opt.as_deref().map(|p| std::path::PathBuf::from(p))
+                             .or_else(|| {
+                                 use crate::core::legendary::LegendaryWrapper;
+                                 let app_name = cloud_app_name.as_deref()?;
+                                 let prefix = cloud_wine_prefix_opt.as_deref()?;
+                                 LegendaryWrapper::resolve_cloud_save_path(app_name, prefix, None).ok()?
+                             })
+                         } else { None };
+                         std::thread::spawn(move || {                             let start_time = std::time::SystemTime::now();
                              
                              // Wait for process to exit
                              let _ = child.wait();
+
+                             // ── Cloud Save: Push after game exits ─────────────
+                             if let (Some(app_name), Some(sp)) = (&cloud_app_name, &cloud_save_path_for_push) {
+                                 use crate::core::legendary::{LegendaryWrapper, SyncDirection};
+                                 log::info!("[cloud-save] Pushing saves after exit for {}", app_name);
+                                 if let Err(e) = LegendaryWrapper::sync_saves(app_name, sp, SyncDirection::Push) {
+                                     log::warn!("[cloud-save] Push failed: {}", e);
+                                 }
+                             }
                              
                              let end_time = std::time::SystemTime::now();
                              let duration = end_time.duration_since(start_time).unwrap_or_default().as_secs() as i64;
@@ -2838,6 +2904,153 @@ impl GameListModel {
                 let _ = db.insert_pc_config(&config);
             }
         }
+    }
+
+    /// Resolves the full host-side save path for an Epic game using legendary info.
+    /// `wine_prefix` is passed directly from QML so unsaved prefix values work.
+    /// Returns the resolved path string, or a string starting with "error:" on failure.
+    #[allow(non_snake_case)]
+    fn resolveCloudSavePath(&mut self, rom_id: String, wine_prefix: String) -> QString {
+        use crate::core::legendary::LegendaryWrapper;
+
+        // Strip "legendary-" prefix to get app_name
+        let app_name = match rom_id.strip_prefix("legendary-") {
+            Some(a) => a.to_string(),
+            None => return QString::from("error:not an epic game"),
+        };
+
+        let prefix = wine_prefix.trim().to_string();
+        if prefix.is_empty() {
+            return QString::from("error:no wine prefix set — configure it in the Proton/UMU section first");
+        }
+
+        // Also try to get the install path for {InstallDir} expansion
+        let db_path = self.db_path.borrow().clone();
+        let install_path: Option<String> = if let Ok(db) = DbManager::open(&db_path) {
+            let conn_db = DbManager::open(&db_path).ok();
+            conn_db.and_then(|cdb| {
+                cdb.get_connection().query_row(
+                    "SELECT r.path FROM roms r WHERE r.id = ?1",
+                    rusqlite::params![rom_id],
+                    |row| row.get::<_, String>(0),
+                ).ok()
+            })
+        } else {
+            None
+        };
+
+        match LegendaryWrapper::resolve_cloud_save_path(
+            &app_name,
+            &prefix,
+            install_path.as_deref(),
+        ) {
+            Ok(Some(path)) => QString::from(path.to_string_lossy().as_ref()),
+            Ok(None) => QString::from("error:game does not support cloud saves"),
+            Err(e) => QString::from(format!("error:{}", e).as_str()),
+        }
+    }
+
+    /// Runs legendary sync-saves for an Epic game in a background thread.
+    /// `direction` should be "pull", "push", or "both".
+    /// Emits `cloudSaveSyncFinished(rom_id, success, message)` when done.
+    #[allow(non_snake_case)]
+    fn syncCloudSaves(&mut self, rom_id: String, direction: String) {
+        use crate::core::legendary::{LegendaryWrapper, SyncDirection};
+
+        let app_name = match rom_id.strip_prefix("legendary-") {
+            Some(a) => a.to_string(),
+            None => {
+                self.cloudSaveSyncFinished(
+                    rom_id.clone().into(),
+                    false,
+                    "error:not an epic game".into(),
+                );
+                return;
+            }
+        };
+
+        let db_path = self.db_path.borrow().clone();
+
+        // Fetch prefix and save path from DB
+        let (prefix_opt, existing_save_path) = if let Ok(db) = DbManager::open(&db_path) {
+            let config = db.get_pc_config(&rom_id).ok().flatten();
+            (
+                config.as_ref().and_then(|c| c.wine_prefix.clone()).filter(|s| !s.trim().is_empty()),
+                config.and_then(|c| c.cloud_save_path).filter(|s| !s.trim().is_empty()),
+            )
+        } else {
+            (None, None)
+        };
+
+        let sync_dir = match direction.to_lowercase().as_str() {
+            "pull" => SyncDirection::Pull,
+            "push" => SyncDirection::Push,
+            _ => SyncDirection::Both,
+        };
+
+        let tx = self.tx.borrow().clone();
+        let rom_id_clone = rom_id.clone();
+
+        std::thread::spawn(move || {
+            // Resolve the save path: prefer previously stored path, then auto-resolve
+            let save_path = if let Some(p) = existing_save_path {
+                std::path::PathBuf::from(p)
+            } else if let Some(prefix) = prefix_opt {
+                match LegendaryWrapper::resolve_cloud_save_path(&app_name, &prefix, None) {
+                    Ok(Some(p)) => p,
+                    Ok(None) => {
+                        if let Some(tx) = tx {
+                            let _ = tx.send(AsyncResponse::CloudSaveSyncFinished(
+                                rom_id_clone,
+                                false,
+                                "Game does not support cloud saves".to_string(),
+                            ));
+                        }
+                        return;
+                    }
+                    Err(e) => {
+                        if let Some(tx) = tx {
+                            let _ = tx.send(AsyncResponse::CloudSaveSyncFinished(
+                                rom_id_clone,
+                                false,
+                                format!("Failed to resolve save path: {}", e),
+                            ));
+                        }
+                        return;
+                    }
+                }
+            } else {
+                if let Some(tx) = tx {
+                    let _ = tx.send(AsyncResponse::CloudSaveSyncFinished(
+                        rom_id_clone,
+                        false,
+                        "No wine prefix configured".to_string(),
+                    ));
+                }
+                return;
+            };
+
+            match LegendaryWrapper::sync_saves(&app_name, &save_path, sync_dir) {
+                Ok(()) => {
+                    if let Some(tx) = tx {
+                        let _ = tx.send(AsyncResponse::CloudSaveSyncFinished(
+                            rom_id_clone,
+                            true,
+                            format!("Sync complete — {}", save_path.display()),
+                        ));
+                    }
+                }
+                Err(e) => {
+                    if let Some(tx) = tx {
+                        let _ = tx.send(AsyncResponse::CloudSaveSyncFinished(
+                            rom_id_clone,
+                            false,
+                            format!("Sync failed: {}", e),
+                        ));
+                    }
+                }
+            }
+        });
     }
     #[allow(non_snake_case)]
     fn getRomPath(&mut self, rom_id: String) -> QString {
@@ -3137,6 +3350,8 @@ impl GameListModel {
                                                 ra_recent_badges: None,
                                                 is_installed: if r_id.starts_with("steam-") {
                                                     crate::core::store::StoreManager::get_local_steam_appids().contains(&r_id.replace("steam-", ""))
+                                                } else if r_id.starts_with("legendary-") {
+                                                    false
                                                 } else {
                                                     true
                                                 },
@@ -3152,6 +3367,7 @@ impl GameListModel {
                                                     final_meta.achievement_count = ex.achievement_count;
                                                     final_meta.achievement_unlocked = ex.achievement_unlocked;
                                                     final_meta.ra_game_id = ex.ra_game_id;
+                                                    final_meta.is_installed = ex.is_installed; // PRESERVE STATUS
                                                     
                                                     // FIELD: Title
                                                     if field_config.title {
@@ -3912,6 +4128,9 @@ impl GameListModel {
                     // Refresh the row UI without triggering RA check
                     self.update_row_by_id(&rom_id);
                     self.gameDataChanged(rom_id.into());
+                }
+                AsyncResponse::CloudSaveSyncFinished(rom_id, success, message) => {
+                    self.cloudSaveSyncFinished(rom_id.into(), success, message.into());
                 }
             }
         }

@@ -163,4 +163,7 @@ pub struct PcConfig {
     pub use_mangohud: Option<bool>,
     pub pre_launch_script: Option<String>,
     pub post_launch_script: Option<String>,
+    pub cloud_saves_enabled: Option<bool>,
+    pub cloud_save_path: Option<String>,    // resolved host path or user override
+    pub cloud_save_auto_sync: Option<bool>, // pull before launch, push after exit
 }

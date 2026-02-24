@@ -150,6 +150,11 @@ Dialog {
             preLaunchField.text = (currentConfig.pre_launch_script !== undefined) ? (currentConfig.pre_launch_script || "") : ""
             postLaunchField.text = (currentConfig.post_launch_script !== undefined) ? (currentConfig.post_launch_script || "") : ""
 
+            // Cloud Saves
+            cloudSavesCheck.checked = !!currentConfig.cloud_saves_enabled
+            cloudSavePathField.text = currentConfig.cloud_save_path || ""
+            cloudSaveAutoSyncCheck.checked = !!currentConfig.cloud_save_auto_sync
+
             // Gamescope
             gamescopeCheck.checked = (currentConfig.use_gamescope !== undefined) ? !!currentConfig.use_gamescope : !!platformDefaults.use_gamescope
             if (currentConfig.gs_state || platformDefaults.gs_state) {
@@ -968,7 +973,132 @@ Dialog {
 
                                     Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border; visible: root.isWindows }
 
-                                    // SECTION: UNIVERSAL PC SETTINGS
+                                    // SECTION: CLOUD SAVES (Epic/Legendary only)
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 15
+                                        visible: root.gameId.toString().indexOf("legendary-") === 0 || root.platformId === "epic"
+
+                                        Text { text: "CLOUD SAVES"; color: Theme.accent; font.pixelSize: 11; font.bold: true }
+
+                                        TheophanyCheckBox {
+                                            id: cloudSavesCheck
+                                            text: "Enable Cloud Saves (via legendary)"
+                                        }
+
+                                        TheophanyCheckBox {
+                                            id: cloudSaveAutoSyncCheck
+                                            text: "Auto Sync on Launch / Close  (pull before launch, push on exit)"
+                                            enabled: cloudSavesCheck.checked
+                                            opacity: enabled ? 1.0 : 0.4
+                                        }
+
+                                        GridLayout {
+                                            columns: 2
+                                            rowSpacing: 12
+                                            columnSpacing: 20
+                                            Layout.fillWidth: true
+                                            opacity: cloudSavesCheck.checked ? 1.0 : 0.4
+
+                                            Label { text: "Save Path"; color: Theme.text; Layout.preferredWidth: 140 }
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                TheophanyTextField {
+                                                    id: cloudSavePathField
+                                                    Layout.fillWidth: true
+                                                    placeholderText: "Auto-resolved from legendary info  (or set override)"
+                                                    enabled: cloudSavesCheck.checked
+                                                }
+                                                TheophanyButton {
+                                                    text: "Auto Resolve"
+                                                    tooltipText: "Query legendary info to resolve the save path template"
+                                                    enabled: cloudSavesCheck.checked && prefixField.text !== ""
+                                                    onClicked: {
+                                                        var result = gameModel.resolveCloudSavePath(root.gameId, prefixField.text)
+                                                        if (result.indexOf("error:") === 0) {
+                                                            cloudSaveStatusLabel.text = "⚠️ " + result.substring(6)
+                                                            cloudSaveStatusLabel.color = Theme.danger || "#ff4444"
+                                                        } else {
+                                                            cloudSavePathField.text = result
+                                                            cloudSaveStatusLabel.text = "✅ Path resolved"
+                                                            cloudSaveStatusLabel.color = Theme.accent
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Label {
+                                            id: cloudSaveStatusLabel
+                                            text: ""
+                                            color: Theme.secondaryText
+                                            font.pixelSize: 12
+                                            wrapMode: Text.Wrap
+                                            Layout.fillWidth: true
+                                            visible: text !== ""
+                                        }
+
+                                        RowLayout {
+                                            Layout.topMargin: 5
+                                            spacing: 10
+                                            enabled: cloudSavesCheck.checked
+                                            opacity: enabled ? 1.0 : 0.4
+
+                                            Label { text: "Manual Sync:"; color: Theme.secondaryText; font.pixelSize: 13 }
+
+                                            TheophanyButton {
+                                                text: "⬇ Pull from Cloud"
+                                                enabled: cloudSavesCheck.checked
+                                                tooltipText: "Download saves from Epic cloud"
+                                                onClicked: {
+                                                    cloudSaveStatusLabel.text = "⏳ Pulling from cloud…"
+                                                    cloudSaveStatusLabel.color = Theme.secondaryText
+                                                    // Save current path first so backend can find it
+                                                    savePcConfig()
+                                                    gameModel.syncCloudSaves(root.gameId, "pull")
+                                                }
+                                            }
+                                            TheophanyButton {
+                                                text: "⬆ Push to Cloud"
+                                                enabled: cloudSavesCheck.checked
+                                                tooltipText: "Upload saves to Epic cloud"
+                                                onClicked: {
+                                                    cloudSaveStatusLabel.text = "⏳ Pushing to cloud…"
+                                                    cloudSaveStatusLabel.color = Theme.secondaryText
+                                                    savePcConfig()
+                                                    gameModel.syncCloudSaves(root.gameId, "push")
+                                                }
+                                            }
+                                            TheophanyButton {
+                                                text: "↕ Sync Both"
+                                                enabled: cloudSavesCheck.checked
+                                                tooltipText: "Bidirectional sync (pull + push)"
+                                                onClicked: {
+                                                    cloudSaveStatusLabel.text = "⏳ Syncing…"
+                                                    cloudSaveStatusLabel.color = Theme.secondaryText
+                                                    savePcConfig()
+                                                    gameModel.syncCloudSaves(root.gameId, "both")
+                                                }
+                                            }
+                                        }
+
+                                        // Wire up the async signal for sync results
+                                        Connections {
+                                            target: gameModel
+                                            function onCloudSaveSyncFinished(rom_id, success, message) {
+                                                if (rom_id !== root.gameId) return
+                                                if (success) {
+                                                    cloudSaveStatusLabel.text = "✅ " + message
+                                                    cloudSaveStatusLabel.color = Theme.accent
+                                                } else {
+                                                    cloudSaveStatusLabel.text = "❌ " + message
+                                                    cloudSaveStatusLabel.color = Theme.danger || "#ff4444"
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
                                     ColumnLayout {
                                         Layout.fillWidth: true
                                         spacing: 15
@@ -1301,6 +1431,11 @@ Dialog {
             config["no_runtime"] = noRuntimeCheck.checked
             config["log_level"] = logLevelCombo.currentText
         }
+
+        // Cloud Saves
+        config["cloud_saves_enabled"] = cloudSavesCheck.checked
+        config["cloud_save_path"] = cloudSavePathField.text
+        config["cloud_save_auto_sync"] = cloudSaveAutoSyncCheck.checked
 
         gameModel.savePcConfig(JSON.stringify(config))
         gameModel.updateRomPath(gameId, exePathField.text)

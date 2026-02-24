@@ -147,6 +147,9 @@ impl DbManager {
                 use_mangohud INTEGER,
                 pre_launch_script TEXT,
                 post_launch_script TEXT,
+                cloud_saves_enabled INTEGER,
+                cloud_save_path TEXT,
+                cloud_save_auto_sync INTEGER,
                 FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
             );
 
@@ -214,9 +217,10 @@ impl DbManager {
                     umu_proton_version TEXT, umu_store TEXT, wine_prefix TEXT, working_dir TEXT, umu_id TEXT, env_vars TEXT, extra_args TEXT, proton_verb TEXT,
                     disable_fixes INTEGER, no_runtime INTEGER, log_level TEXT, wrapper TEXT, use_gamescope INTEGER, gamescope_args TEXT, use_mangohud INTEGER,
                     pre_launch_script TEXT, post_launch_script TEXT,
+                    cloud_saves_enabled INTEGER, cloud_save_path TEXT, cloud_save_auto_sync INTEGER,
                     FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
                  );
-                 INSERT OR IGNORE INTO pc_configurations_new SELECT * FROM pc_configurations;
+                 INSERT OR IGNORE INTO pc_configurations_new SELECT rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, use_mangohud, pre_launch_script, post_launch_script, NULL, NULL, NULL FROM pc_configurations;
                  DROP TABLE pc_configurations;
                  ALTER TABLE pc_configurations_new RENAME TO pc_configurations;
 
@@ -322,6 +326,14 @@ impl DbManager {
             log::info!("[Migration] Adding is_installed column to metadata table...");
             let _ = self.conn.execute("ALTER TABLE metadata ADD COLUMN is_installed INTEGER DEFAULT 1", []);
             let _ = self.conn.execute("UPDATE metadata SET is_installed = 1 WHERE is_installed IS NULL", []);
+        }
+
+        // Migration: Add cloud save columns to pc_configurations if missing
+        if self.conn.prepare("SELECT cloud_saves_enabled FROM pc_configurations LIMIT 1").is_err() {
+            log::info!("[Migration] Adding cloud save columns to pc_configurations table...");
+            let _ = self.conn.execute("ALTER TABLE pc_configurations ADD COLUMN cloud_saves_enabled INTEGER", []);
+            let _ = self.conn.execute("ALTER TABLE pc_configurations ADD COLUMN cloud_save_path TEXT", []);
+            let _ = self.conn.execute("ALTER TABLE pc_configurations ADD COLUMN cloud_save_auto_sync INTEGER", []);
         }
 
         Ok(())
@@ -543,6 +555,8 @@ impl DbManager {
                     let r_id: String = row.get(0).unwrap_or_default();
                     if r_id.starts_with("steam-") {
                         crate::core::store::StoreManager::get_local_steam_appids().contains(&r_id.replace("steam-", ""))
+                    } else if r_id.starts_with("legendary-") {
+                        false
                     } else {
                         true
                     }
@@ -599,6 +613,8 @@ impl DbManager {
                     let r_id: String = row.get(0).unwrap_or_default();
                     if r_id.starts_with("steam-") {
                         crate::core::store::StoreManager::get_local_steam_appids().contains(&r_id.replace("steam-", ""))
+                    } else if r_id.starts_with("legendary-") {
+                        false
                     } else {
                         true
                     }
@@ -1038,7 +1054,7 @@ impl DbManager {
 
     pub fn get_pc_config(&self, rom_id: &str) -> Result<Option<crate::core::models::PcConfig>> {
         let mut stmt = self.conn.prepare(
-            "SELECT rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, use_mangohud, pre_launch_script, post_launch_script 
+            "SELECT rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, use_mangohud, pre_launch_script, post_launch_script, cloud_saves_enabled, cloud_save_path, cloud_save_auto_sync 
              FROM pc_configurations WHERE rom_id = ?1"
         )?;
         let mut rows = stmt.query(params![rom_id])?;
@@ -1062,6 +1078,9 @@ impl DbManager {
                 use_mangohud: row.get(15)?,
                 pre_launch_script: row.get(16)?,
                 post_launch_script: row.get(17)?,
+                cloud_saves_enabled: row.get::<_, Option<i32>>(18)?.map(|v| v != 0),
+                cloud_save_path: row.get(19)?,
+                cloud_save_auto_sync: row.get::<_, Option<i32>>(20)?.map(|v| v != 0),
             }))
         } else {
             Ok(None)
@@ -1070,8 +1089,8 @@ impl DbManager {
 
     pub fn insert_pc_config(&self, config: &crate::core::models::PcConfig) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO pc_configurations (rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, use_mangohud, pre_launch_script, post_launch_script)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+            "INSERT OR REPLACE INTO pc_configurations (rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, use_mangohud, pre_launch_script, post_launch_script, cloud_saves_enabled, cloud_save_path, cloud_save_auto_sync)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
             params![
                 config.rom_id,
                 config.umu_proton_version,
@@ -1091,6 +1110,9 @@ impl DbManager {
                 config.use_mangohud,
                 config.pre_launch_script,
                 config.post_launch_script,
+                config.cloud_saves_enabled.map(|b| b as i32),
+                config.cloud_save_path,
+                config.cloud_save_auto_sync.map(|b| b as i32),
             ],
         )?;
         Ok(())
