@@ -268,7 +268,7 @@ pub struct GameListModel {
 
     // Cloud Saves
     resolveCloudSavePath: qt_method!(fn(&mut self, rom_id: String, wine_prefix: String) -> QString),
-    syncCloudSaves: qt_method!(fn(&mut self, rom_id: String, direction: String)),
+    syncCloudSaves: qt_method!(fn(&mut self, rom_id: String, direction: String, force: bool)),
 
     // Signals
     loading: qt_property!(bool; READ is_loading NOTIFY loadingChanged),
@@ -355,6 +355,7 @@ impl QAbstractListModel for GameListModel {
                     true
                 }
             })), // gameIsInstalled role
+            277 => QVariant::from(rom.cloud_saves_supported.unwrap_or(false)), // gameCloudSavesSupported role
             _ => QVariant::default(),
         }
     }
@@ -382,6 +383,7 @@ impl QAbstractListModel for GameListModel {
         roles.insert(274, QByteArray::from("gameIcon"));
         roles.insert(275, QByteArray::from("gameBackground"));
         roles.insert(276, QByteArray::from("gameIsInstalled"));
+        roles.insert(277, QByteArray::from("gameCloudSavesSupported"));
         roles
     }
 }
@@ -676,6 +678,7 @@ impl GameListModel {
                             icon_path: row.get(21)?,
                             background_path: row.get(22)?,
                             is_installed: Some(row.get::<_, Option<i32>>(23).ok().flatten().unwrap_or(1) != 0),
+                            cloud_saves_supported: None,
                             description: None,
                         })
                     }) {
@@ -929,6 +932,7 @@ impl GameListModel {
                     } else {
                         true
                     },
+                    cloud_saves_supported: false,
                     resources: None,
                 };
                 let _ = db.insert_metadata(&meta);
@@ -1036,6 +1040,7 @@ impl GameListModel {
                         } else {
                             true
                         },
+                        cloud_saves_supported: false,
                         resources: None,
                     }
                 };
@@ -1193,6 +1198,7 @@ impl GameListModel {
                         platform_icon: None, is_favorite: None, genre: None, developer: None, publisher: None,
                         rating: None, tags: None, icon_path: None, background_path: None, release_date: None, description: None,
                         is_installed: Some(true),
+                        cloud_saves_supported: None,
                     });
                 }
             }
@@ -1455,6 +1461,7 @@ impl GameListModel {
                         background_path: None,
                         description: None,
                         is_installed: Some(true),
+                        cloud_saves_supported: None,
                     };
 
                     if platform_folder == "windows" || platform_folder == "PC (Windows)" {
@@ -1698,6 +1705,7 @@ impl GameListModel {
                 map.insert("achievement_unlocked".to_string(), serde_json::json!(meta.achievement_unlocked.unwrap_or(0)));
                 map.insert("ra_recent_badges".to_string(), serde_json::json!(meta.ra_recent_badges.unwrap_or("[]".to_string())));
                 map.insert("is_installed".to_string(), serde_json::json!(meta.is_installed));
+                map.insert("cloud_saves_supported".to_string(), serde_json::json!(meta.cloud_saves_supported));
             } else {
                  map.insert("title".to_string(), serde_json::Value::String(String::new()));
                  map.insert("is_installed".to_string(), serde_json::json!(if rom_id.starts_with("steam-") {
@@ -1709,6 +1717,7 @@ impl GameListModel {
                  } else {
                      true
                  }));
+                 map.insert("cloud_saves_supported".to_string(), serde_json::json!(false));
             }
 
             let mut assets_map = serde_json::Map::new();
@@ -1854,6 +1863,7 @@ impl GameListModel {
                       } else {
                           true
                       },
+                      cloud_saves_supported: false,
                       resources: None,
                   });
 
@@ -2661,7 +2671,7 @@ impl GameListModel {
                          });
                      if let Some(sp) = save_path_resolved {
                          log::info!("[cloud-save] Pulling saves before launch for {}", app_name);
-                         if let Err(e) = LegendaryWrapper::sync_saves(app_name, &sp, SyncDirection::Pull) {
+                         if let Err(e) = LegendaryWrapper::sync_saves(app_name, &sp, SyncDirection::Pull, false) {
                              log::warn!("[cloud-save] Pull failed (launching anyway): {}", e);
                          }
                      }
@@ -2748,7 +2758,7 @@ impl GameListModel {
                              if let (Some(app_name), Some(sp)) = (&cloud_app_name, &cloud_save_path_for_push) {
                                  use crate::core::legendary::{LegendaryWrapper, SyncDirection};
                                  log::info!("[cloud-save] Pushing saves after exit for {}", app_name);
-                                 if let Err(e) = LegendaryWrapper::sync_saves(app_name, sp, SyncDirection::Push) {
+                                 if let Err(e) = LegendaryWrapper::sync_saves(app_name, sp, SyncDirection::Push, false) {
                                      log::warn!("[cloud-save] Push failed: {}", e);
                                  }
                              }
@@ -2802,6 +2812,7 @@ impl GameListModel {
                                            } else {
                                                true
                                            },
+                                         cloud_saves_supported: false,
                                          resources: None,
                                      };
                                      if let Err(e) = db.insert_metadata(&meta) {
@@ -2954,7 +2965,7 @@ impl GameListModel {
     /// `direction` should be "pull", "push", or "both".
     /// Emits `cloudSaveSyncFinished(rom_id, success, message)` when done.
     #[allow(non_snake_case)]
-    fn syncCloudSaves(&mut self, rom_id: String, direction: String) {
+    fn syncCloudSaves(&mut self, rom_id: String, direction: String, force: bool) {
         use crate::core::legendary::{LegendaryWrapper, SyncDirection};
 
         let app_name = match rom_id.strip_prefix("legendary-") {
@@ -3030,7 +3041,7 @@ impl GameListModel {
                 return;
             };
 
-            match LegendaryWrapper::sync_saves(&app_name, &save_path, sync_dir) {
+            match LegendaryWrapper::sync_saves(&app_name, &save_path, sync_dir, force) {
                 Ok(()) => {
                     if let Some(tx) = tx {
                         let _ = tx.send(AsyncResponse::CloudSaveSyncFinished(
@@ -3355,6 +3366,7 @@ impl GameListModel {
                                                 } else {
                                                     true
                                                 },
+                                                cloud_saves_supported: false,
                                                 resources: None,
                                             };
                                             
@@ -4631,6 +4643,7 @@ impl GameListModel {
                             }
                         },
                         icon_path: row.get(21)?,
+                        cloud_saves_supported: None,
                         is_installed: Some(row.get::<_, Option<i32>>(23).ok().flatten().map(|v| v != 0).unwrap_or_else(|| {
                             if rom_id.starts_with("steam-") {
                                 crate::core::store::StoreManager::get_local_steam_appids().contains(&rom_id.replace("steam-", ""))

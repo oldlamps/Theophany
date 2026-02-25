@@ -71,6 +71,7 @@ impl DbManager {
                 ra_game_id INTEGER,
                 ra_recent_badges TEXT,
                 is_installed INTEGER DEFAULT 1,
+                cloud_saves_supported INTEGER DEFAULT 0,
                 FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
             );
 
@@ -192,7 +193,8 @@ impl DbManager {
                     rom_id TEXT PRIMARY KEY,
                     title TEXT, description TEXT, rating REAL, release_date TEXT, developer TEXT, publisher TEXT, genre TEXT, tags TEXT, region TEXT,
                     is_favorite INTEGER DEFAULT 0, play_count INTEGER DEFAULT 0, last_played INTEGER, total_play_time INTEGER DEFAULT 0,
-                    achievement_count INTEGER DEFAULT 0, achievement_unlocked INTEGER DEFAULT 0, ra_game_id INTEGER, ra_recent_badges TEXT, is_installed INTEGER DEFAULT 1,
+                    achievement_count INTEGER DEFAULT 0, achievement_unlocked INTEGER DEFAULT 0, ra_game_id INTEGER, ra_recent_badges TEXT, 
+                    is_installed INTEGER DEFAULT 1, cloud_saves_supported INTEGER DEFAULT 0,
                     FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
                  );
                  INSERT OR IGNORE INTO metadata_new SELECT * FROM metadata;
@@ -334,6 +336,12 @@ impl DbManager {
             let _ = self.conn.execute("ALTER TABLE pc_configurations ADD COLUMN cloud_saves_enabled INTEGER", []);
             let _ = self.conn.execute("ALTER TABLE pc_configurations ADD COLUMN cloud_save_path TEXT", []);
             let _ = self.conn.execute("ALTER TABLE pc_configurations ADD COLUMN cloud_save_auto_sync INTEGER", []);
+        }
+
+        // Migration: Add cloud_saves_supported to metadata if missing
+        if self.conn.prepare("SELECT cloud_saves_supported FROM metadata LIMIT 1").is_err() {
+            log::info!("[Migration] Adding cloud_saves_supported column to metadata table...");
+            let _ = self.conn.execute("ALTER TABLE metadata ADD COLUMN cloud_saves_supported INTEGER DEFAULT 0", []);
         }
 
         Ok(())
@@ -569,6 +577,7 @@ impl DbManager {
                 tags: None,
                 release_date: None,
                 description: None,
+                cloud_saves_supported: None,
             })
         })?;
 
@@ -619,6 +628,7 @@ impl DbManager {
                         true
                     }
                 })),
+                cloud_saves_supported: None,
             })
         })?;
 
@@ -630,7 +640,7 @@ impl DbManager {
     }
 
     pub fn get_metadata(&self, rom_id: &str) -> Result<Option<crate::core::models::GameMetadata>> {
-        let mut stmt = self.conn.prepare("SELECT rom_id, title, description, rating, release_date, developer, publisher, genre, tags, region, is_favorite, play_count, last_played, total_play_time, achievement_count, achievement_unlocked, ra_game_id, ra_recent_badges, is_installed FROM metadata WHERE rom_id = ?1")?;
+        let mut stmt = self.conn.prepare("SELECT rom_id, title, description, rating, release_date, developer, publisher, genre, tags, region, is_favorite, play_count, last_played, total_play_time, achievement_count, achievement_unlocked, ra_game_id, ra_recent_badges, is_installed, cloud_saves_supported FROM metadata WHERE rom_id = ?1")?;
         
         let mut rows = stmt.query(params![rom_id])?;
         
@@ -664,6 +674,7 @@ impl DbManager {
                 ra_game_id: row.get::<_, Option<u64>>(16).unwrap_or(None),
                 ra_recent_badges: row.get(17).unwrap_or(None),
                 is_installed: row.get::<_, i32>(18)? != 0,
+                cloud_saves_supported: row.get::<_, i32>(19).unwrap_or(0) != 0,
                 resources: Some(resources),
             }))
         } else {
@@ -817,8 +828,8 @@ impl DbManager {
 
     pub fn insert_metadata(&self, meta: &crate::core::models::GameMetadata) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO metadata (rom_id, title, description, rating, release_date, developer, publisher, genre, tags, region, is_favorite, play_count, last_played, total_play_time, achievement_count, achievement_unlocked, ra_game_id, ra_recent_badges, is_installed)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+            "INSERT OR REPLACE INTO metadata (rom_id, title, description, rating, release_date, developer, publisher, genre, tags, region, is_favorite, play_count, last_played, total_play_time, achievement_count, achievement_unlocked, ra_game_id, ra_recent_badges, is_installed, cloud_saves_supported)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
             params![
                 meta.rom_id,
                 meta.title,
@@ -838,7 +849,8 @@ impl DbManager {
                 meta.achievement_unlocked.unwrap_or(0),
                 meta.ra_game_id,
                 meta.ra_recent_badges,
-                meta.is_installed as i32
+                meta.is_installed as i32,
+                meta.cloud_saves_supported as i32
             ],
         )?;
 
@@ -1406,6 +1418,7 @@ impl DbManager {
             tags: None,
             release_date: None,
             description: None,
+            cloud_saves_supported: None,
         })
     }
 

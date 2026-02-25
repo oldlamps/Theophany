@@ -283,6 +283,7 @@ pub fn perform_ra_scrape(
                         } else {
                             true
                         },
+                        cloud_saves_supported: false,
                         resources: None,
                     };
                     

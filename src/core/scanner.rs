@@ -72,6 +72,7 @@ impl Scanner {
                             release_date: None,
                             description: None,
                             is_installed: Some(true),
+                            cloud_saves_supported: None,
                         });
                     }
                 }

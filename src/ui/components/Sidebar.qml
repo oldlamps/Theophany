@@ -452,7 +452,6 @@ Rectangle {
                             iconSource: "📥"
                             onTriggered: root.addContentRequested()
                         }
-                        TheophanyMenuSeparator {}
                         TheophanyMenuItem { 
                             text: "Flatpak Store"
                             iconSource: "file://" + appInfo.getAssetsDir().replace("/assets", "") + "/assets/systems/flatpak.png"

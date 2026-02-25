@@ -210,6 +210,24 @@ impl LegendaryWrapper {
         Ok(child)
     }
 
+    /// Imports an already installed game.
+    pub fn import(app_name: &str, install_path: &str) -> anyhow::Result<std::process::Child> {
+        let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
+
+        let mut cmd = Command::new(binary);
+        cmd.env("PYTHONUNBUFFERED", "1")
+            .arg("import")
+            .arg(app_name)
+            .arg(install_path);
+
+        let child = cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+
+        Ok(child)
+    }
+
     /// Uninstalls a game.
     pub fn uninstall(app_name: &str) -> anyhow::Result<()> {
         let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
@@ -229,16 +247,107 @@ impl LegendaryWrapper {
     }
 
     /// Parses progress percentage from legendary output line.
-    /// Example: "[cli] INFO: Downloading ... (10.5% done, ...)"
+    /// Example: "[DLManager] INFO: = Progress: 6.05% ..."
     pub fn parse_progress(line: &str) -> Option<f32> {
-        if let Some(pos) = line.find("% done") {
-            let start = line[..pos].rfind('(')?;
-            let percent_str = &line[start + 1..pos].trim();
+        if let Some(pos) = line.find("Progress: ") {
+            let start = pos + 10;
+            if let Some(end) = line[start..].find('%') {
+                if let Ok(p) = line[start..start + end].trim().parse::<f32>() {
+                    return Some(p / 100.0);
+                }
+            }
+        }
+        
+        // Fallback for older formats
+        if let Some(pos) = line.find('%') {
+            let start = line[..pos].rfind(|c: char| !c.is_digit(10) && c != '.').map(|i| i + 1).unwrap_or(0);
+            let percent_str = &line[start..pos].trim();
             if let Ok(p) = percent_str.parse::<f32>() {
                 return Some(p / 100.0);
             }
         }
         None
+    }
+
+    /// Cleans a Legendary output line to be more UI-friendly.
+    pub fn clean_status_line(line: &str) -> String {
+        let mut cleaned = line.to_string();
+        if let Some(pos) = cleaned.find("INFO: ") {
+            cleaned = cleaned[pos + 6..].to_string();
+        }
+        
+        // Remove leading symbols used by Legendary DLManager
+        cleaned = cleaned.trim_start_matches(|c: char| c == '=' || c == '+' || c == '-' || c == ' ' || c == '*').trim().to_string();
+        
+        // Replace long labels with short ones, handling multiple spaces
+        while cleaned.contains("  ") {
+            cleaned = cleaned.replace("  ", " ");
+        }
+        
+        cleaned = cleaned.replace("Download -", "DL:")
+                         .replace("Disk -", "Disk:")
+                         .replace("Progress:", "P:")
+                         .replace(" (raw) /", ",")
+                         .replace(" (decompressed)", "")
+                         .replace(" (write) / 0.00 MiB/s (read)", "");
+                         
+        cleaned
+    }
+
+    /// Extracts a specific value based on a keyword, handling variable whitespace.
+    /// Example: "Download      - 5.43 MiB/s" -> "5.43 MiB/s"
+    pub fn extract_value(line: &str, keyword: &str) -> Option<String> {
+        if let Some(pos) = line.find(keyword) {
+            let start = pos + keyword.len();
+            let mut sub = &line[start..];
+            
+            // Skip leading whitespace and symbols like '-'
+            sub = sub.trim_start_matches(|c: char| c.is_whitespace() || c == '-').trim();
+            
+            // Find next marker or end of group
+            let end = sub.find(',').or_else(|| sub.find(')')).unwrap_or(sub.len());
+            return Some(sub[..end].trim().to_string());
+        }
+        None
+    }
+
+    /// Parses the detailed status from legendary output line.
+    pub fn parse_detailed_status(line: &str) -> Option<String> {
+        let mut parts = Vec::new();
+        
+        // Clean the line first to remove junk
+        let clean = Self::clean_status_line(line);
+        if clean.contains("MiB/s") || clean.contains("GiB") || clean.contains("MiB") || clean.contains("ETA:") {
+            return Some(clean);
+        }
+
+        let mut current_start_paren = None;
+        let mut current_start_square = None;
+        
+        for (i, c) in line.char_indices() {
+            match c {
+                '(' => current_start_paren = Some(i + 1),
+                ')' => if let Some(start) = current_start_paren {
+                    parts.push(line[start..i].to_string());
+                    current_start_paren = None;
+                },
+                '[' => current_start_square = Some(i + 1),
+                ']' => if let Some(start) = current_start_square {
+                    let part = &line[start..i];
+                    if part != "cli" && part != "DLManager" {
+                        parts.push(part.to_string());
+                    }
+                    current_start_square = None;
+                },
+                _ => {}
+            }
+        }
+        
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(", "))
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -340,6 +449,17 @@ impl LegendaryWrapper {
             // Some templates use the literal Wine username in braces
             .replace(&format!("{{{}}}", wine_user), &*user_root.to_string_lossy());
 
+        // Expand ~ to HOME if present at start.
+        let s = if s.starts_with('~') {
+            if let Ok(home) = std::env::var("HOME") {
+                s.replacen('~', &home, 1)
+            } else {
+                s
+            }
+        } else {
+            s
+        };
+
         // Resolve any ".." that appear after variable expansion (e.g. {appdata}/../LocalLow/…).
         let normalised = normalize_path(&PathBuf::from(s));
 
@@ -366,6 +486,7 @@ impl LegendaryWrapper {
         app_name: &str,
         save_path: &std::path::Path,
         direction: SyncDirection,
+        force: bool,
     ) -> anyhow::Result<()> {
         let binary = Self::find_binary()
             .ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
@@ -380,11 +501,27 @@ impl LegendaryWrapper {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
 
+        log::info!("[legendary cloud-save] Executing: {:?} {:?}", binary, cmd.get_args());
+
         match direction {
-            SyncDirection::Pull => { cmd.arg("--skip-upload"); }
-            SyncDirection::Push => { cmd.arg("--skip-download"); }
-            SyncDirection::Both => {}
+            SyncDirection::Pull => {
+                cmd.arg("--skip-upload");
+                if force { cmd.arg("--force-download"); }
+            }
+            SyncDirection::Push => {
+                cmd.arg("--skip-download");
+                if force { cmd.arg("--force-upload"); }
+            }
+            SyncDirection::Both => {
+                if force {
+                    cmd.arg("--force-download");
+                    cmd.arg("--force-upload");
+                }
+            }
         }
+
+        // Ensure target directory exists before starting legendary sync
+        let _ = std::fs::create_dir_all(save_path);
 
         let mut child = cmd.spawn()?;
 
@@ -425,10 +562,10 @@ impl LegendaryWrapper {
         Ok(())
     }
 
-    /// Converts a LegendaryGame to a Theophany Rom.
     pub fn to_rom(game: &LegendaryGame) -> Rom {
         let title = game.title.clone().unwrap_or_else(|| game.app_name.clone());
-        Rom {
+        
+        let mut rom = Rom {
             id: format!("legendary-{}", game.app_name),
             platform_id: "epic".to_string(),
             path: format!("epic://launch/{}", game.app_name),
@@ -439,7 +576,7 @@ impl LegendaryWrapper {
             region: None,
             platform_name: Some("Epic Games".to_string()),
             platform_type: Some("PC (Linux)".to_string()),
-            boxart_path: None, // Will be filled by scraper or Heroic cache
+            boxart_path: None,
             date_added: None,
             play_count: Some(0),
             total_play_time: Some(0),
@@ -456,6 +593,85 @@ impl LegendaryWrapper {
             release_date: None,
             description: None,
             is_installed: Some(game.is_installed),
+            cloud_saves_supported: None,
+        };
+
+        // Enriched Metadata from Legendary JSON
+        if let Some(metadata) = &game.metadata {
+            // Cloud Save Support
+            rom.cloud_saves_supported = metadata.get("cloud_saves_supported")
+                .and_then(|v| v.as_bool());
+
+            // Description
+            if let Some(desc) = metadata.get("description").and_then(|v| v.as_str()) {
+                rom.description = Some(desc.to_string());
+            }
+
+            // Developer / Publisher
+            if let Some(dev) = metadata.get("developer").and_then(|v| v.as_str()) {
+                rom.developer = Some(dev.to_string());
+            }
+            if let Some(publ) = metadata.get("publisher").and_then(|v| v.as_str()) {
+                rom.publisher = Some(publ.to_string());
+            }
+
+            // Genre (from categories)
+            if let Some(cats) = metadata.get("categories").and_then(|v| v.as_array()) {
+                let genres: Vec<String> = cats.iter()
+                    .filter_map(|v| v.as_str())
+                    .filter(|s| !s.contains("App") && !s.contains("Game") && !s.contains("Engine"))
+                    .map(|s| s.to_string())
+                    .collect();
+                if !genres.is_empty() {
+                    rom.genre = Some(genres.join(", "));
+                }
+            }
+
+            // Release Date
+            if let Some(rd) = metadata.get("releaseDate").and_then(|v| v.as_str()) {
+                rom.release_date = Some(rd.to_string());
+            }
+
+            // Artwork from keyImages
+            if let Some(images) = metadata.get("keyImages").and_then(|v| v.as_array()) {
+                for img in images {
+                    let url = img.get("url").and_then(|v| v.as_str());
+                    let itype = img.get("type").and_then(|v| v.as_str());
+
+                    match (url, itype) {
+                        (Some(u), Some("DieselGameBoxTall")) | (Some(u), Some("OfferImageTall")) => {
+                            rom.boxart_path = Some(u.to_string());
+                        },
+                        (Some(u), Some("DieselGameBackground")) | (Some(u), Some("OfferImageWide")) => {
+                            rom.background_path = Some(u.to_string());
+                        },
+                        (Some(u), Some("Thumbnail")) => {
+                            rom.icon_path = Some(u.to_string());
+                        },
+                        (Some(u), Some("DieselGameBox")) | (Some(u), Some("StoreFrontWide")) => {
+                            // If we don't have a background yet, use this horizontal art.
+                            if rom.background_path.is_none() {
+                                rom.background_path = Some(u.to_string());
+                            }
+                        },
+                        (Some(u), Some(t)) if t.to_lowercase().contains("logo") => {
+                            // We don't have a Rom.logo_path, but the importer can pick this up 
+                            // if we find a way to pass it. For now, let's at least ensure we have 
+                            // the most common images correctly mapped.
+                            // We'll use "Clear Logo" as the type for the assets table.
+                             let _ = u; 
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            
+            // Fallback for Icon if still missing (use Boxart or Thumbnail)
+            if rom.icon_path.is_none() {
+                rom.icon_path = rom.boxart_path.clone();
+            }
         }
+
+        rom
     }
 }

@@ -516,6 +516,7 @@ impl StoreManager {
                 release_date: None,
                 description: None,
                 is_installed: Some(true),
+                cloud_saves_supported: None,
              });
         }
 
@@ -676,6 +677,7 @@ impl StoreManager {
                         release_date: None,
                         description: None,
                         is_installed: Some(is_installed),
+                        cloud_saves_supported: None,
                     });
                 }
             }
@@ -1013,6 +1015,7 @@ impl StoreManager {
                 release_date: None,
                 description: None,
                 is_installed: Some(true),
+                cloud_saves_supported: None,
             });
         }
 
@@ -1080,6 +1083,7 @@ impl StoreManager {
                                     release_date: None,
                                     description: None,
                                     is_installed: Some(true),
+                                    cloud_saves_supported: None,
                                 };
 
                                 // Enriched Metadata
@@ -1200,6 +1204,7 @@ impl StoreManager {
                                     release_date: None,
                                     description: None,
                                     is_installed: Some(true),
+                                    cloud_saves_supported: None,
                                 };
 
                                 // Enriched Metadata
@@ -1277,6 +1282,7 @@ impl StoreManager {
                                 release_date: None,
                                 description: None,
                                 is_installed: Some(true),
+                                cloud_saves_supported: None,
                             });
                         }
                     }
@@ -1433,6 +1439,7 @@ impl StoreManager {
                                 tags: Some("Lutris".to_string()),
                                 icon_path: None,
                                 background_path: None,
+                                cloud_saves_supported: None,
                                 release_date: None,
                                 description: None,
                                 is_installed: Some(true),
@@ -1550,6 +1557,10 @@ impl StoreManager {
     /// Triggers installation of a Legendary game.
     pub fn install_legendary_game(app_name: String, install_path: Option<String>) -> anyhow::Result<std::process::Child> {
         crate::core::legendary::LegendaryWrapper::install(&app_name, install_path.as_deref())
+    }
+
+    pub fn import_legendary_game(app_name: String, path: String) -> anyhow::Result<std::process::Child> {
+        crate::core::legendary::LegendaryWrapper::import(&app_name, &path)
     }
 
     /// Triggers uninstallation of a Legendary game and updates DB.

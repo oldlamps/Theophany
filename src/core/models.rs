@@ -76,6 +76,8 @@ pub struct Rom {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_installed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cloud_saves_supported: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -99,6 +101,7 @@ pub struct GameMetadata {
     pub ra_game_id: Option<u64>,
     pub ra_recent_badges: Option<String>, // JSON list of badge names
     pub is_installed: bool,
+    pub cloud_saves_supported: bool,
     pub resources: Option<Vec<GameResource>>,
 }
 

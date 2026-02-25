@@ -1046,6 +1046,12 @@ Dialog {
 
                                             Label { text: "Manual Sync:"; color: Theme.secondaryText; font.pixelSize: 13 }
 
+                                            TheophanyCheckBox {
+                                                id: forceSyncCheck
+                                                text: "Force"
+                                                font.pixelSize: 12
+                                            }
+
                                             TheophanyButton {
                                                 text: "⬇ Pull from Cloud"
                                                 enabled: cloudSavesCheck.checked
@@ -1055,7 +1061,7 @@ Dialog {
                                                     cloudSaveStatusLabel.color = Theme.secondaryText
                                                     // Save current path first so backend can find it
                                                     savePcConfig()
-                                                    gameModel.syncCloudSaves(root.gameId, "pull")
+                                                    gameModel.syncCloudSaves(root.gameId, "pull", forceSyncCheck.checked)
                                                 }
                                             }
                                             TheophanyButton {
@@ -1066,7 +1072,7 @@ Dialog {
                                                     cloudSaveStatusLabel.text = "⏳ Pushing to cloud…"
                                                     cloudSaveStatusLabel.color = Theme.secondaryText
                                                     savePcConfig()
-                                                    gameModel.syncCloudSaves(root.gameId, "push")
+                                                    gameModel.syncCloudSaves(root.gameId, "push", forceSyncCheck.checked)
                                                 }
                                             }
                                             TheophanyButton {
@@ -1077,7 +1083,7 @@ Dialog {
                                                     cloudSaveStatusLabel.text = "⏳ Syncing…"
                                                     cloudSaveStatusLabel.color = Theme.secondaryText
                                                     savePcConfig()
-                                                    gameModel.syncCloudSaves(root.gameId, "both")
+                                                    gameModel.syncCloudSaves(root.gameId, "both", forceSyncCheck.checked)
                                                 }
                                             }
                                         }

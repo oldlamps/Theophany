@@ -17,3 +17,4 @@ pub mod metadata_manager;
 pub mod legendary;
 pub mod importer;
 pub mod runtime;
+pub mod exodos;

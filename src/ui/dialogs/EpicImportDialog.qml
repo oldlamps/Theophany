@@ -53,7 +53,8 @@ Dialog {
                     "description": item.description || "",
                     "total_play_time": item.total_play_time || 0,
                     "last_played": item.last_played || 0,
-                    "is_installed": item.is_installed
+                    "is_installed": item.is_installed,
+                    "cloud_saves_supported": item.cloud_saves_supported || false
                 })
             }
             loading = false
@@ -434,6 +435,22 @@ Dialog {
                                             color: model.is_installed ? Theme.accent : Theme.secondaryText
                                             font.pixelSize: 11
                                             elide: Text.ElideRight
+                                        }
+                                        
+                                        Rectangle {
+                                            width: 14; height: 14; color: "transparent"
+                                            visible: model.cloud_saves_supported
+                                            border.color: Theme.accent
+                                            border.width: 1
+                                            radius: 3
+                                            Layout.alignment: Qt.AlignVCenter
+                                            
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "☁"
+                                                font.pixelSize: 10
+                                                color: Theme.accent
+                                            }
                                         }
                                     }
                                 }

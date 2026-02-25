@@ -44,7 +44,29 @@ impl BulkImporter {
             final_rom.platform_id = platform_id.to_string();
 
             if existing_ids.contains(&rom.id) {
-                log::info!("[BulkImporter] ROM already exists, checking assets: {}", rom.id);
+                log::info!("[BulkImporter] ROM already exists, updating metadata: {}", rom.id);
+                // Even if exists, we update metadata from the scan to catch enrichment (e.g. descriptions, developer)
+                let mut meta = GameMetadata::default();
+                meta.rom_id = final_rom.id.clone();
+                meta.title = final_rom.title.clone();
+                meta.developer = final_rom.developer.clone();
+                meta.publisher = final_rom.publisher.clone();
+                meta.genre = final_rom.genre.clone();
+                meta.description = final_rom.description.clone();
+                meta.tags = final_rom.tags.clone();
+                meta.release_date = final_rom.release_date.clone();
+                meta.cloud_saves_supported = final_rom.cloud_saves_supported.unwrap_or(false);
+
+                if let Some(played) = final_rom.last_played {
+                    meta.last_played = Some(played);
+                }
+                if let Some(total_time) = final_rom.total_play_time {
+                    meta.total_play_time = total_time;
+                }
+                
+                // For store games, we update the metadata. For local generic roms, we might want to be more careful, 
+                // but store scanning is almost always "better" or equal info.
+                let _ = db.insert_metadata(&meta);
             } else {
                 if let Err(e) = db.insert_rom(&final_rom) {
                     log::error!("[BulkImporter] Failed to insert ROM {}: {}", final_rom.id, e);
@@ -59,6 +81,9 @@ impl BulkImporter {
                 meta.developer = final_rom.developer.clone();
                 meta.genre = final_rom.genre.clone();
                 meta.description = final_rom.description.clone();
+                meta.publisher = final_rom.publisher.clone();
+                meta.release_date = final_rom.release_date.clone();
+                meta.cloud_saves_supported = final_rom.cloud_saves_supported.unwrap_or(false);
                 
                 if let Some(played) = final_rom.last_played {
                     meta.last_played = Some(played);
@@ -180,44 +205,46 @@ impl BulkImporter {
                             src: src.clone(),
                             dest_base: assets_base_dir.clone(),
                             save_locally: true,
+                            custom_filename: None,
                         });
                     }
                 }
             } else if final_rom.id.starts_with("heroic-") {
-                let mut assets_to_collect = vec![
+                let assets_to_collect = vec![
                     ("Box - Front", final_rom.boxart_path.clone()),
                     ("Icon", final_rom.icon_path.clone()),
                     ("Background", final_rom.background_path.clone()),
                 ];
 
-                // Heroic Epic Optimization: Use Box - Front task to handle BOTH Box and Icon symlinking
-                if final_rom.id.starts_with("heroic-epic-") {
-                    // Dedup: remove explicit Icon task to avoid race conditions
-                    assets_to_collect.retain(|(t, _)| *t != "Icon");
-                    
-                    if let Some(local_icon) = &final_rom.icon_path {
-                        if !local_icon.starts_with("http") && !save_assets_locally {
-                             // Override Box Art with local icon if we aren't saving locally
-                             assets_to_collect[0].1 = Some(local_icon.clone());
-                        }
-                    }
-                }
-
                 for (atype, path_opt) in assets_to_collect {
                     if let Some(src) = path_opt {
-                        // Deduplication: if Icon URL is same as Boxart URL, we'll symlink it after Boxart is saved.
-                        // With the override above, this might trigger if boxart was replaced by icon path.
-                        // But since we want explicit symlinks for checks later, we might just let it process normally.
-                        // But if both are local paths now, they will both be processed as local symlink tasks, which is fine.
-                        
-                        // We skip the dedup optimization for Heroic now to ensure robust individual symlinking
-                        
                         asset_tasks.push(AssetTask {
                             rom_id: final_rom.id.clone(),
                             asset_type: atype.to_string(),
                             src: src.clone(),
                             dest_base: assets_base_dir.clone(),
                             save_locally: save_assets_locally,
+                            custom_filename: None, // Heroic keep default naming
+                        });
+                    }
+                }
+            } else if final_rom.id.starts_with("legendary-") {
+                // Base assets from Rom fields (already correctly mapped in legendary.rs)
+                let assets_to_collect = vec![
+                    ("Box - Front".to_string(), final_rom.boxart_path.clone()),
+                    ("Icon".to_string(), final_rom.icon_path.clone()),
+                    ("Background".to_string(), final_rom.background_path.clone()),
+                ];
+
+                for (atype, path_opt) in assets_to_collect {
+                    if let Some(src) = path_opt {
+                        asset_tasks.push(AssetTask {
+                            rom_id: final_rom.id.clone(),
+                            asset_type: atype,
+                            src: src.clone(),
+                            dest_base: assets_base_dir.clone(),
+                            save_locally: true,
+                            custom_filename: None, // Reverted: use default system naming
                         });
                     }
                 }
@@ -230,23 +257,21 @@ impl BulkImporter {
         // COMMIT TRANSACTION for ROMs/Metadata
         let _ = db.get_connection().execute("COMMIT", []);
 
-        // 4. Parallel Asset Processing
+        // 4. Parallel Asset Processing (Throttled)
         if !asset_tasks.is_empty() {
-
-            let mut handles = Vec::new();
+            use futures_util::StreamExt;
             
-            for task in asset_tasks {
-                let handle = crate::core::runtime::get_runtime().spawn(async move {
-                    task.execute().await
-                });
-                handles.push(handle);
-            }
-
-            // Wait for all downloads to finish and update DB
-            // Wait for all downloads to finish and update DB
             crate::core::runtime::get_runtime().block_on(async {
-                for handle in handles {
-                    if let Ok(Some((rom_id, atype, path_str, src_path))) = handle.await {
+                let mut stream = futures_util::stream::iter(asset_tasks)
+                    .map(|task| async move {
+                        // Small delay to avoid hitting servers too fast
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        task.execute().await
+                    })
+                    .buffer_unordered(5); // Concurrency limit: 5
+
+                while let Some(result) = stream.next().await {
+                    if let Some((rom_id, atype, path_str, src_path)) = result {
                             // We need a fresh DB connection because we're in a different thread/async context
                             let db_path = paths::get_data_dir().join("games.db");
                             if let Ok(db) = DbManager::open(&db_path) {
@@ -260,96 +285,7 @@ impl BulkImporter {
                                      _ => {}
                                  }
 
-                                    // Heroic Symlink Logic: Use Boxart as Icon if a symlink is needed or missing
-                                    // AND create a named symlink in Box - Front folder
-                                    // STRICTLY for Epic Games
-                                    if atype == "Box - Front" && rom_id.starts_with("heroic-epic-") {
-
-                                        let box_path = Path::new(&path_str);
-                                        
-                                        // Determine the actual target for our symlinks.
-                                        // If source is local, point directly to it.
-                                        // If source is http, point to the downloaded file (box_path).
-                                        let symlink_target = if src_path.starts_with("http") {
-                                            box_path
-                                        } else {
-                                            Path::new(&src_path)
-                                        };
-
-                                        if let (Some(parent), Some(ext)) = (box_path.parent(), box_path.extension()) {
-                                            if let Some(grandparent) = parent.parent() {
-                                                // Fetch title from DB to use as filename
-                                                let game_title: String = conn.query_row(
-                                                    "SELECT title FROM roms WHERE id = ?1", 
-                                                    [&rom_id], 
-                                                    |r| r.get(0)
-                                                ).unwrap_or_else(|_| grandparent.file_name().unwrap_or_default().to_string_lossy().to_string());
-
-                                                let safe_title = game_title.replace("/", "_").replace("\\", "_").replace(":", "").trim().to_string();
-
-
-                                                // 1. Box - Front Symlink: {Title}.{ext} -> TARGET
-                                                let box_symlink_path = parent.join(format!("{}.{}", safe_title, ext.to_string_lossy()));
-                                                let box_symlink_str = box_symlink_path.to_string_lossy().to_string();
-                                                
-                                                if box_symlink_path.symlink_metadata().is_ok() {
-                                                    let _ = fs::remove_file(&box_symlink_path);
-                                                }
-                                                
-                                                #[cfg(unix)]
-                                                { 
-                                                    let _res = std::os::unix::fs::symlink(symlink_target, &box_symlink_path); 
-
-                                                }
-                                                #[cfg(not(unix))]
-                                                { let _ = fs::copy(symlink_target, &box_symlink_path); }
-
-                                                // CLEANUP: Remove the standard 'box_-_front.jpg' if it's redundant/double
-                                                // Only if we actually created the named symlink successfully
-                                                if box_symlink_path.symlink_metadata().is_ok() && box_path.symlink_metadata().is_ok() && box_path != &box_symlink_path {
-                                                     // We keep the named one, remove the generic one to avoid "double symlink" confusion
-                                                     let _ = fs::remove_file(box_path);
-                                                }
-
-                                                // Update DB for Box - Front to point to the named symlink
-                                                // We delete existing entries to avoid "phantom" blank entries from generic tasks
-                                                let _ = db.delete_assets_by_type(&rom_id, "Box - Front");
-                                                let _ = db.insert_asset(&rom_id, "Box - Front", &box_symlink_str);
-                                                let _ = conn.execute("UPDATE roms SET boxart_path = ?1 WHERE id = ?2", [&box_symlink_str, &rom_id]);
-
-
-                                                // 2. Icon Symlink: {Title}.{ext} -> TARGET
-                                                let icon_dir = grandparent.join("Icon");
-                                                let _ = fs::create_dir_all(&icon_dir);
-                                                let icon_path = icon_dir.join(format!("{}.{}", safe_title, ext.to_string_lossy()));
-                                                let icon_path_str = icon_path.to_string_lossy().to_string();
-                                                
-                                                // Clean up any old "icon.jpg" or existing target
-                                                let old_icon_path = icon_dir.join(format!("icon.{}", ext.to_string_lossy()));
-                                                if old_icon_path.symlink_metadata().is_ok() {
-                                                    let _ = fs::remove_file(&old_icon_path);
-                                                }
-                                                if icon_path.symlink_metadata().is_ok() {
-                                                     let _ = fs::remove_file(&icon_path);
-                                                }
-
-                                                #[cfg(unix)]
-                                                { 
-                                                    let _res = std::os::unix::fs::symlink(symlink_target, &icon_path);
-
-                                                }
-                                                #[cfg(not(unix))]
-                                                { let _ = fs::copy(symlink_target, &icon_path); }
-                                                
-                                                // Always update the DB to point to the new icon path
-                                                // Again, cleanup generic or previous icons
-                                                let _ = db.delete_assets_by_type(&rom_id, "Icon");
-                                                let _ = db.insert_asset(&rom_id, "Icon", &icon_path_str);
-                                                let _ = conn.execute("UPDATE roms SET icon_path = ?1 WHERE id = ?2", [&icon_path_str, &rom_id]);
-                                            }
-                                        }
-                                    }
-                        }
+                         }
                     }
                 }
             });
@@ -365,6 +301,7 @@ struct AssetTask {
     src: String,
     dest_base: std::path::PathBuf,
     save_locally: bool,
+    custom_filename: Option<String>,
 }
 
 impl AssetTask {
@@ -376,11 +313,27 @@ impl AssetTask {
                  else if self.src.contains(".svg") { "svg" } 
                  else { "jpg" };
                  
-        let filename = format!("{}.{}", self.asset_type.to_lowercase().replace(" ", "_"), ext);
+        let filename = if let Some(custom) = &self.custom_filename {
+            format!("{}.{}", custom, ext)
+        } else {
+            format!("{}.{}", self.asset_type.to_lowercase().replace(" ", "_"), ext)
+        };
         let dest_path = dest_dir.join(filename);
 
         if self.src.starts_with("http") {
-            if !dest_path.symlink_metadata().is_ok() {
+            // Check if file exists and is not empty. If it's a broken symlink or 0 bytes, we re-download.
+            let needs_download = if let Ok(meta) = dest_path.symlink_metadata() {
+                meta.len() == 0 || meta.file_type().is_symlink() // Re-download if 0b or is a symlink (we want direct files now)
+            } else {
+                true
+            };
+
+            if needs_download {
+                if dest_path.symlink_metadata().is_ok() {
+                    let _ = fs::remove_file(&dest_path);
+                }
+                
+                log::info!("[AssetTask] Downloading {} to {:?}", self.asset_type, dest_path);
                 // Use async reqwest for parallel downloads
                 let client = reqwest::Client::new();
                 if let Ok(resp) = client.get(&self.src).send().await {
@@ -397,12 +350,23 @@ impl AssetTask {
             }
         } else {
             let src_path = Path::new(&self.src);
-            // Check for existence or symlink (even if dangling)
-            if src_path.symlink_metadata().is_ok() {
-                if !dest_path.symlink_metadata().is_ok() {
+            if src_path.exists() {
+                 let needs_update = if let Ok(meta) = dest_path.symlink_metadata() {
+                    meta.len() == 0 || meta.file_type().is_symlink()
+                } else {
+                    true
+                };
+
+                if needs_update {
+                    if dest_path.symlink_metadata().is_ok() {
+                        let _ = fs::remove_file(&dest_path);
+                    }
+                    
+                    log::info!("[AssetTask] Processing local asset {} to {:?}", self.asset_type, dest_path);
                     if self.save_locally {
-                        let _ = fs::copy(src_path, &dest_path);
+                         let _ = fs::copy(src_path, &dest_path);
                     } else {
+                        // Heroic/Other symlink path
                         #[cfg(unix)]
                         {
                             let _ = std::os::unix::fs::symlink(src_path, &dest_path);
@@ -413,8 +377,7 @@ impl AssetTask {
                         }
                     }
                 }
-                // Return original path even if it may be dangling (at least we have a local path in DB)
-                if dest_path.symlink_metadata().is_ok() {
+                if dest_path.exists() {
                     return Some((self.rom_id, self.asset_type, dest_path.to_string_lossy().to_string(), self.src));
                 }
             }

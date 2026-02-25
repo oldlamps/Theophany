@@ -28,6 +28,7 @@ pub struct StoreBridge {
     featuredContentReceived: qt_signal!(json: QString),
     folderAnalyzed: qt_signal!(json: QString),
     steamAchievementsFinished: qt_signal!(json: QString, success: bool, message: QString),
+    exodosLibraryFinished: qt_signal!(results: QString),
 
     // Methods
     search_store: qt_method!(fn(&self, query: String)),
@@ -43,19 +44,25 @@ pub struct StoreBridge {
     refresh_heroic_library: qt_method!(fn(&self)),
     refresh_lutris_library: qt_method!(fn(&self)),
     refresh_legendary_library: qt_method!(fn(&self)),
+    refresh_exodos_library: qt_method!(fn(&self, path: String)),
     check_legendary_auth: qt_method!(fn(&self) -> bool),
     get_legendary_auth_url: qt_method!(fn(&self)),
     authenticate_legendary: qt_method!(fn(&self, code: String)),
     install_legendary_game: qt_method!(fn(&self, app_name: String, path: String)),
+    import_legendary_game: qt_method!(fn(&self, app_name: String, path: String)),
     uninstall_legendary_game: qt_method!(fn(&self, app_name: String)),
     find_icon_path: qt_method!(fn(&self, icon_name: String) -> String),
     get_app_details: qt_method!(fn(&self, app_id: String)),
     analyze_folder: qt_method!(fn(&self, path: String)),
     poll: qt_method!(fn(&mut self)),
+    pause_legendary_install: qt_method!(fn(&self, app_name: String)),
+    resume_legendary_install: qt_method!(fn(&self, app_name: String)),
+    cancel_legendary_install: qt_method!(fn(&self, app_name: String)),
 
     // Internal
     tx: RefCell<Option<mpsc::Sender<StoreMsg>>>,
     rx: RefCell<Option<mpsc::Receiver<StoreMsg>>>,
+    active_processes: RefCell<HashMap<String, u32>>,
     
     // Cache
     category_cache: RefCell<HashMap<String, String>>,
@@ -78,6 +85,8 @@ enum StoreMsg {
     FeaturedContentReceived(String),
     FolderAnalyzed(String),
     SteamAchievementsFinished(String, bool, String),
+    InstallStarted(String, u32),
+    ExoDosLibraryFinished(String),
 }
 
 #[allow(non_snake_case)]
@@ -96,8 +105,15 @@ impl StoreBridge {
             while let Ok(msg) = rx.try_recv() {
                 match msg {
                     StoreMsg::SearchFinished(j) => self.searchFinished(j.into()),
-                    StoreMsg::InstallProgress(id, p, s) => self.installProgress(id.into(), p, s.into()),
-                    StoreMsg::InstallFinished(id, s, m) => self.installFinished(id.into(), s, m.into()),
+                    StoreMsg::InstallProgress(id, p, s_json) => self.installProgress(id.into(), p, s_json.into()),
+                    StoreMsg::InstallFinished(id, s, m) => {
+                        // Clean up active process if any
+                        self.active_processes.borrow_mut().remove(&id);
+                        self.installFinished(id.into(), s, m.into());
+                    },
+                    StoreMsg::InstallStarted(id, pid) => {
+                        self.active_processes.borrow_mut().insert(id, pid);
+                    },
                     StoreMsg::LocalAppsFinished(j) => self.localAppsFinished(j.into()),
                     StoreMsg::SteamLibraryFinished(j) => self.steamLibraryFinished(j.into()),
                     StoreMsg::RemoteSteamLibraryFinished(j, s, m) => self.remoteSteamLibraryFinished(j.into(), s, m.into()),
@@ -114,6 +130,7 @@ impl StoreBridge {
                     StoreMsg::FeaturedContentReceived(j) => self.featuredContentReceived(j.into()),
                     StoreMsg::FolderAnalyzed(j) => self.folderAnalyzed(j.into()),
                     StoreMsg::SteamAchievementsFinished(j, s, m) => self.steamAchievementsFinished(j.into(), s, m.into()),
+                    StoreMsg::ExoDosLibraryFinished(j) => self.exodosLibraryFinished(j.into()),
                 }
             }
         }
@@ -199,6 +216,7 @@ impl StoreBridge {
                         release_date: None,
                         description: Some(description_clone.clone()),
                         is_installed: Some(true),
+                        cloud_saves_supported: None,
                     };
 
                     let db_path = crate::core::paths::get_data_dir().join("games.db");
@@ -418,6 +436,17 @@ impl StoreBridge {
         });
     }
 
+    fn refresh_exodos_library(&self, path: String) {
+        log::info!("Scanning ExoDOS library at: {}", path);
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            let results = crate::core::exodos::ExoDosManager::scan_directory(Path::new(&path));
+            let json = serde_json::to_string(&results).unwrap_or_default();
+            let _ = tx.send(StoreMsg::ExoDosLibraryFinished(json));
+        });
+    }
+
     fn check_legendary_auth(&self) -> bool {
         crate::core::legendary::LegendaryWrapper::is_authenticated()
     }
@@ -466,21 +495,21 @@ impl StoreBridge {
             
             match StoreManager::install_legendary_game(app_name_clone.clone(), install_path) {
                 Ok(mut child) => {
-                    use std::io::{BufRead, BufReader};
+                    use std::io::{BufRead, BufReader, Read};
                     
-                    let stdout = child.stdout.take().unwrap();
                     let stderr = child.stderr.take().unwrap();
-                    let reader = BufReader::new(stdout);
                     let stderr_reader = BufReader::new(stderr);
                     
                     let tx_clone = tx.clone();
-                    let app_name_inner = app_name_clone.clone();
+                    let app_id_for_reader = app_name_clone.clone();
                     
-                    // Legendary usually uses stderr, but can use stdout. Read byte-by-byte to handle both \n and \r
+                    // Legendary usually uses stderr for progress. Read byte-by-byte to handle both \n and \r
                     std::thread::spawn(move || {
-                        use std::io::Read;
                         let mut buf = Vec::new();
                         let mut last_progress = 0.0;
+                        let mut last_dl = String::new();
+                        let mut last_disk = String::new();
+                        let mut last_eta = String::new();
                         
                         for byte_result in stderr_reader.bytes() {
                             if let Ok(b) = byte_result {
@@ -489,11 +518,51 @@ impl StoreBridge {
                                         if let Ok(line) = String::from_utf8(buf.clone()) {
                                             let trimmed = line.trim();
                                             if !trimmed.is_empty() {
+                                                log::info!("[Legendary-CLI] {}", trimmed);
+                                                
+                                                let mut updated = false;
                                                 if let Some(progress) = crate::core::legendary::LegendaryWrapper::parse_progress(trimmed) {
                                                     last_progress = progress;
-                                                    let _ = tx_clone.send(StoreMsg::InstallProgress(app_name_inner.clone(), progress, trimmed.to_string()));
-                                                } else if trimmed.contains("INFO") || trimmed.contains("Downloading") || trimmed.contains("Installing") || trimmed.contains("WARNING") || trimmed.contains("ERROR") {
-                                                    let _ = tx_clone.send(StoreMsg::InstallProgress(app_name_inner.clone(), last_progress, trimmed.to_string()));
+                                                    updated = true;
+                                                }
+                                                
+                                                if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "ETA: ") {
+                                                    last_eta = format!("ETA: {}", val);
+                                                    updated = true;
+                                                }
+
+                                                if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "Download") {
+                                                    if val.contains("/s") {
+                                                        last_dl = format!("DL: {}", val);
+                                                        updated = true;
+                                                    }
+                                                }
+                                                
+                                                if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "Disk") {
+                                                    if val.contains("/s") {
+                                                        last_disk = format!("Disk: {}", val);
+                                                        updated = true;
+                                                    }
+                                                }
+                                                
+                                                if updated {
+                                                    let clean = crate::core::legendary::LegendaryWrapper::clean_status_line(trimmed);
+                                                    let mut status_map = serde_json::Map::new();
+                                                    status_map.insert("progress".to_string(), serde_json::json!(last_progress));
+                                                    status_map.insert("dl_rate".to_string(), serde_json::json!(last_dl));
+                                                    status_map.insert("disk_rate".to_string(), serde_json::json!(last_disk));
+                                                    status_map.insert("eta".to_string(), serde_json::json!(last_eta));
+                                                    status_map.insert("raw_line".to_string(), serde_json::json!(clean));
+                                                    
+                                                    if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "Downloaded: ") {
+                                                        status_map.insert("downloaded".to_string(), serde_json::json!(val));
+                                                    }
+                                                    if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "Written: ") {
+                                                        status_map.insert("written".to_string(), serde_json::json!(val));
+                                                    }
+
+                                                    let status_json = serde_json::Value::Object(status_map).to_string();
+                                                    let _ = tx_clone.send(StoreMsg::InstallProgress(app_id_for_reader.clone(), last_progress, status_json));
                                                 }
                                             }
                                         }
@@ -508,33 +577,8 @@ impl StoreBridge {
                         }
                     });
 
-                    use std::io::Read;
-                    let mut buf2 = Vec::new();
-                    let mut last_progress2 = 0.0;
-                    for byte_result in reader.bytes() {
-                        if let Ok(b) = byte_result {
-                            if b == b'\r' || b == b'\n' {
-                                if !buf2.is_empty() {
-                                    if let Ok(line) = String::from_utf8(buf2.clone()) {
-                                        let trimmed = line.trim();
-                                        if !trimmed.is_empty() {
-                                            if let Some(progress) = crate::core::legendary::LegendaryWrapper::parse_progress(trimmed) {
-                                                last_progress2 = progress;
-                                                let _ = tx.send(StoreMsg::InstallProgress(app_name_clone.clone(), progress, trimmed.to_string()));
-                                            } else if trimmed.contains("INFO") || trimmed.contains("Downloading") || trimmed.contains("Installing") || trimmed.contains("WARNING") || trimmed.contains("ERROR") {
-                                                let _ = tx.send(StoreMsg::InstallProgress(app_name_clone.clone(), last_progress2, trimmed.to_string()));
-                                            }
-                                        }
-                                    }
-                                    buf2.clear();
-                                }
-                            } else {
-                                buf2.push(b);
-                            }
-                        } else {
-                            break;
-                        }
-                    }
+                    // Send PID to main thread to be stored in active processes
+                    let _ = tx.send(StoreMsg::InstallStarted(app_name_clone.clone(), child.id()));
 
                     match child.wait() {
                         Ok(status) if status.success() => {
@@ -564,6 +608,136 @@ impl StoreBridge {
         });
     }
 
+    fn import_legendary_game(&self, app_name: String, path: String) {
+        log::info!("[LegendaryBridge] Starting import for: {} at {:?}", app_name, path);
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        let app_name_clone = app_name.clone();
+        let import_path = path.clone();
+
+        std::thread::spawn(move || {
+            let _ = tx.send(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Importing to Legendary...".into()));
+            
+            match StoreManager::import_legendary_game(app_name_clone.clone(), import_path) {
+                Ok(mut child) => {
+                    use std::io::{BufRead, BufReader, Read};
+                    
+                    let stderr = child.stderr.take().unwrap();
+                    let stderr_reader = BufReader::new(stderr);
+                    
+                    let tx_clone = tx.clone();
+                    let app_id_for_reader = app_name_clone.clone();
+                    
+                    // Legendary usually uses stderr. Read byte-by-byte to handle both \n and \r
+                    std::thread::spawn(move || {
+                        let mut buf = Vec::new();
+                        let mut last_progress = 0.0;
+                        let mut last_dl = String::new();
+                        let mut last_disk = String::new();
+                        let mut last_eta = String::new();
+                        
+                        for byte_result in stderr_reader.bytes() {
+                            if let Ok(b) = byte_result {
+                                if b == b'\r' || b == b'\n' {
+                                    if !buf.is_empty() {
+                                        if let Ok(line) = String::from_utf8(buf.clone()) {
+                                            let trimmed = line.trim();
+                                            if !trimmed.is_empty() {
+                                                log::info!("[Legendary-CLI] {}", trimmed);
+                                                
+                                                let mut updated = false;
+                                                if let Some(progress) = crate::core::legendary::LegendaryWrapper::parse_progress(trimmed) {
+                                                    last_progress = progress;
+                                                    updated = true;
+                                                }
+                                                
+                                                if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "ETA: ") {
+                                                    last_eta = format!("ETA: {}", val);
+                                                    updated = true;
+                                                }
+
+                                                if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "Download -") {
+                                                    last_dl = format!("DL: {}", val).replace("  ", " ");
+                                                    updated = true;
+                                                } else if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "Download") {
+                                                    if val.contains("MiB/s") || val.contains("KiB/s") {
+                                                        last_dl = format!("DL: {}", val).replace("  ", " ");
+                                                        updated = true;
+                                                    }
+                                                }
+                                                
+                                                if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "Disk -") {
+                                                    last_disk = format!("Disk: {}", val).replace("  ", " ");
+                                                    updated = true;
+                                                } else if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "Disk") {
+                                                    if val.contains("MiB/s") || val.contains("KiB/s") {
+                                                        last_disk = format!("Disk: {}", val).replace("  ", " ");
+                                                        updated = true;
+                                                    }
+                                                }
+                                                
+                                                if updated {
+                                                    let clean = crate::core::legendary::LegendaryWrapper::clean_status_line(trimmed);
+                                                    let mut status_map = serde_json::Map::new();
+                                                    status_map.insert("progress".to_string(), serde_json::json!(last_progress));
+                                                    status_map.insert("dl_rate".to_string(), serde_json::json!(last_dl));
+                                                    status_map.insert("disk_rate".to_string(), serde_json::json!(last_disk));
+                                                    status_map.insert("eta".to_string(), serde_json::json!(last_eta));
+                                                    status_map.insert("raw_line".to_string(), serde_json::json!(clean));
+                                                    
+                                                    if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "Downloaded: ") {
+                                                        status_map.insert("downloaded".to_string(), serde_json::json!(val));
+                                                    }
+                                                    if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "Written: ") {
+                                                        status_map.insert("written".to_string(), serde_json::json!(val));
+                                                    }
+
+                                                    let status_json = serde_json::Value::Object(status_map).to_string();
+                                                    let _ = tx_clone.send(StoreMsg::InstallProgress(app_id_for_reader.clone(), last_progress, status_json));
+                                                }
+                                            }
+                                        }
+                                        buf.clear();
+                                    }
+                                } else {
+                                    buf.push(b);
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                    });
+                    
+                    // Send PID to main thread to be stored in active processes
+                    let _ = tx.send(StoreMsg::InstallStarted(app_name_clone.clone(), child.id()));
+
+                    match child.wait() {
+                        Ok(status) if status.success() => {
+                            // Update DB to mark as installed
+                            let db_path = crate::core::paths::get_data_dir().join("games.db");
+                            if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                                let rom_id = format!("legendary-{}", app_name_clone);
+                                let conn = db.get_connection();
+                                let _ = conn.execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id]);
+                                let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
+                            }
+                            let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, true, "Imported successfully".into()));
+                        },
+                        Ok(status) => {
+                            let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, format!("Legendary exited with status: {}", status).into()));
+                        },
+                        Err(e) => {
+                            let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                        }
+                    }
+                },
+                Err(e) => {
+                    log::error!("Legendary import failed to start: {}", e);
+                    let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                }
+            }
+        });
+    }
     fn uninstall_legendary_game(&self, app_name: String) {
         log::info!("[LegendaryBridge] Starting uninstall for: {}", app_name);
         self.ensure_channels();
@@ -856,5 +1030,25 @@ impl StoreBridge {
 
             let _ = tx.send(StoreMsg::FolderAnalyzed(result.to_string()));
         });
+    }
+    fn pause_legendary_install(&self, app_name: String) {
+        if let Some(pid) = self.active_processes.borrow().get(&app_name) {
+            log::info!("[LegendaryBridge] Pausing install for: {} (PID: {})", app_name, pid);
+            let _ = std::process::Command::new("kill").arg("-STOP").arg(pid.to_string()).status();
+        }
+    }
+
+    fn resume_legendary_install(&self, app_name: String) {
+        if let Some(pid) = self.active_processes.borrow().get(&app_name) {
+            log::info!("[LegendaryBridge] Resuming install for: {} (PID: {})", app_name, pid);
+            let _ = std::process::Command::new("kill").arg("-CONT").arg(pid.to_string()).status();
+        }
+    }
+
+    fn cancel_legendary_install(&self, app_name: String) {
+        if let Some(pid) = self.active_processes.borrow_mut().remove(&app_name) {
+            log::info!("[LegendaryBridge] Cancelling install for: {} (PID: {})", app_name, pid);
+            let _ = std::process::Command::new("kill").arg("-TERM").arg(pid.to_string()).status();
+        }
     }
 }

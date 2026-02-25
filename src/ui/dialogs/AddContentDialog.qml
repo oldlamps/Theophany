@@ -232,16 +232,16 @@ Dialog {
                     Layout.fillWidth: true
 
                     TheophanyButton {
-                        text: "Import Local Apps"
-                        iconEmoji: "📂"
+                        text: "Import from ExoDOS"
+                        iconSource: "assets/systems/dosbox.png" // Guessing there's a dosbox or similar icon
                         Layout.fillWidth: true
                         onClicked: {
                             root.close()
-                            localAppImportDialog.openImport()
+                            exodosImportDialog.openImport()
                         }
                     }
                     
-                    Item { Layout.fillWidth: true } // Spacer to keep it half width
+                    Item { Layout.fillWidth: true }
                 }
             }
 

@@ -192,6 +192,7 @@ Rectangle {
              var json = gameModel.getGameMetadata(root.gameId)
               try {
                   var data = JSON.parse(json)
+                  root.gameCloudSavesSupported = data.cloud_saves_supported || false
                   updateImageList(data)
                   updateResources(data)
                   
@@ -340,6 +341,7 @@ Rectangle {
     property string gameReleaseDate: ""
     property bool gameIsFavorite: false
     property bool gameIsInstalled: true
+    property bool gameCloudSavesSupported: false
     property string gamePlatformId: ""
     property string gamePlatformType: ""
     property var emulatorProfiles: []
@@ -997,6 +999,34 @@ Rectangle {
                 Layout.fillWidth: true
                 visible: text !== ""
             }
+
+            RowLayout {
+                spacing: 8
+                visible: root.gameCloudSavesSupported
+                
+                Rectangle {
+                    width: 16; height: 16; color: "transparent"
+                    border.color: Theme.accent
+                    border.width: 1
+                    radius: 4
+                    Layout.alignment: Qt.AlignVCenter
+                    
+                    Text {
+                        anchors.centerIn: parent
+                        text: "☁"
+                        font.pixelSize: 12
+                        color: Theme.accent
+                    }
+                }
+                
+                Text {
+                    text: "Cloud Saves Supported"
+                    color: Theme.accent
+                    font.pixelSize: 12
+                    font.bold: true
+                    Layout.alignment: Qt.AlignVCenter
+                }
+            }
             
             // Meta Row 1: Platform | Year
             RowLayout {
@@ -1370,39 +1400,8 @@ Rectangle {
             Layout.fillWidth: true
             spacing: 10
             
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 5
-                visible: window.isStoreInstalling && (root.gameId.indexOf(window.storeInstallAppId) !== -1 || window.storeInstallAppId === root.gameFilename || window.storeInstallAppId === root.fullRomPath.replace("flatpak://", ""))
 
-                Text {
-                    text: window.storeInstallStatus || "Installing..."
-                    color: Theme.accent
-                    font.bold: true
-                    font.pixelSize: 12
-                    wrapMode: Text.Wrap
-                    maximumLineCount: 4
-                    Layout.fillWidth: true
-                }
-
-                ProgressBar {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 6
-                    value: window.storeInstallProgress
-                    background: Rectangle {
-                        color: Theme.secondaryBackground
-                        radius: 3
-                    }
-                    contentItem: Item {
-                        Rectangle {
-                            width: parent.visualPosition * parent.width
-                            height: parent.height
-                            radius: 3
-                            color: Theme.accent
-                        }
-                    }
-                }
-            }
+            // Play/Install Button
 
             TheophanyButton {
                 text: root.gameIsInstalled ? "PLAY" : "INSTALL"
@@ -1424,10 +1423,16 @@ Rectangle {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     width: 30; height: parent.height
-                    visible: root.emulatorProfiles.length > 0
+                    visible: root.emulatorProfiles.length > 0 || (root.fullRomPath.startsWith("epic://") && !root.gameIsInstalled)
                     background: null
                     text: "▼"
-                    onClicked: profileMenu.popup()
+                    onClicked: {
+                        if (root.fullRomPath.startsWith("epic://") && !root.gameIsInstalled) {
+                            epicExtraMenu.popup()
+                        } else {
+                            profileMenu.popup()
+                        }
+                    }
                     focusPolicy: Qt.NoFocus
                 }
                 
@@ -1440,6 +1445,16 @@ Rectangle {
                             onTriggered: {
                                 gameModel.launchWithProfile(root.gameId, modelData.id)
                             }
+                        }
+                    }
+                }
+
+                Menu {
+                    id: epicExtraMenu
+                    MenuItem {
+                        text: "Import Game..."
+                        onTriggered: {
+                            window.importEpicGame(root.gameId)
                         }
                     }
                 }
@@ -1549,6 +1564,221 @@ Rectangle {
                     visible: favoriteButton.hovered
                     text: root.gameIsFavorite ? "Remove from Favorites" : "Add to Favorites"
                 }
+            }
+        }
+
+        // Dedicated Download Progress Area (Rich display with stats, buttons, and graph)
+        ColumnLayout {
+            id: downloadProgressArea
+            Layout.fillWidth: true
+            spacing: 12
+            visible: window.isStoreInstalling && (root.gameId.indexOf(window.storeInstallAppId) !== -1 || window.storeInstallAppId === root.gameFilename || window.storeInstallAppId === root.fullRomPath.replace("flatpak://", ""))
+
+            property var statusData: ({})
+            property var speedHistory: []
+            
+            Connections {
+                target: window
+                function onStoreInstallStatusChanged() {
+                    try {
+                        var data = JSON.parse(window.storeInstallStatus)
+                        downloadProgressArea.statusData = data
+                        
+                        // Update speed history for graph
+                        if (data.dl_rate) {
+                            var rateStr = data.dl_rate.replace("DL:", "").replace("MiB/s", "").trim()
+                            var rate = parseFloat(rateStr)
+                            if (!isNaN(rate)) {
+                                var history = downloadProgressArea.speedHistory
+                                history.push(rate)
+                                if (history.length > 50) history.shift()
+                                downloadProgressArea.speedHistory = history
+                                speedGraph.requestPaint()
+                            }
+                        }
+                    } catch(e) {
+                        downloadProgressArea.statusData = { "raw_line": window.storeInstallStatus }
+                    }
+                }
+            }
+
+            // Stats Grid
+            GridLayout {
+                columns: 2
+                Layout.fillWidth: true
+                rowSpacing: 4
+                columnSpacing: 10
+
+                // Rate Information
+                ColumnLayout {
+                    spacing: 2
+                    Text {
+                        text: "DOWNLOAD RATE"
+                        color: Theme.secondaryText
+                        font.pixelSize: 9
+                        font.bold: true
+                    }
+                    Text {
+                        text: downloadProgressArea.statusData.dl_rate || "-- MiB/s"
+                        color: Theme.accent
+                        font.pixelSize: 14
+                        font.bold: true
+                    }
+                }
+
+                ColumnLayout {
+                    spacing: 2
+                    Text {
+                        text: "DISK ACTIVITY"
+                        color: Theme.secondaryText
+                        font.pixelSize: 9
+                        font.bold: true
+                    }
+                    Text {
+                        text: downloadProgressArea.statusData.disk_rate || "-- MiB/s"
+                        color: Theme.text
+                        font.pixelSize: 14
+                    }
+                }
+
+                ColumnLayout {
+                    spacing: 2
+                    Text {
+                        text: "ETA"
+                        color: Theme.secondaryText
+                        font.pixelSize: 9
+                        font.bold: true
+                    }
+                    Text {
+                        text: downloadProgressArea.statusData.eta ? downloadProgressArea.statusData.eta.replace("ETA: ", "") : "--:--:--"
+                        color: Theme.text
+                        font.pixelSize: 14
+                    }
+                }
+
+                ColumnLayout {
+                    spacing: 2
+                    Text {
+                        text: "PROGRESS"
+                        color: Theme.secondaryText
+                        font.pixelSize: 9
+                        font.bold: true
+                    }
+                    Text {
+                        text: (window.storeInstallProgress * 100).toFixed(2) + "%"
+                        color: Theme.text
+                        font.pixelSize: 14
+                    }
+                }
+            }
+
+            // Transferred Info
+            Text {
+                text: (downloadProgressArea.statusData.downloaded || "") + (downloadProgressArea.statusData.written ? " / " + downloadProgressArea.statusData.written : "")
+                color: Theme.secondaryText
+                font.pixelSize: 11
+                Layout.fillWidth: true
+            }
+
+            // Speed Graph (Sparkline)
+            Canvas {
+                id: speedGraph
+                Layout.fillWidth: true
+                Layout.preferredHeight: 40
+                onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    
+                    if (downloadProgressArea.speedHistory.length < 2) return
+                    
+                    var history = downloadProgressArea.speedHistory
+                    var max = 0
+                    for (var i=0; i<history.length; i++) if (history[i] > max) max = history[i]
+                    if (max === 0) max = 1
+                    
+                    ctx.strokeStyle = Theme.accent
+                    ctx.lineWidth = 2
+                    ctx.beginPath()
+                    
+                    var step = width / (history.length - 1)
+                    for (var i=0; i<history.length; i++) {
+                        var x = i * step
+                        var y = height - (history[i] / max * height * 0.8) - 2
+                        if (i === 0) ctx.moveTo(x, y)
+                        else ctx.lineTo(x, y)
+                    }
+                    ctx.stroke()
+                    
+                    // Fill area
+                    ctx.lineTo((history.length-1) * step, height)
+                    ctx.lineTo(0, height)
+                    ctx.closePath()
+                    ctx.fillStyle = Theme.accent
+                    ctx.globalAlpha = 0.1
+                    ctx.fill()
+                    ctx.globalAlpha = 1.0
+                }
+            }
+
+            ProgressBar {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 6
+                value: window.storeInstallProgress
+                background: Rectangle {
+                    color: Theme.secondaryBackground
+                    radius: 3
+                    border.color: Theme.border
+                    border.width: 1
+                }
+                contentItem: Item {
+                    Rectangle {
+                        width: parent.visualPosition * parent.width
+                        height: parent.height
+                        radius: 3
+                        color: Theme.accent
+                    }
+                }
+            }
+
+            // Action Buttons
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+
+                TheophanyButton {
+                    Layout.fillWidth: true
+                    text: window.storeInstallPaused ? "Resume" : "Pause"
+                    iconEmoji: window.storeInstallPaused ? "▶" : "⏸"
+                    onClicked: {
+                        if (window.storeInstallPaused) {
+                            storeBridge.resume_legendary_install(window.storeInstallAppId)
+                            window.storeInstallPaused = false
+                        } else {
+                            storeBridge.pause_legendary_install(window.storeInstallAppId)
+                            window.storeInstallPaused = true
+                        }
+                    }
+                }
+
+                TheophanyButton {
+                    Layout.fillWidth: true
+                    text: "Cancel"
+                    iconEmoji: "✕"
+                    onClicked: {
+                        storeBridge.cancel_legendary_install(window.storeInstallAppId)
+                        window.isStoreInstalling = false
+                    }
+                }
+            }
+
+            Text {
+                text: downloadProgressArea.statusData.raw_line || ""
+                color: Theme.secondaryText
+                font.pixelSize: 10
+                wrapMode: Text.Wrap
+                maximumLineCount: 2
+                Layout.fillWidth: true
+                opacity: 0.7
             }
         }
 

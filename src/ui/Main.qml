@@ -87,6 +87,7 @@ ApplicationWindow {
     property real storeInstallProgress: 0.0
     property bool isStoreInstalling: false
     property string storeInstallStatus: ""
+    property bool storeInstallPaused: false
 
     Shortcut {
         sequence: window.hotkeyMap["Settings"]
@@ -736,6 +737,23 @@ ApplicationWindow {
             } else {
                  mainAutoScrapeErrorDialog.text = "Installation Failed: " + message
                  mainAutoScrapeErrorDialog.open()
+            }
+        }
+    }
+
+    function importEpicGame(id) {
+        if (!id) return
+        var path = ""
+        var idx = gameModel.getRowById(id)
+        if (idx >= 0) {
+            path = gameModel.data(gameModel.index(idx, 0), 258) // PathRole
+        }
+        
+        if (path.startsWith("epic://")) {
+            var appName = path.split("/").pop()
+            if (appName) {
+                epicImportPathDialog.pendingAppId = appName
+                epicImportPathDialog.open()
             }
         }
     }
@@ -2648,6 +2666,10 @@ ApplicationWindow {
         id: localAppImportDialog
     }
 
+    ExoDosImportDialog {
+        id: exodosImportDialog
+    }
+
     SteamImportDialog {
         id: steamImportDialog
     }
@@ -2682,6 +2704,19 @@ ApplicationWindow {
         onRejected: {
             // Proceed with empty path (default)
             storeBridge.install_legendary_game(pendingAppId, "")
+        }
+    }
+
+    FolderDialog {
+        id: epicImportPathDialog
+        title: "Select Folder Containing Existing Game Data"
+        property string pendingAppId: ""
+        onAccepted: {
+            var pathStr = selectedFolder.toString()
+            if (pathStr.startsWith("file://")) {
+                pathStr = pathStr.substring(7)
+            }
+            storeBridge.import_legendary_game(pendingAppId, pathStr)
         }
     }
     
