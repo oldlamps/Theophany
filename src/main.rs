@@ -70,6 +70,7 @@ qrc!(my_resources,
         "src/ui/dialogs/FirstRunWizard.qml" as "dialogs/FirstRunWizard.qml",
         "src/ui/dialogs/UpdateNotificationDialog.qml" as "dialogs/UpdateNotificationDialog.qml",
         "src/ui/dialogs/ExoDosImportDialog.qml" as "dialogs/ExoDosImportDialog.qml",
+        "src/ui/dialogs/EpicImportDialog.qml" as "dialogs/EpicImportDialog.qml",
         "assets/tray_icon.png" as "tray_icon.png",
         "assets/logo.png" as "assets/logo.png",
         "assets/RA.png" as "assets/RA.png",
@@ -228,6 +229,8 @@ fn setup_assets() {
         ("heroic.png", include_bytes!("../assets/systems/heroic.png").as_slice()),
         ("steam.png", include_bytes!("../assets/systems/steam.png").as_slice()),
         ("lutris.png", include_bytes!("../assets/systems/lutris.png").as_slice()),
+        ("epic.png", include_bytes!("../assets/systems/epic.png").as_slice()),
+        ("exodos.png", include_bytes!("../assets/systems/exodos.png").as_slice()),
     ];
 
     for (name, bytes) in systems {

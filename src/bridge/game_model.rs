@@ -2749,6 +2749,8 @@ impl GameListModel {
                                  LegendaryWrapper::resolve_cloud_save_path(app_name, prefix, None).ok()?
                              })
                          } else { None };
+                         
+                         let rom_path_thread = rom_path.clone();
                          std::thread::spawn(move || {                             let start_time = std::time::SystemTime::now();
                              
                              // Wait for process to exit
@@ -2781,6 +2783,14 @@ impl GameListModel {
                                          .unwrap_or_default()
                                          .as_secs() as i64
                                      );
+                                     
+                                     // Assume ExoDOS games (.command) are installed after first launch
+                                     if rom_path_thread.ends_with(".command") {
+                                         meta.is_installed = true;
+                                         
+                                         // Update ROM table as well to immediately reflect UI state
+                                         let _ = db.get_connection().execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id_thread]);
+                                     }
                                      
                                      if let Err(e) = db.insert_metadata(&meta) {
                                          log::error!("Failed to update playtime metadata: {}", e);

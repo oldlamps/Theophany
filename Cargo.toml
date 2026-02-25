@@ -31,6 +31,7 @@ urlencoding = "2.1"
 linicon = "2.3"
 cpp = "0.5.10"
 which = "6.0"
+quick-xml = "0.31"
 
 
 [dev-dependencies]

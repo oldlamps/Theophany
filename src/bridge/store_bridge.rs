@@ -1085,15 +1085,34 @@ impl StoreBridge {
                     for rom in &roms {
                         let mut final_rom = rom.clone();
                         final_rom.platform_id = platform_id.clone();
-                        final_rom.is_installed = Some(true);
+                        let rom_stem = std::path::Path::new(&final_rom.filename)
+                            .file_stem().and_then(|s| s.to_str()).unwrap_or(&final_rom.filename);
+                        
+                        let current_platform_folder = if platform_id == "DOS" || platform_id == "dos" { "DOS" } else { &platform_folder };
+                        
+                        let mut meta = crate::core::metadata_manager::MetadataManager::load_sidecar(current_platform_folder, rom_stem)
+                            .unwrap_or_else(|| crate::core::models::GameMetadata::default());
+
+                        let is_inst = meta.is_installed || false; // default false for exodos if no sidecar
+                        final_rom.is_installed = Some(is_inst);
                         let _ = db.insert_rom(&final_rom);
 
                         // Basic metadata so it shows up
-                        let mut meta = crate::core::models::GameMetadata::default();
                         meta.rom_id = final_rom.id.clone();
-                        meta.title = final_rom.title.clone();
-                        meta.tags = final_rom.tags.clone();
-                        meta.is_installed = true;
+                        if meta.title.is_none() || meta.title.as_deref() == Some("") { meta.title = final_rom.title.clone(); }
+                        
+                        // Clear out old "ExoDOS" tags strictly, otherwise apply the fallback
+                        let current_tags = meta.tags.as_deref().unwrap_or("");
+                        if current_tags == "ExoDOS" || current_tags == "" {
+                            meta.tags = final_rom.tags.clone();
+                        }
+
+                        if meta.developer.is_none() || meta.developer.as_deref() == Some("") { meta.developer = final_rom.developer.clone(); }
+                        if meta.publisher.is_none() || meta.publisher.as_deref() == Some("") { meta.publisher = final_rom.publisher.clone(); }
+                        if meta.genre.is_none() || meta.genre.as_deref() == Some("") { meta.genre = final_rom.genre.clone(); }
+                        if meta.release_date.is_none() || meta.release_date.as_deref() == Some("") { meta.release_date = final_rom.release_date.clone(); }
+                        if meta.description.is_none() || meta.description.as_deref() == Some("") { meta.description = final_rom.description.clone(); }
+                        meta.is_installed = is_inst;
                         let _ = db.insert_metadata(&meta);
                     }
                     let _ = db.get_connection().execute("COMMIT", []);
@@ -1163,16 +1182,28 @@ impl StoreBridge {
                         }
 
                         // 2. Metadata Sidecar
-                        let mut meta = crate::core::models::GameMetadata::default();
+                        let mut meta = crate::core::metadata_manager::MetadataManager::load_sidecar(&current_platform_folder, rom_stem)
+                            .unwrap_or_else(|| crate::core::models::GameMetadata::default());
+                        
                         meta.rom_id = rom.id.clone();
-                        meta.title = rom.title.clone();
-                        meta.tags = rom.tags.clone();
-                        meta.is_installed = true;
+                        if meta.title.is_none() || meta.title.as_deref() == Some("") { meta.title = rom.title.clone(); }
+                        if meta.description.is_none() || meta.description.as_deref() == Some("") { meta.description = rom.description.clone(); }
+                        
+                        let current_tags2 = meta.tags.as_deref().unwrap_or("");
+                        if current_tags2 == "ExoDOS" || current_tags2 == "" {
+                            meta.tags = rom.tags.clone();
+                        }
+                        
+                        if meta.developer.is_none() || meta.developer.as_deref() == Some("") { meta.developer = rom.developer.clone(); }
+                        if meta.publisher.is_none() || meta.publisher.as_deref() == Some("") { meta.publisher = rom.publisher.clone(); }
+                        if meta.genre.is_none() || meta.genre.as_deref() == Some("") { meta.genre = rom.genre.clone(); }
+                        if meta.release_date.is_none() || meta.release_date.as_deref() == Some("") { meta.release_date = rom.release_date.clone(); }
+                        
                         let _ = MetadataManager::save_sidecar(&current_platform_folder, rom_stem, &meta);
 
                         // Incremental Refresh every 25 games
                         if i > 0 && i % 25 == 0 {
-                            let _ = tx.send(StoreMsg::InstallFinished("exodos_batch".to_string(), true, "Batch update".to_string()));
+                            let _ = tx.send(StoreMsg::InstallFinished("exodos_immediate".to_string(), true, "Batch update".to_string()));
                         }
                     }
                     

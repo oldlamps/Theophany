@@ -45,8 +45,14 @@ Dialog {
                     "icon_path": "",
                     "platform_id": "DOS",
                     "platform_name": "exoDOS",
-                    "tags": item.tags || "exoDOS",
-                    "is_installed": true
+                    "tags": item.tags || "",
+                    "developer": item.developer || "",
+                    "publisher": item.publisher || "",
+                    "genre": item.genre || "",
+                    "release_date": item.release_date || "",
+                    "description": item.description || "",
+                    "is_installed": true,
+                    "is_favorite": item.is_favorite === true
                 })
             }
             loading = false
@@ -375,16 +381,23 @@ Dialog {
                         for (var i = 0; i < exodosModel.count; i++) {
                             var item = exodosModel.get(i)
                             if (item.checked) {
-                                selectedRoms.push({
+                                var romObj = {
                                     id: item.gameId,
                                     platform_id: platformId,
                                     path: item.path,
                                     filename: item.filename,
                                     file_size: 0,
                                     title: item.title,
-                                    tags: item.tags || "exoDOS",
-                                    is_installed: true
-                                })
+                                    tags: item.tags || "",
+                                    is_installed: true,
+                                    is_favorite: item.is_favorite === true
+                                };
+                                if (item.developer) romObj.developer = item.developer;
+                                if (item.publisher) romObj.publisher = item.publisher;
+                                if (item.genre) romObj.genre = item.genre;
+                                if (item.release_date) romObj.release_date = item.release_date;
+                                if (item.description) romObj.description = item.description;
+                                selectedRoms.push(romObj);
                             }
                         }
                         

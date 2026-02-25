@@ -17,50 +17,38 @@
 
 ## Features
 
-### ⬢ All your ROMs in One Place
-- Support for dozens of consoles out of the box, just drag and drop your individual ROMs or ROM folder to start importing.
-  
-### ⬢ Media & Metadata
-- **IGDB Integration**: Pull box art, backgrounds, and game data (developers, release dates, etc.) from IGDB.
-- **Video Explorer**: Search, stream, or download game trailers and clips using `yt-dlp`.
-- **Search & Filter**: Floating search bar for games and collections, with filters for genre, year, and rating.
+### Library Management
+- **ROM Support**: Import individual ROMs or folders for dozens of consoles via drag and drop.
+- **Media & Metadata**: Pull box art, backgrounds, and game data from IGDB.
+- **Video Explorer**: Search, stream, or download trailers and clips using `yt-dlp`.
+- **Search & Filter**: Floating search bar with filtering for genre, year, rating, and collections.
+- **Mass Edit**: Update metadata for multiple games at once.
+- **Resource Manager**: Manage external links for manuals, wikis, and strategy guides.
+- **Playlists**: Organize games into manual collections.
+- **Themes**: 15+ built-in color palettes including System (use your default system theme), Nord, Dracula, and Tokyo Night.
 
----
+### Storefront & System Integration
+- **Direct Store Bridges**: Sync libraries and data from major storefronts.
+  - <img src="assets/systems/steam.png" height="20"> **Steam**: Full cloud library sync (installed & uninstalled), achievement tracking, and playtime data.
+  - <img src="assets/systems/epic.png" height="20"> **Epic Games Store**: Cloud library import and launching via Legendary.
+  - <img src="assets/systems/heroic.png" height="20"> **Heroic** & <img src="assets/systems/lutris.png" height="20"> **Lutris**: Sync installed games and playtime data.
+- <img src="assets/systems/exodos.png" height="20"> [**eXoDOS Linux**](https://www.retro-exo.com/linux.html): Direct integration for importing and launching eXoDOS collections on Linux.
+- <img src="assets/systems/flatpak.png" height="20"> **Flatpak Integration**: Manage and install Flatpak applications within the interface.
 
-### ⬢ Storefront & System Bridges
-- **Storefront Sync**: Comprehensive integration for **Steam**, **Heroic**, and **Lutris**.
-  - **Steam**: Full cloud library import (installed & uninstalled), achievement tracking, and playtime sync.
-  - **Heroic/Lutris**: Sync installed games and playtime data.
-- **Flatpak Integration**: Manage and install Flatpak apps directly within the interface.
+### Running & Compatibility
+- <img src="assets/systems/windows.png" height="20"> **UMU Core**: Proton and Wine management based on the Universal Management Utility.
+- **Game Profiles**: Per-game configuration for Proton versions, prefixes, wrappers, and environment variables.
+- **Gamescope Support**: Integrated configuration for Gamescope sessions.
 
----
+### <img src="assets/RA.png" height="20"> RetroAchievements Integration
+- **Dashboard**: View account rank, total points, and gaming history.
+- **Progress Tracking**: Real-time achievement progress and badge tracking.
+- **Metadata Sync**: Automatic fetching of achievement-related icons and box art.
 
-### ⬢ Linux & Proton Integration
-- **UMU Core**: Launcher based on the Universal Management Utility for Proton and Wine management.
-- **Runtime Environment**: Set specific Proton versions, Wine paths, and prefixes per game.
-- **Full configuration**: set wrappers, env variable, gamesscope settings and more with per game profiles.
-
----
-
-### ⬢ RetroAchievements Integration
-- **Dashboard**: Profile pane showing account rank, points, and gaming history.
-- **Progress Tracking**: Achievement progress bars and badge tracking for supported titles.
-- **Status & Art**: Rich presence tracking and automatic fetching of game icons, box art, and metadata.
-
----
-
-### ⬢ Library Management
-- **Themes**: Includes 15+ color palettes (Nord, Dracula, Tokyo Night, etc.) for UI customization.
-- **Mass Edit**: Update metadata fields for multiple games simultaneously.
-- **Resource Manager**: Add external links for manuals, wikis, and strategy guides.
-- **Playlists**: Create manual groups to organize collections and series.
-
----
-
-### ⬢ Coming Soon
-- **Cloud Library Import**: Expand full library views to **Epic Games Store** and **GOG**.
-- **Advanced Playlists**: Automated grouping based on dynamic filters.
-- **Feature Requests Encouraged!**
+### Planned Features
+- **GOG Integration**: Support for cloud library import and launching directly from GOG. Comet integration for achievement, and overlay.
+- **Advanced Playlists**: Dynamic grouping based on automated filters.
+- **Feature Requests**: Community feedback and requests are encouraged.
 
 ---
 
