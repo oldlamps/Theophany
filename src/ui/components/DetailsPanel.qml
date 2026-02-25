@@ -135,7 +135,7 @@ Rectangle {
         target: root.gameModel
         function onPlaytimeUpdated(romId) {
 
-            if (String(root.gameId) === String(romId) && !appSettings.isPlatformRaActive(root.gamePlatformType)) {
+            if (String(root.gameId) === String(romId) && (!appSettings.isPlatformRaActive(root.gamePlatformType) || root.gamePlatformType.toLowerCase() === "dos")) {
                 // Skiping RA fetch for non-RA platforms
             } else if (String(root.gameId) === String(romId)) {
                 root.refreshAchievements(true)
@@ -1168,7 +1168,7 @@ Rectangle {
                 Layout.preferredHeight: 80
                 Layout.topMargin: 5
                 visible: appSettings.isPlatformRaActive(root.gamePlatformType) && 
-                         !["PC (Windows)", "PC (Linux)", "steam", "heroic", "lutris"].includes(root.gamePlatformType.toLowerCase())
+                         !["PC (Windows)", "PC (Linux)", "steam", "heroic", "lutris", "dos"].includes(root.gamePlatformType.toLowerCase())
                 color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.05)
                 border.color: cardMouse.containsMouse ? Theme.accent : Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, 0.3)
                 border.width: 1

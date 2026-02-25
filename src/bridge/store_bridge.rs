@@ -58,6 +58,7 @@ pub struct StoreBridge {
     pause_legendary_install: qt_method!(fn(&self, app_name: String)),
     resume_legendary_install: qt_method!(fn(&self, app_name: String)),
     cancel_legendary_install: qt_method!(fn(&self, app_name: String)),
+    import_exodos_games: qt_method!(fn(&self, roms_json: String, platform_id: String, exodos_base_path: String)),
 
     // Internal
     tx: RefCell<Option<mpsc::Sender<StoreMsg>>>,
@@ -1050,5 +1051,134 @@ impl StoreBridge {
             log::info!("[LegendaryBridge] Cancelling install for: {} (PID: {})", app_name, pid);
             let _ = std::process::Command::new("kill").arg("-TERM").arg(pid.to_string()).status();
         }
+    }
+
+    fn import_exodos_games(&self, roms_json: String, platform_id: String, exodos_base_path: String) {
+        log::info!("Importing ExoDOS games for platform: {}", platform_id);
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        
+        let roms: Vec<crate::core::models::Rom> = serde_json::from_str(&roms_json).unwrap_or_default();
+        let db_path = crate::core::paths::get_data_dir().join("games.db");
+        let images_path = std::path::Path::new(&exodos_base_path).join("Images/MS-DOS");
+
+        std::thread::spawn(move || {
+            if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                // Determine platform folder name
+                let platform_folder = match db.get_platform(&platform_id) {
+                    Ok(Some(p)) => p.platform_type.clone()
+                        .or(Some(p.name.clone()))
+                        .unwrap_or_else(|| "DOS".to_string())
+                        .replace(" ", "_")
+                        .replace("/", "-")
+                        .replace("\\", "-"),
+                    _ => "DOS".to_string(),
+                };
+
+                let total = roms.len();
+                let total = roms.len();
+                
+                // --- Phase 1: Immediate Batch Insertion ---
+                // We do a fast pass to get games into the library immediately.
+                if let Ok(mut db) = crate::core::db::DbManager::open(&db_path) {
+                    let _ = db.get_connection().execute("BEGIN TRANSACTION", []);
+                    for rom in &roms {
+                        let mut final_rom = rom.clone();
+                        final_rom.platform_id = platform_id.clone();
+                        final_rom.is_installed = Some(true);
+                        let _ = db.insert_rom(&final_rom);
+
+                        // Basic metadata so it shows up
+                        let mut meta = crate::core::models::GameMetadata::default();
+                        meta.rom_id = final_rom.id.clone();
+                        meta.title = final_rom.title.clone();
+                        meta.tags = final_rom.tags.clone();
+                        meta.is_installed = true;
+                        let _ = db.insert_metadata(&meta);
+                    }
+                    let _ = db.get_connection().execute("COMMIT", []);
+                }
+                
+                // Notify UI that library should be refreshed to show new entries
+                let _ = tx.send(StoreMsg::InstallFinished("exodos_immediate".to_string(), true, "Games added to library, processing artwork...".to_string()));
+
+                // --- Phase 2: Background Enrichment ---
+                if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                    for (i, mut rom) in roms.into_iter().enumerate() {
+                        let title = rom.title.clone().unwrap_or_else(|| "Unknown".to_string());
+                        
+                        if i % 20 == 0 || i == total - 1 {
+                            let progress = i as f32 / total as f32;
+                            let _ = tx.send(StoreMsg::InstallProgress("exodos".to_string(), progress, format!("Processing {}...", title)));
+                        }
+
+                        let rom_stem_str = std::path::Path::new(&rom.filename)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or(&rom.filename)
+                            .to_string();
+                        let rom_stem = &rom_stem_str;
+
+                        let current_platform_folder = if platform_id == "DOS" || platform_id == "dos" {
+                            "DOS".to_string()
+                        } else {
+                            platform_folder.clone()
+                        };
+
+                        // 1. Link artwork
+                        if images_path.exists() {
+                            crate::core::exodos::ExoDosManager::link_artwork(&title, &images_path, &current_platform_folder, rom_stem);
+                            
+                            let data_dir = crate::core::paths::get_data_dir();
+                            let base_image_path = data_dir.join("Images").join(&current_platform_folder).join(rom_stem);
+
+                            let standard_mappings = [
+                                ("Box - Front", "box"),
+                                ("Background", "background"),
+                                ("Screenshot", "none"),
+                                ("Box - Back", "none"),
+                                ("Box - 3D", "none"),
+                                ("Logo", "none"),
+                            ];
+
+                            for (target_cat, rom_target) in standard_mappings {
+                                let norm_name = target_cat.to_lowercase().replace(" ", "_");
+                                let cat_dir = base_image_path.join(target_cat);
+                                
+                                for ext in ["jpg", "png", "jpeg"] {
+                                    let asset_file = cat_dir.join(format!("{}.{}", norm_name, ext));
+                                    if asset_file.exists() {
+                                        let abs_path = asset_file.to_string_lossy().to_string();
+                                        let _ = db.insert_asset(&rom.id, target_cat, &abs_path);
+                                        
+                                        if rom_target == "box" {
+                                            let _ = db.get_connection().execute("UPDATE roms SET boxart_path = ?1 WHERE id = ?2", rusqlite::params![abs_path, rom.id]);
+                                        } else if rom_target == "background" {
+                                            let _ = db.get_connection().execute("UPDATE roms SET background_path = ?1 WHERE id = ?2", rusqlite::params![abs_path, rom.id]);
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2. Metadata Sidecar
+                        let mut meta = crate::core::models::GameMetadata::default();
+                        meta.rom_id = rom.id.clone();
+                        meta.title = rom.title.clone();
+                        meta.tags = rom.tags.clone();
+                        meta.is_installed = true;
+                        let _ = MetadataManager::save_sidecar(&current_platform_folder, rom_stem, &meta);
+
+                        // Incremental Refresh every 25 games
+                        if i > 0 && i % 25 == 0 {
+                            let _ = tx.send(StoreMsg::InstallFinished("exodos_batch".to_string(), true, "Batch update".to_string()));
+                        }
+                    }
+                    
+                    let _ = tx.send(StoreMsg::InstallFinished("exodos".to_string(), true, "Import completed".to_string()));
+                }
+            }
+        });
     }
 }

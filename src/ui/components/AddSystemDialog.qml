@@ -110,7 +110,8 @@ Dialog {
         var targetModel = platformCombo.model
         var typeIndex = -1
         for (var k = 0; k < targetModel.length; k++) {
-             if (targetModel[k].value.toLowerCase() === typeLower) {
+             var val = (targetModel[k].value || "").toLowerCase()
+             if (val === typeLower) {
                  typeIndex = k
                  break
              }
@@ -218,7 +219,7 @@ Dialog {
         var targetModel = root.getPlatformModel(0)
         var typeIndex = -1
         for (var k = 0; k < targetModel.length; k++) {
-             if (targetModel[k].value === pType) {
+             if (String(targetModel[k].value).toLowerCase() === typeLower) {
                  typeIndex = k
                  break
              }

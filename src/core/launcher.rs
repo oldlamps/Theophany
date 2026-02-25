@@ -60,6 +60,12 @@ impl Launcher {
             } else {
                 command_template.replace("%ROM%", &format!("xdg-open \"{}\"", rom_path))
             }
+        } else if rom_path.ends_with(".command") {
+            if let Some(wrapped) = Self::find_terminal_wrapped_cmd(rom_path) {
+                command_template.replace("%ROM%", &wrapped)
+            } else {
+                command_template.replace("%ROM%", &format!("bash \"{}\"", rom_path))
+            }
         } else {
             let quoted_path = format!("\"{}\"", rom_path);
             command_template.replace("%ROM%", &quoted_path)
@@ -100,6 +106,38 @@ impl Launcher {
                     .trim()
                     .to_string();
                 return Some(cleaned);
+            }
+        }
+        None
+    }
+
+    fn find_terminal_wrapped_cmd(rom_path: &str) -> Option<String> {
+        let terminals = [
+            ("konsole", "-e"),
+            ("gnome-terminal", "--"),
+            ("xfce4-terminal", "-x"),
+            ("kgx", "-e"),
+            ("xterm", "-e"),
+            ("mate-terminal", "-e"),
+            ("terminator", "-x"),
+            ("tilix", "-e"),
+            ("kitty", "-e"),
+            ("urxvt", "-e"),
+            ("rxvt", "-e"),
+            ("termit", "-e"),
+            ("terminology", "-e"),
+            ("aterm", "-e"),
+            ("uxterm", "-e"),
+            ("eterm", "-e"),
+        ];
+
+        for (term, arg) in terminals {
+            if which::which(term).is_ok() {
+                // By launching via a terminal emulator that ExoDOS recognizes,
+                // the .command script will source the .bsh logic in the current window
+                // INSTEAD of spawning its own backgrounded terminal.
+                // This allows Theophany to track the terminal process itself.
+                return Some(format!("{} {} /bin/bash \"{}\"", term, arg, rom_path));
             }
         }
         None

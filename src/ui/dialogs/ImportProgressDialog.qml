@@ -7,13 +7,13 @@ import "../components"
 Dialog {
     id: root
     title: "Importing Games"
-    modal: true
+    modal: false
     width: 450
     height: 250
     x: (parent.width - width) / 2
     y: (parent.height - height) / 2
     standardButtons: Dialog.NoButton
-    closePolicy: Popup.NoAutoClose
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     header: null
 
     property real progress: 0.0
@@ -84,8 +84,7 @@ Dialog {
         Item { Layout.fillHeight: true }
 
         TheophanyButton {
-            text: "Close"
-            visible: root.progress >= 1.0
+            text: root.progress >= 1.0 ? "Close" : "Run in Background"
             Layout.alignment: Qt.AlignRight
             primary: true
             onClicked: root.close()

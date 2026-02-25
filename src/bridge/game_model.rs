@@ -2610,7 +2610,7 @@ impl GameListModel {
 
                   // 3. Command Template Construction
                   
-                  if rom_path.starts_with("heroic://") || rom_path.starts_with("lutris:") || rom_path.ends_with(".desktop") || rom_path.starts_with("steam://") || rom_path.starts_with("flatpak://") {
+                  if rom_path.starts_with("heroic://") || rom_path.starts_with("lutris:") || rom_path.ends_with(".desktop") || rom_path.starts_with("steam://") || rom_path.starts_with("flatpak://") || rom_path.ends_with(".command") {
                       // These still bypass wrappers and use %ROM%
                       command_template = "%ROM%".to_string();
                   } else if rom_path.starts_with("epic://") {
@@ -2937,7 +2937,7 @@ impl GameListModel {
 
         // Also try to get the install path for {InstallDir} expansion
         let db_path = self.db_path.borrow().clone();
-        let install_path: Option<String> = if let Ok(db) = DbManager::open(&db_path) {
+        let install_path: Option<String> = if let Ok(_db) = DbManager::open(&db_path) {
             let conn_db = DbManager::open(&db_path).ok();
             conn_db.and_then(|cdb| {
                 cdb.get_connection().query_row(

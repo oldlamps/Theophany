@@ -1,5 +1,9 @@
 use crate::core::models::Rom;
-use std::path::Path;
+use crate::core::paths::get_data_dir;
+use std::path::{Path, PathBuf};
+use std::fs;
+use std::os::unix::fs::symlink;
+use walkdir::WalkDir;
 use uuid::Uuid;
 use chrono;
 
@@ -50,7 +54,7 @@ impl ExoDosManager {
 
                                     roms.push(Rom {
                                         id: format!("exodos-{}", Uuid::new_v4()),
-                                        platform_id: "dos".to_string(), // Default platform ID
+                                        platform_id: "DOS".to_string(), 
                                         path: path.to_string_lossy().to_string(),
                                         filename: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
                                         file_size: 0,
@@ -88,6 +92,76 @@ impl ExoDosManager {
 
         roms
     }
+
+    /// Creates symbolic links for the artwork of a game.
+    /// title: The title of the game (as used in ExoDOS filenames).
+    /// images_base_path: The base path for ExoDOS images (e.g., .../Images/MS-DOS/).
+    /// platform_folder: The folder name for the platform (e.g., "dos").
+    /// rom_stem: The filename stem of the game (e.g., "Digger").
+    pub fn link_artwork(title: &str, images_base_path: &Path, platform_folder: &str, rom_stem: &str) {
+        let base_assets_dir = get_data_dir().join("Images").join(platform_folder).join(rom_stem);
+        
+        let mappings = [
+            ("Box - Front", "Box - Front"),
+            ("Box - Back", "Box - Back"),
+            ("Box - 3D", "Box - 3D"),
+            ("Screenshot - Gameplay", "Screenshot"),
+            ("Screenshot - Game Title", "Screenshot"),
+            ("Fanart - Background", "Background"),
+            ("Clear Logo", "Logo"),
+        ];
+
+        log::info!("Linking artwork for {} from {:?} to {:?}", title, images_base_path, base_assets_dir);
+
+        for (exo_cat, target_cat) in mappings {
+            let cat_path = images_base_path.join(exo_cat);
+            if !cat_path.exists() {
+                continue;
+            }
+
+            let dest_dir = base_assets_dir.join(target_cat);
+            if !dest_dir.exists() {
+                let _ = fs::create_dir_all(&dest_dir);
+            }
+
+            // We use the normalized target name for the final symlink filename
+            let norm_name = target_cat.to_lowercase().replace(" ", "_");
+
+            for entry in WalkDir::new(&cat_path).into_iter().flatten() {
+                if entry.file_type().is_file() {
+                    let path = entry.path();
+                    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+                    
+                    if file_name.starts_with(title) {
+                        let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
+                        
+                        // Check if we already have a file for this target category from a previous match
+                        // (e.g. if we already linked Gameplay screenshot, we might not want to overwrite it with Title screenshot)
+                        // Actually, for screenshots it's fine to have multiple, but our current system expects 
+                        // a single {target_cat}.ext in the folder.
+                        let target_path = dest_dir.join(format!("{}.{}", norm_name, extension));
+                        
+                        if !target_path.exists() {
+                            log::debug!("Linking artwork: {:?} -> {:?}", path, target_path);
+                            #[cfg(unix)]
+                            if let Err(e) = symlink(path, &target_path) {
+                                log::error!("Failed to create symlink: {}", e);
+                            }
+                            #[cfg(not(unix))]
+                            if let Err(e) = fs::copy(path, &target_path) {
+                                log::error!("Failed to copy artwork: {}", e);
+                            }
+                            
+                            // If it's a screenshot or background, we might have multiple files.
+                            // But for simplicity of the initial import, we break after the first match per Exo category.
+                            // Since we have multiple Exo categories mapping to one target, we'll get one file from each source folder if it exists.
+                            break; 
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -122,5 +196,6 @@ mod tests {
         assert!(titles.contains(&"Digger".to_string()));
         assert!(titles.contains(&"Zork I".to_string()));
         assert!(!titles.contains(&"install".to_string()));
+        assert!(roms.iter().all(|r| r.platform_id == "DOS"));
     }
 }

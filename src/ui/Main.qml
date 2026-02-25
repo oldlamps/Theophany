@@ -89,6 +89,12 @@ ApplicationWindow {
     property string storeInstallStatus: ""
     property bool storeInstallPaused: false
 
+    // Generic Background Activity (Separate from Store Installs)
+    property string backgroundActivityId: ""
+    property real backgroundActivityProgress: 0.0
+    property string backgroundActivityStatus: ""
+    property bool hasBackgroundActivity: false
+
     Shortcut {
         sequence: window.hotkeyMap["Settings"]
         onActivated: sidebar.settingsRequested()
@@ -717,26 +723,46 @@ ApplicationWindow {
         id: storeBridge
         
         onInstallProgress: (appId, progress, status) => {
-            window.storeInstallAppId = appId
-            window.storeInstallProgress = progress
-            window.isStoreInstalling = true
-            window.storeInstallStatus = status
+            if (appId === "exodos") {
+                window.backgroundActivityId = appId
+                window.backgroundActivityProgress = progress
+                window.backgroundActivityStatus = status
+                window.hasBackgroundActivity = true
+            } else {
+                window.storeInstallAppId = appId
+                window.storeInstallProgress = progress
+                window.isStoreInstalling = true
+                window.storeInstallStatus = status
+            }
         }
         
         onInstallFinished: (appId, success, message) => {
-            window.isStoreInstalling = false
-            window.storeInstallStatus = message
+            // 1. Cleanup state tracking
+            if (appId === "exodos") {
+                window.hasBackgroundActivity = false
+            } else if (appId !== "exodos_immediate" && appId !== "exodos_batch") {
+                window.isStoreInstalling = false
+            }
             
+            // 2. Handle refresh and details update on success
             if (success) {
                 gameModel.refresh()
-                // Refresh details if this was the selected game
-                if (detailsPanel.gameId.includes(appId)) {
-                     var idx = gameModel.getRowById(detailsPanel.gameId)
-                     if (idx >= 0) window.loadGameDetails(idx)
+                
+                // Specific updates for finished installs/imports
+                if (appId !== "exodos_batch" && appId !== "exodos_immediate") {
+                    window.storeInstallStatus = message
+                    if (detailsPanel.gameId.includes(appId)) {
+                        var idx = gameModel.getRowById(detailsPanel.gameId)
+                        if (idx >= 0) window.loadGameDetails(idx)
+                    }
                 }
             } else {
-                 mainAutoScrapeErrorDialog.text = "Installation Failed: " + message
-                 mainAutoScrapeErrorDialog.open()
+                // 3. Show error dialog (Ignore for background batch updates)
+                if (appId !== "exodos_batch") {
+                    window.storeInstallStatus = message
+                    mainAutoScrapeErrorDialog.text = "Installation Failed: " + message
+                    mainAutoScrapeErrorDialog.open()
+                }
             }
         }
     }
@@ -2416,16 +2442,18 @@ ApplicationWindow {
                             Text { text: "|"; color: Theme.border; visible: gameModel.bulkScraping || window.isStoreInstalling }
                         }
 
-                        // Universal Progress Indicator (Scraping or Store Install)
+                        // Universal Progress Indicator (Scraping, Store Install, or Background Activity)
                         RowLayout {
                             id: universalProgressRow
-                            visible: gameModel.bulkScraping || window.isStoreInstalling
+                            visible: gameModel.bulkScraping || window.isStoreInstalling || window.hasBackgroundActivity
                             spacing: 10
                             
                             Text {
                                 text: window.isStoreInstalling ? 
                                       "Installing " + window.storeInstallAppId + ": " + Math.round(window.storeInstallProgress * 100) + "%" :
-                                      "Scraping: " + Math.round(gameModel.bulkProgress * 100) + "%"
+                                      (window.hasBackgroundActivity ? 
+                                       window.backgroundActivityStatus + " (" + Math.round(window.backgroundActivityProgress * 100) + "%)" :
+                                       "Scraping: " + Math.round(gameModel.bulkProgress * 100) + "%")
                                 color: Theme.accent
                                 font.pixelSize: 12
                                 font.bold: true
@@ -2434,7 +2462,8 @@ ApplicationWindow {
                             ProgressBar {
                                 Layout.preferredWidth: 100
                                 Layout.preferredHeight: 4
-                                value: window.isStoreInstalling ? window.storeInstallProgress : gameModel.bulkProgress
+                                value: window.isStoreInstalling ? window.storeInstallProgress : 
+                                       (window.hasBackgroundActivity ? window.backgroundActivityProgress : gameModel.bulkProgress)
                                 background: Rectangle {
                                     implicitWidth: 100
                                     implicitHeight: 4

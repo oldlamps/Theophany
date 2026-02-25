@@ -43,7 +43,7 @@ Dialog {
                     "path": item.path || "",
                     "filename": item.filename || "",
                     "icon_path": "",
-                    "platform_id": "dos",
+                    "platform_id": "DOS",
                     "platform_name": "exoDOS",
                     "tags": item.tags || "exoDOS",
                     "is_installed": true
@@ -51,11 +51,15 @@ Dialog {
             }
             loading = false
         }
+
+
     }
+
+
 
     Timer {
         interval: 500
-        running: root.visible
+        running: true
         repeat: true
         onTriggered: storeBridge.poll()
     }
@@ -83,7 +87,7 @@ Dialog {
         for (var i = 0; i < sidebar.platformModel.rowCount(); i++) {
             var idx = sidebar.platformModel.index(i, 0)
             var name = sidebar.platformModel.data(idx, 257) || ""
-            var type = sidebar.platformModel.data(idx, 261) || ""
+            var type = (sidebar.platformModel.data(idx, 261) || "").toLowerCase()
             if (type === "dos" || name.toLowerCase().indexOf("dos") !== -1) {
                 filteredPlatforms.append({
                     "name": name,
@@ -213,7 +217,7 @@ Dialog {
                                 Layout.preferredHeight: 32
                                 Layout.preferredWidth: 32
                                 onClicked: {
-                                    addSystemDialog.openAddWithType("dos", "exoDOS")
+                                    addSystemDialog.openAddWithType("DOS", "exoDOS")
                                 }
                             }
                         }
@@ -362,7 +366,7 @@ Dialog {
                         if (platformId === "virtual_dos") {
                                 var newId = "platform-" + Math.random().toString(36).substr(2, 9)
                                 sidebar.platformModel.updateSystem(
-                                    newId, "exoDOS", "", "", "", "dos", "assets/systems/linux", ""
+                                    newId, "exoDOS", "", "", "", "DOS", "assets/systems/linux", ""
                                 )
                                 platformId = newId
                         }
@@ -385,9 +389,9 @@ Dialog {
                         }
                         
                         if (selectedRoms.length > 0) {
-                            storeBridge.import_steam_games_bulk(JSON.stringify(selectedRoms), platformId)
+                            // Initiation is enough, Main.qml handles the rest
                             root.close()
-                            gameModel.refresh()
+                            storeBridge.import_exodos_games(JSON.stringify(selectedRoms), platformId, selectedPath)
                         }
                     }
                 }
