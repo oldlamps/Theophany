@@ -17,7 +17,7 @@ impl BulkImporter {
         progress_callback: F,
     ) -> Result<usize, Box<dyn std::error::Error>>
     where
-        F: Fn(usize, usize, String),
+        F: Fn(f32, String),
     {
         let platform = db.get_platform(platform_id)?
             .ok_or_else(|| format!("Platform {} not found", platform_id))?;
@@ -251,7 +251,10 @@ impl BulkImporter {
             }
 
             success_count += 1;
-            progress_callback(i, total, final_rom.title.unwrap_or_default());
+            if i % 20 == 0 || i == total - 1 {
+                let progress = (i as f32 + 1.0) / total as f32;
+                progress_callback(progress, format!("Importing {}: {}/{}", final_rom.title.as_deref().unwrap_or("Unknown"), i + 1, total));
+            }
         }
 
         // COMMIT TRANSACTION for ROMs/Metadata
@@ -260,7 +263,9 @@ impl BulkImporter {
         // 4. Parallel Asset Processing (Throttled)
         if !asset_tasks.is_empty() {
             use futures_util::StreamExt;
-            
+            let total_assets = asset_tasks.len();
+            let mut completed_assets = 0;
+
             crate::core::runtime::get_runtime().block_on(async {
                 let mut stream = futures_util::stream::iter(asset_tasks)
                     .map(|task| async move {
@@ -270,21 +275,25 @@ impl BulkImporter {
                     })
                     .buffer_unordered(5); // Concurrency limit: 5
 
-                while let Some(result) = stream.next().await {
-                    if let Some((rom_id, atype, path_str, src_path)) = result {
-                            // We need a fresh DB connection because we're in a different thread/async context
-                            let db_path = paths::get_data_dir().join("games.db");
-                            if let Ok(db) = DbManager::open(&db_path) {
+                while let Some(item) = stream.next().await {
+                    completed_assets += 1;
+                    if completed_assets % 5 == 0 || completed_assets == total_assets {
+                        let progress = completed_assets as f32 / total_assets as f32;
+                        progress_callback(progress, format!("Downloading artwork: {}/{}", completed_assets, total_assets));
+                    }
 
-                                 let _ = db.insert_asset(&rom_id, &atype, &path_str);
-                                 let conn = db.get_connection();
-                                 match atype.as_str() {
-                                     "Box - Front" => { let _ = conn.execute("UPDATE roms SET boxart_path = ?1 WHERE id = ?2", [&path_str, &rom_id]); },
-                                     "Icon" | "icon" | "Steam Icon" => { let _ = conn.execute("UPDATE roms SET icon_path = ?1 WHERE id = ?2", [&path_str, &rom_id]); },
-                                     "Background" | "Fanart - Background" => { let _ = conn.execute("UPDATE roms SET background_path = ?1 WHERE id = ?2", [&path_str, &rom_id]); },
-                                     _ => {}
-                                 }
-
+                    if let Some((rom_id, atype, path_str, _)) = item {
+                         // We need a fresh DB connection because we're in a different thread/async context
+                         let db_path = paths::get_data_dir().join("games.db");
+                         if let Ok(db) = DbManager::open(&db_path) {
+                              let _ = db.insert_asset(&rom_id, &atype, &path_str);
+                              let conn = db.get_connection();
+                              match atype.as_str() {
+                                  "Box - Front" => { let _ = conn.execute("UPDATE roms SET boxart_path = ?1 WHERE id = ?2", [&path_str, &rom_id]); },
+                                  "Icon" | "icon" | "Steam Icon" => { let _ = conn.execute("UPDATE roms SET icon_path = ?1 WHERE id = ?2", [&path_str, &rom_id]); },
+                                  "Background" | "Fanart - Background" => { let _ = conn.execute("UPDATE roms SET background_path = ?1 WHERE id = ?2", [&path_str, &rom_id]); },
+                                  _ => {}
+                              }
                          }
                     }
                 }

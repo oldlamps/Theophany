@@ -2357,7 +2357,7 @@ impl GameListModel {
                         log::info!("[Rescan] Found {} new games to import for {}", to_import.len(), platform_type);
                         use crate::core::importer::BulkImporter;
                         let save_locally = crate::bridge::settings::AppSettings::should_save_heroic_assets_locally();
-                        let _ = BulkImporter::import_roms(&db, to_import, &platform_id, save_locally, |_, _, _| {});
+                        let _ = BulkImporter::import_roms(&db, to_import, &platform_id, save_locally, |_, _| {});
                     } else {
                         log::info!("[Rescan] No new games found for {}", platform_type);
                     }

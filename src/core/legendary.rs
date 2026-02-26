@@ -1,5 +1,7 @@
 use std::process::Command;
 use std::path::{PathBuf, Component};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use serde::{Deserialize, Serialize};
 use crate::core::models::Rom;
 
@@ -202,6 +204,11 @@ impl LegendaryWrapper {
             cmd.arg("--base-path").arg(path);
         }
 
+        #[cfg(unix)]
+        {
+            cmd.process_group(0);
+        }
+
         let child = cmd
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -219,6 +226,11 @@ impl LegendaryWrapper {
             .arg("import")
             .arg(app_name)
             .arg(install_path);
+
+        #[cfg(unix)]
+        {
+            cmd.process_group(0);
+        }
 
         let child = cmd
             .stdout(std::process::Stdio::piped())
@@ -523,6 +535,11 @@ impl LegendaryWrapper {
         // Ensure target directory exists before starting legendary sync
         let _ = std::fs::create_dir_all(save_path);
 
+        #[cfg(unix)]
+        {
+            cmd.process_group(0);
+        }
+
         let mut child = cmd.spawn()?;
 
         // Stream output so the log is useful.
@@ -587,7 +604,7 @@ impl LegendaryWrapper {
             developer: None,
             publisher: None,
             rating: None,
-            tags: Some("Epic Games Store".to_string()),
+            tags: None,
             icon_path: None,
             background_path: None,
             release_date: None,

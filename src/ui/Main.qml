@@ -723,7 +723,7 @@ ApplicationWindow {
         id: storeBridge
         
         onInstallProgress: (appId, progress, status) => {
-            if (appId === "exodos") {
+            if (appId === "exodos" || appId === "Artwork") {
                 window.backgroundActivityId = appId
                 window.backgroundActivityProgress = progress
                 window.backgroundActivityStatus = status
@@ -738,7 +738,7 @@ ApplicationWindow {
         
         onInstallFinished: (appId, success, message) => {
             // 1. Cleanup state tracking
-            if (appId === "exodos") {
+            if (appId === "exodos" || appId === "Artwork") {
                 window.hasBackgroundActivity = false
             } else if (appId !== "exodos_immediate" && appId !== "exodos_batch") {
                 window.isStoreInstalling = false
@@ -757,6 +757,9 @@ ApplicationWindow {
                     }
                 }
             } else {
+                // Ignore manual cancellations
+                if (message === "Cancelled") return;
+
                 // 3. Show error dialog (Ignore for background batch updates)
                 if (appId !== "exodos_batch") {
                     window.storeInstallStatus = message

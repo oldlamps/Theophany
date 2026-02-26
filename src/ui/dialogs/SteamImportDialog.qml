@@ -109,10 +109,15 @@ Dialog {
             progressDialog.open()
             progressDialog.progress = progress
             progressDialog.status = message
+
+            // Sync with global ticker
+            window.backgroundActivityId = "Artwork"
+            window.backgroundActivityProgress = progress
+            window.backgroundActivityStatus = message
+            window.hasBackgroundActivity = true
         }
 
         onInstallFinished: (appName, success, message) => {
-
             if (success) {
                 // Keep open for user confirmation
                 progressDialog.progress = 1.0
@@ -123,6 +128,7 @@ Dialog {
                 errorDialog.text = "Import Result for " + appName + ":\n" + message
                 errorDialog.open()
             }
+            window.hasBackgroundActivity = false
         }
     }
 
@@ -393,7 +399,7 @@ Dialog {
                                 Image {
                                     id: iconImg
                                     anchors.fill: parent
-                                    source: model.icon_path ? "file://" + model.icon_path : ""
+                                    source: model.icon_path ? (model.icon_path.startsWith("http") ? model.icon_path : "file://" + model.icon_path) : ""
                                     fillMode: Image.PreserveAspectFit
                                     asynchronous: true
                                     cache: false 

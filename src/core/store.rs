@@ -641,13 +641,20 @@ impl StoreManager {
 
                     let icon_hash = game["img_icon_url"].as_str().unwrap_or("");
                     let icon_url = if !icon_hash.is_empty() {
-                        format!("https://steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/{}/{}.jpg", appid, icon_hash)
+                        format!("https://cdn.akamai.steamstatic.com/steamcommunity/public/images/apps/{}/{}.jpg", appid, icon_hash)
                     } else {
-                        String::new()
+                        // Fallback to high-res icon if hash is missing (rare but possible)
+                        format!("https://cdn.akamai.steamstatic.com/steam/apps/{}/icon.jpg", appid)
                     };
 
+                    let boxart_url = format!("https://cdn.akamai.steamstatic.com/steam/apps/{}/library_600x900.jpg", appid);
+                    let background_url = format!("https://cdn.akamai.steamstatic.com/steam/apps/{}/library_hero.jpg", appid);
+
                     let is_installed = local_ids.contains(&appid.to_string());
-                    let final_icon = if is_installed { None } else if !icon_url.is_empty() { Some(icon_url) } else { None };
+                    
+                    // For remote games, we always provide the CDN URLs. 
+                    // BulkImporter will download them if needed.
+                    let final_icon = if !icon_url.is_empty() { Some(icon_url) } else { None };
 
                     apps.push(Rom {
                         id: format!("steam-{}", appid),
@@ -660,7 +667,6 @@ impl StoreManager {
                         region: None,
                         platform_name: Some("Steam".to_string()),
                         platform_type: Some("PC (Linux)".to_string()),
-                        boxart_path: None,
                         date_added: None,
                         play_count: Some(0),
                         total_play_time: Some(playtime * 60),
@@ -671,9 +677,10 @@ impl StoreManager {
                         developer: None,
                         publisher: None,
                         rating: None,
-                        tags: Some("Steam".to_string()),
+                        tags: None,
                         icon_path: final_icon,
-                        background_path: None,
+                        background_path: Some(background_url),
+                        boxart_path: Some(boxart_url),
                         release_date: None,
                         description: None,
                         is_installed: Some(is_installed),
@@ -1009,7 +1016,7 @@ impl StoreManager {
                 developer: None,
                 publisher: None,
                 rating: None,
-                tags: Some("Steam".to_string()),
+                tags: None,
                 icon_path, 
                 background_path,
                 release_date: None,

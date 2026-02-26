@@ -82,6 +82,12 @@ Dialog {
             progressDialog.open()
             progressDialog.progress = progress
             progressDialog.status = message
+
+            // Sync with global ticker
+            window.backgroundActivityId = "Artwork"
+            window.backgroundActivityProgress = progress
+            window.backgroundActivityStatus = message
+            window.hasBackgroundActivity = true
         }
 
         onInstallFinished: (appName, success, message) => {
@@ -91,15 +97,18 @@ Dialog {
                 gameModel.refresh()
             } else {
                 progressDialog.close()
+                if (message === "Cancelled") return;
+                
                 errorDialog.text = "Import Result for " + appName + ":\n" + message
                 errorDialog.open()
             }
+            window.hasBackgroundActivity = false
         }
     }
 
     Timer {
         interval: 500
-        running: root.visible
+        running: true
         repeat: true
         onTriggered: storeBridge.poll()
     }

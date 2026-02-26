@@ -6,6 +6,29 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use crate::core::metadata_manager::MetadataManager;
 use std::path::Path;
+use std::os::unix::process::ExitStatusExt;
+use std::sync::{Mutex, OnceLock};
+
+struct GlobalStoreState {
+    active_processes: HashMap<String, u32>,
+    senders: Vec<mpsc::Sender<StoreMsg>>,
+}
+
+static GLOBAL_STATE: OnceLock<Mutex<GlobalStoreState>> = OnceLock::new();
+
+fn get_global_state() -> &'static Mutex<GlobalStoreState> {
+    GLOBAL_STATE.get_or_init(|| Mutex::new(GlobalStoreState {
+        active_processes: HashMap::new(),
+        senders: Vec::new(),
+    }))
+}
+
+fn broadcast_msg(msg: StoreMsg) {
+    let state = get_global_state().lock().unwrap();
+    for tx in &state.senders {
+        let _ = tx.send(msg.clone());
+    }
+}
 
 #[derive(QObject, Default)]
 #[allow(non_snake_case)]
@@ -63,12 +86,12 @@ pub struct StoreBridge {
     // Internal
     tx: RefCell<Option<mpsc::Sender<StoreMsg>>>,
     rx: RefCell<Option<mpsc::Receiver<StoreMsg>>>,
-    active_processes: RefCell<HashMap<String, u32>>,
     
     // Cache
     category_cache: RefCell<HashMap<String, String>>,
 }
 
+#[derive(Clone)]
 enum StoreMsg {
     SearchFinished(String),
     InstallProgress(String, f32, String),
@@ -95,8 +118,12 @@ impl StoreBridge {
     fn ensure_channels(&self) {
         if self.tx.borrow().is_none() {
              let (tx, rx) = mpsc::channel();
-             *self.tx.borrow_mut() = Some(tx);
+             *self.tx.borrow_mut() = Some(tx.clone());
              *self.rx.borrow_mut() = Some(rx);
+             
+             // Register sender globally
+             let mut state = get_global_state().lock().unwrap();
+             state.senders.push(tx);
         }
     }
 
@@ -106,14 +133,21 @@ impl StoreBridge {
             while let Ok(msg) = rx.try_recv() {
                 match msg {
                     StoreMsg::SearchFinished(j) => self.searchFinished(j.into()),
-                    StoreMsg::InstallProgress(id, p, s_json) => self.installProgress(id.into(), p, s_json.into()),
+                    StoreMsg::InstallProgress(id, p, s_json) => {
+                        // Use global state to check if process is active
+                        let is_background = id == "exodos" || id == "Artwork" || id == "exodos_immediate" || id == "exodos_batch";
+                        let is_active = get_global_state().lock().unwrap().active_processes.contains_key(&id);
+                        if is_background || is_active {
+                            self.installProgress(id.into(), p, s_json.into());
+                        }
+                    },
                     StoreMsg::InstallFinished(id, s, m) => {
-                        // Clean up active process if any
-                        self.active_processes.borrow_mut().remove(&id);
+                        // Clean up active process globally
+                        get_global_state().lock().unwrap().active_processes.remove(&id);
                         self.installFinished(id.into(), s, m.into());
                     },
                     StoreMsg::InstallStarted(id, pid) => {
-                        self.active_processes.borrow_mut().insert(id, pid);
+                        get_global_state().lock().unwrap().active_processes.insert(id, pid);
                     },
                     StoreMsg::LocalAppsFinished(j) => self.localAppsFinished(j.into()),
                     StoreMsg::SteamLibraryFinished(j) => self.steamLibraryFinished(j.into()),
@@ -492,16 +526,18 @@ impl StoreBridge {
         let install_path = if path.trim().is_empty() { None } else { Some(path.clone()) };
 
         std::thread::spawn(move || {
-            let _ = tx.send(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Initializing Legendary...".into()));
+            let _ = broadcast_msg(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Initializing Legendary...".into()));
             
             match StoreManager::install_legendary_game(app_name_clone.clone(), install_path) {
                 Ok(mut child) => {
                     use std::io::{BufRead, BufReader, Read};
                     
+                    // Send PID to main thread to be stored in active processes BEFORE spawning reader
+                    let _ = broadcast_msg(StoreMsg::InstallStarted(app_name_clone.clone(), child.id()));
+
                     let stderr = child.stderr.take().unwrap();
                     let stderr_reader = BufReader::new(stderr);
                     
-                    let tx_clone = tx.clone();
                     let app_id_for_reader = app_name_clone.clone();
                     
                     // Legendary usually uses stderr for progress. Read byte-by-byte to handle both \n and \r
@@ -563,7 +599,7 @@ impl StoreBridge {
                                                     }
 
                                                     let status_json = serde_json::Value::Object(status_map).to_string();
-                                                    let _ = tx_clone.send(StoreMsg::InstallProgress(app_id_for_reader.clone(), last_progress, status_json));
+                                                    let _ = broadcast_msg(StoreMsg::InstallProgress(app_id_for_reader.clone(), last_progress, status_json));
                                                 }
                                             }
                                         }
@@ -578,9 +614,6 @@ impl StoreBridge {
                         }
                     });
 
-                    // Send PID to main thread to be stored in active processes
-                    let _ = tx.send(StoreMsg::InstallStarted(app_name_clone.clone(), child.id()));
-
                     match child.wait() {
                         Ok(status) if status.success() => {
                             // Update DB to mark as installed
@@ -591,19 +624,24 @@ impl StoreBridge {
                                 let _ = conn.execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id]);
                                 let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
                             }
-                            let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, true, "Installed successfully".into()));
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, true, "Installed successfully".into()));
                         },
                         Ok(status) => {
-                            let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, format!("Legendary exited with status: {}", status).into()));
+                            let msg = if status.signal() == Some(15) {
+                                "Cancelled".to_string()
+                            } else {
+                                format!("Legendary exited with status: {}", status)
+                            };
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, false, msg.into()));
                         },
                         Err(e) => {
-                            let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
                         }
                     }
                 },
                 Err(e) => {
                     log::error!("Legendary install failed to start: {}", e);
-                    let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                    let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
                 }
             }
         });
@@ -612,21 +650,22 @@ impl StoreBridge {
     fn import_legendary_game(&self, app_name: String, path: String) {
         log::info!("[LegendaryBridge] Starting import for: {} at {:?}", app_name, path);
         self.ensure_channels();
-        let tx = self.tx.borrow().as_ref().unwrap().clone();
         let app_name_clone = app_name.clone();
         let import_path = path.clone();
 
         std::thread::spawn(move || {
-            let _ = tx.send(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Importing to Legendary...".into()));
+            let _ = broadcast_msg(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Importing to Legendary...".into()));
             
             match StoreManager::import_legendary_game(app_name_clone.clone(), import_path) {
                 Ok(mut child) => {
                     use std::io::{BufRead, BufReader, Read};
                     
+                    // Track PID for import
+                    let _ = broadcast_msg(StoreMsg::InstallStarted(app_name_clone.clone(), child.id()));
+
                     let stderr = child.stderr.take().unwrap();
                     let stderr_reader = BufReader::new(stderr);
                     
-                    let tx_clone = tx.clone();
                     let app_id_for_reader = app_name_clone.clone();
                     
                     // Legendary usually uses stderr. Read byte-by-byte to handle both \n and \r
@@ -685,16 +724,9 @@ impl StoreBridge {
                                                     status_map.insert("disk_rate".to_string(), serde_json::json!(last_disk));
                                                     status_map.insert("eta".to_string(), serde_json::json!(last_eta));
                                                     status_map.insert("raw_line".to_string(), serde_json::json!(clean));
-                                                    
-                                                    if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "Downloaded: ") {
-                                                        status_map.insert("downloaded".to_string(), serde_json::json!(val));
-                                                    }
-                                                    if let Some(val) = crate::core::legendary::LegendaryWrapper::extract_value(trimmed, "Written: ") {
-                                                        status_map.insert("written".to_string(), serde_json::json!(val));
-                                                    }
 
                                                     let status_json = serde_json::Value::Object(status_map).to_string();
-                                                    let _ = tx_clone.send(StoreMsg::InstallProgress(app_id_for_reader.clone(), last_progress, status_json));
+                                                    let _ = broadcast_msg(StoreMsg::InstallProgress(app_id_for_reader.clone(), last_progress, status_json));
                                                 }
                                             }
                                         }
@@ -708,9 +740,6 @@ impl StoreBridge {
                             }
                         }
                     });
-                    
-                    // Send PID to main thread to be stored in active processes
-                    let _ = tx.send(StoreMsg::InstallStarted(app_name_clone.clone(), child.id()));
 
                     match child.wait() {
                         Ok(status) if status.success() => {
@@ -722,19 +751,24 @@ impl StoreBridge {
                                 let _ = conn.execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id]);
                                 let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
                             }
-                            let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, true, "Imported successfully".into()));
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, true, "Imported successfully".into()));
                         },
                         Ok(status) => {
-                            let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, format!("Legendary exited with status: {}", status).into()));
+                            let msg = if status.signal() == Some(15) {
+                                "Cancelled".to_string()
+                            } else {
+                                format!("Legendary exited with status: {}", status)
+                            };
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, false, msg.into()));
                         },
                         Err(e) => {
-                            let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
                         }
                     }
                 },
                 Err(e) => {
                     log::error!("Legendary import failed to start: {}", e);
-                    let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                    let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
                 }
             }
         });
@@ -882,13 +916,8 @@ impl StoreBridge {
                             use crate::core::importer::BulkImporter;
                             let total = roms.len();
                             let save_locally = crate::bridge::settings::AppSettings::should_save_heroic_assets_locally();
-                            let result = BulkImporter::import_roms(&db, roms, &platform_id_clone, save_locally, |i, total, title| {
-                                // Periodic status update
-                                if i % 5 == 0 || i == total - 1 {
-                                    let progress = (i as f32 + 1.0) / total as f32;
-                                    let msg = format!("Importing {}/{}", i + 1, total);
-                                    let _ = tx.send(StoreMsg::InstallProgress(title, progress, msg.into()));
-                                }
+                            let result = BulkImporter::import_roms(&db, roms, &platform_id_clone, save_locally, |progress, msg| {
+                                let _ = tx.send(StoreMsg::InstallProgress("Artwork".into(), progress, msg.into()));
                             });
 
                             match result {
@@ -1033,23 +1062,47 @@ impl StoreBridge {
         });
     }
     fn pause_legendary_install(&self, app_name: String) {
-        if let Some(pid) = self.active_processes.borrow().get(&app_name) {
-            log::info!("[LegendaryBridge] Pausing install for: {} (PID: {})", app_name, pid);
-            let _ = std::process::Command::new("kill").arg("-STOP").arg(pid.to_string()).status();
+        log::info!("[LegendaryBridge] Requested pause for: {}", app_name);
+        let pid = get_global_state().lock().unwrap().active_processes.get(&app_name).copied();
+        
+        if let Some(pid) = pid {
+            log::info!("[LegendaryBridge] Pausing install for: {} (PGID: {})", app_name, pid);
+            // Send STOP to the process group (negative PID)
+            let status = std::process::Command::new("kill").arg("-STOP").arg(format!("-{}", pid)).status();
+            log::info!("[LegendaryBridge] Pause command status: {:?}", status);
+        } else {
+            let active = get_global_state().lock().unwrap().active_processes.keys().cloned().collect::<Vec<_>>();
+            log::warn!("[LegendaryBridge] No active process found for: {}. Active: {:?}", app_name, active);
         }
     }
 
     fn resume_legendary_install(&self, app_name: String) {
-        if let Some(pid) = self.active_processes.borrow().get(&app_name) {
-            log::info!("[LegendaryBridge] Resuming install for: {} (PID: {})", app_name, pid);
-            let _ = std::process::Command::new("kill").arg("-CONT").arg(pid.to_string()).status();
+        log::info!("[LegendaryBridge] Requested resume for: {}", app_name);
+        let pid = get_global_state().lock().unwrap().active_processes.get(&app_name).copied();
+
+        if let Some(pid) = pid {
+            log::info!("[LegendaryBridge] Resuming install for: {} (PGID: {})", app_name, pid);
+            // Send CONT to the process group
+            let status = std::process::Command::new("kill").arg("-CONT").arg(format!("-{}", pid)).status();
+            log::info!("[LegendaryBridge] Resume command status: {:?}", status);
+        } else {
+            let active = get_global_state().lock().unwrap().active_processes.keys().cloned().collect::<Vec<_>>();
+            log::warn!("[LegendaryBridge] No active process found for resume: {}. Active: {:?}", app_name, active);
         }
     }
 
     fn cancel_legendary_install(&self, app_name: String) {
-        if let Some(pid) = self.active_processes.borrow_mut().remove(&app_name) {
-            log::info!("[LegendaryBridge] Cancelling install for: {} (PID: {})", app_name, pid);
-            let _ = std::process::Command::new("kill").arg("-TERM").arg(pid.to_string()).status();
+        log::info!("[LegendaryBridge] Requested cancel for: {}", app_name);
+        let pid = get_global_state().lock().unwrap().active_processes.remove(&app_name);
+
+        if let Some(pid) = pid {
+            log::info!("[LegendaryBridge] Cancelling install for: {} (PGID: {})", app_name, pid);
+            // Send TERM to the entire process group
+            let status = std::process::Command::new("kill").arg("-TERM").arg(format!("-{}", pid)).status();
+            log::info!("[LegendaryBridge] Cancel command status: {:?}", status);
+        } else {
+            let active = get_global_state().lock().unwrap().active_processes.keys().cloned().collect::<Vec<_>>();
+            log::warn!("[LegendaryBridge] No active process found for cancel: {}. Active: {:?}", app_name, active);
         }
     }
 

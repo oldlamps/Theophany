@@ -63,6 +63,12 @@ Dialog {
             progressDialog.open()
             progressDialog.progress = progress
             progressDialog.status = message
+
+            // Sync with global ticker
+            window.backgroundActivityId = "Artwork"
+            window.backgroundActivityProgress = progress
+            window.backgroundActivityStatus = message
+            window.hasBackgroundActivity = true
         }
 
         onInstallFinished: (appName, success, message) => {
@@ -75,6 +81,7 @@ Dialog {
                 errorDialog.text = "Import Result for " + appName + ":\n" + message
                 errorDialog.open()
             }
+            window.hasBackgroundActivity = false
         }
     }
 
