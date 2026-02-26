@@ -9,7 +9,7 @@ import "../style"
 
 Dialog {
     id: root
-    title: "Import ExoDOS"
+    title: "Import eXoDOS"
     modal: true
     width: Overlay.overlay ? Math.min(Overlay.overlay.width * 0.75, 850) : 800
     height: Overlay.overlay ? Math.min(Overlay.overlay.height * 0.85, 750) : 650
@@ -37,14 +37,13 @@ Dialog {
             for (var i = 0; i < results.length; i++) {
                 var item = results[i]
                 exodosModel.append({
-                    "checked": true,
                     "gameId": item.id || "",
                     "title": item.title || "Unknown Game",
                     "path": item.path || "",
                     "filename": item.filename || "",
                     "icon_path": "",
                     "platform_id": "DOS",
-                    "platform_name": "exoDOS",
+                    "platform_name": "eXoDOS",
                     "tags": item.tags || "",
                     "developer": item.developer || "",
                     "publisher": item.publisher || "",
@@ -55,13 +54,44 @@ Dialog {
                     "is_favorite": item.is_favorite === true
                 })
             }
+            selectAllMode = true
+            manualToggles = {}
             loading = false
         }
 
+        onInstallProgress: (appName, progress, message) => {
+            if (appName === "exodos") {
+                progressDialog.open()
+                progressDialog.progress = progress
+                progressDialog.status = message
 
+                // Sync with global ticker
+                window.backgroundActivityId = "exodos"
+                window.backgroundActivityProgress = progress
+                window.backgroundActivityStatus = message
+                window.hasBackgroundActivity = true
+            }
+        }
+
+        onInstallFinished: (appName, success, message) => {
+            if (appName === "exodos") {
+                if (success) {
+                    progressDialog.progress = 1.0
+                    progressDialog.status = "Import complete! " + message
+                    gameModel.refresh()
+                } else {
+                    progressDialog.close()
+                    errorDialog.text = "Import Result:\n" + message
+                    errorDialog.open()
+                }
+                window.hasBackgroundActivity = false
+            } else if (appName === "exodos_immediate" || appName === "exodos_batch") {
+                if (success) {
+                    progressDialog.status = message
+                }
+            }
+        }
     }
-
-
 
     Timer {
         interval: 500
@@ -71,16 +101,19 @@ Dialog {
     }
 
     property bool loading: false
-    property string selectedPath: ""
+    property bool selectAllMode: true
+    property var manualToggles: ({})
+
     ListModel { id: exodosModel }
     ListModel { id: filteredPlatforms }
 
     property int selectedCount: {
-        var count = 0
-        for (var i = 0; i < exodosModel.count; i++) {
-            if (exodosModel.get(i).checked) count++
+        var manualCount = Object.keys(manualToggles).length
+        if (selectAllMode) {
+            return Math.max(0, exodosModel.count - manualCount)
+        } else {
+            return manualCount
         }
-        return count
     }
 
     function refreshFilteredPlatforms() {
@@ -95,6 +128,7 @@ Dialog {
             var name = sidebar.platformModel.data(idx, 257) || ""
             var type = (sidebar.platformModel.data(idx, 261) || "").toLowerCase()
             if (type === "dos" || name.toLowerCase().indexOf("dos") !== -1) {
+                if (name.toLowerCase() === "exodos") name = "eXoDOS"
                 filteredPlatforms.append({
                     "name": name,
                     "id": sidebar.platformModel.data(idx, 256)
@@ -105,7 +139,7 @@ Dialog {
         
         if (!hasDos) {
              filteredPlatforms.insert(0, {
-                 "name": "exoDOS (Default)",
+                 "name": "eXoDOS (Default)",
                  "id": "virtual_dos"
              })
              selectedIdx = 0
@@ -128,16 +162,21 @@ Dialog {
 
     FolderDialog {
         id: folderDialog
-        title: "Select ExoDOS Directory (The parent of 'eXo')"
+        title: "Select eXoDOS Directory (The parent of 'eXo')"
         onAccepted: {
             var path = selectedFolder.toString()
             if (path.startsWith("file://")) {
                 path = path.substring(7)
             }
-            selectedPath = path
-            // Don't auto-scan immediately, let the user click "Scan" if they want, 
-            // or we can keep it. User said "when I select a directory it doesn't populate in the text field".
-            // Updating selectedPath should update the text field.
+            appSettings.exodosPath = path
+            appSettings.save()
+        }
+    }
+
+    onOpened: {
+        if (appSettings.exodosPath !== "" && exodosModel.count === 0 && !loading) {
+            loading = true
+            storeBridge.refresh_exodos_library(appSettings.exodosPath)
         }
     }
 
@@ -151,7 +190,7 @@ Dialog {
             spacing: 15
 
             Text {
-                text: "Import ExoDOS Games"
+                text: "Import eXoDOS Games"
                 color: Theme.text
                 font.pixelSize: 20
                 font.bold: true
@@ -168,11 +207,12 @@ Dialog {
                 TheophanyTextField {
                     id: pathField
                     Layout.fillWidth: true
-                    placeholderText: "Select ExoDOS installation directory..."
-                    text: selectedPath
-                    onTextChanged: {
-                        if (selectedPath !== text) {
-                            selectedPath = text
+                    placeholderText: "Select eXoDOS installation directory..."
+                    text: appSettings.exodosPath
+                    onEditingFinished: {
+                        if (appSettings.exodosPath !== text) {
+                            appSettings.exodosPath = text
+                            appSettings.save()
                         }
                     }
                 }
@@ -185,10 +225,10 @@ Dialog {
                 TheophanyButton {
                     text: "Scan"
                     primary: true
-                    enabled: selectedPath !== "" && !loading
+                    enabled: appSettings.exodosPath !== "" && !loading
                     onClicked: {
                         loading = true
-                        storeBridge.refresh_exodos_library(selectedPath)
+                        storeBridge.refresh_exodos_library(appSettings.exodosPath)
                     }
                 }
             }
@@ -197,7 +237,7 @@ Dialog {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 spacing: 15
-                visible: selectedPath !== ""
+                visible: appSettings.exodosPath !== ""
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -223,7 +263,7 @@ Dialog {
                                 Layout.preferredHeight: 32
                                 Layout.preferredWidth: 32
                                 onClicked: {
-                                    addSystemDialog.openAddWithType("DOS", "exoDOS")
+                                    addSystemDialog.openAddWithType("DOS", "eXoDOS")
                                 }
                             }
                         }
@@ -240,7 +280,8 @@ Dialog {
                         flat: true
                         font.pixelSize: 12
                         onClicked: {
-                            for (var i = 0; i < exodosModel.count; i++) exodosModel.setProperty(i, "checked", true)
+                            selectAllMode = true
+                            manualToggles = {}
                         }
                     }
 
@@ -249,7 +290,8 @@ Dialog {
                         flat: true
                         font.pixelSize: 12
                         onClicked: {
-                            for (var i = 0; i < exodosModel.count; i++) exodosModel.setProperty(i, "checked", false)
+                            selectAllMode = false
+                            manualToggles = {}
                         }
                     }
 
@@ -297,7 +339,16 @@ Dialog {
 
                             MouseArea {
                                 id: ma; anchors.fill: parent; hoverEnabled: true
-                                onClicked: model.checked = !model.checked
+                                onClicked: {
+                                    var mid = model.gameId
+                                    var newToggles = Object.assign({}, manualToggles)
+                                    if (newToggles[mid]) {
+                                        delete newToggles[mid]
+                                    } else {
+                                        newToggles[mid] = true
+                                    }
+                                    manualToggles = newToggles
+                                }
                             }
 
                             RowLayout {
@@ -306,8 +357,20 @@ Dialog {
                                 spacing: 15
 
                                 TheophanyCheckBox {
-                                    checked: model.checked
-                                    onToggled: model.checked = checked
+                                    checked: {
+                                        var isManual = !!manualToggles[model.gameId]
+                                        return selectAllMode ? !isManual : isManual
+                                    }
+                                    onToggled: {
+                                        var mid = model.gameId
+                                        var newToggles = Object.assign({}, manualToggles)
+                                        if (newToggles[mid]) {
+                                            delete newToggles[mid]
+                                        } else {
+                                            newToggles[mid] = true
+                                        }
+                                        manualToggles = newToggles
+                                    }
                                     Layout.alignment: Qt.AlignVCenter
                                 }
 
@@ -330,10 +393,10 @@ Dialog {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "No games found in the specified ExoDOS directory.\nMake sure you selected the parent of the 'eXo' folder."
+                        text: "No games found in the specified eXoDOS directory.\nMake sure you selected the parent of the 'eXo' folder."
                         color: Theme.secondaryText
                         horizontalAlignment: Text.AlignHCenter
-                        visible: !root.loading && exodosModel.count === 0 && selectedPath !== ""
+                        visible: !root.loading && exodosModel.count === 0 && appSettings.exodosPath !== ""
                     }
 
                     BusyIndicator {
@@ -372,7 +435,7 @@ Dialog {
                         if (platformId === "virtual_dos") {
                                 var newId = "platform-" + Math.random().toString(36).substr(2, 9)
                                 sidebar.platformModel.updateSystem(
-                                    newId, "exoDOS", "", "", "", "DOS", "assets/systems/linux", ""
+                                    newId, "eXoDOS", "", "", "", "DOS", "assets/systems/exodos.png", ""
                                 )
                                 platformId = newId
                         }
@@ -380,7 +443,10 @@ Dialog {
                         var selectedRoms = []
                         for (var i = 0; i < exodosModel.count; i++) {
                             var item = exodosModel.get(i)
-                            if (item.checked) {
+                            var isManual = !!manualToggles[item.gameId]
+                            var isSelected = selectAllMode ? !isManual : isManual
+                            
+                            if (isSelected) {
                                 var romObj = {
                                     id: item.gameId,
                                     platform_id: platformId,
@@ -402,13 +468,27 @@ Dialog {
                         }
                         
                         if (selectedRoms.length > 0) {
-                            // Initiation is enough, Main.qml handles the rest
-                            root.close()
-                            storeBridge.import_exodos_games(JSON.stringify(selectedRoms), platformId, selectedPath)
+                            progressDialog.progress = 0.0
+                            progressDialog.status = "Preparing to import " + selectedRoms.length + " games..."
+                            progressDialog.open()
+                            storeBridge.import_exodos_games(JSON.stringify(selectedRoms), platformId, appSettings.exodosPath)
                         }
                     }
                 }
             }
         }
+    }
+
+    ImportProgressDialog {
+        id: progressDialog
+        title: "Importing eXoDOS Games"
+        onClosed: {
+            root.close()
+        }
+    }
+
+    TheophanyMessageDialog {
+        id: errorDialog
+        title: "Import Status"
     }
 }

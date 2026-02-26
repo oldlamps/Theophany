@@ -45,6 +45,8 @@ fn resolve_asset_path(path: &str) -> String {
 enum AsyncResponse {
     IconSearchFinished(String),
     IconDownloadFinished(String),
+    DeleteProgress(String, f32, String),
+    DeleteFinished(String, bool, String),
 }
 
 #[derive(QObject, Default)]
@@ -91,6 +93,8 @@ pub struct PlatformListModel {
     // Signals
     iconSearchFinished: qt_signal!(json_results: String),
     iconDownloadFinished: qt_signal!(local_path: String),
+    deleteProgress: qt_signal!(platform_id: String, progress: f32, status: String),
+    deleteFinished: qt_signal!(platform_id: String, success: bool, message: String),
 }
 
 impl QAbstractListModel for PlatformListModel {
@@ -173,68 +177,113 @@ impl PlatformListModel {
     #[allow(non_snake_case)]
     fn deleteSystem(&mut self, id: String, delete_assets: bool) {
         let path = self.db_path.borrow().clone();
-        if let Ok(db) = DbManager::open(&path) {
-            // Cascade Delete Games
-            // 1. Get all game IDs for this platform
-            let conn = db.get_connection();
-            let mut game_ids = Vec::new();
-            if let Ok(mut stmt) = conn.prepare("SELECT id, path, filename FROM roms WHERE platform_id = ?1") {
-                if let Ok(rows) = stmt.query_map([&id], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
-                }) {
-                    for row in rows {
-                        if let Ok(data) = row {
-                            game_ids.push(data);
+        let tx = match self.tx.borrow().as_ref() {
+            Some(t) => t.clone(),
+            None => return,
+        };
+
+        std::thread::spawn(move || {
+            let _ = tx.send(AsyncResponse::DeleteProgress(
+                id.clone(),
+                0.0,
+                "Starting deletion...".to_string(),
+            ));
+
+            if let Ok(db) = DbManager::open(&path) {
+                // Cascade Delete Games
+                // 1. Get all game IDs for this platform
+                let conn = db.get_connection();
+                let mut game_ids = Vec::new();
+                if let Ok(mut stmt) = conn.prepare("SELECT id, path, filename FROM roms WHERE platform_id = ?1") {
+                    if let Ok(rows) = stmt.query_map([&id], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+                    }) {
+                        for row in rows {
+                            if let Ok(data) = row {
+                                game_ids.push(data);
+                            }
                         }
                     }
                 }
-            }
 
-            // 2. Iterate and delete each game (Delete Assets + DB Entry only)
-            for (game_id, _game_path, filename) in game_ids {
-                // SKIP Flatpak Uninstall - User requested to NOT uninstall content
+                let total = game_ids.len();
                 
-                // Delete Game Assets
-                if delete_assets {
-                     if let Ok(Some((platform_folder, _))) = db.get_rom_path_info(&game_id) {
-                         // 1. Try standard stem
-                         let rom_stem_std = std::path::Path::new(&filename).file_stem().and_then(|s| s.to_str()).unwrap_or(&filename);
-                         let _ = crate::core::metadata_manager::MetadataManager::delete_assets(&platform_folder, rom_stem_std);
-                         
-                         // 2. Try full filename (fallback for flatpaks/etc)
-                         if rom_stem_std != filename {
-                             let _ = crate::core::metadata_manager::MetadataManager::delete_assets(&platform_folder, &filename);
-                         }
-                     }
-                }
-                
-                // Delete Game from DB
-                let _ = db.delete_rom(&game_id);
-            }
-
-            // 3. Delete Platform Assets Folder (if requested)
-            if delete_assets {
-                if let Ok(platforms) = db.get_platforms() {
-                    if let Some(p) = platforms.iter().find(|p| p.id == id) {
-                         // Use platform name as folder name (sanitized)
-                         let folder_name = p.name.replace("/", "-").replace("\\", "-");
-                         let _ = crate::core::metadata_manager::MetadataManager::delete_platform_assets(&folder_name);
-                         
-                         // Also try slug just in case
-                         if p.slug != folder_name {
-                             let _ = crate::core::metadata_manager::MetadataManager::delete_platform_assets(&p.slug);
+                // 2. Iterate and delete each game (Delete Assets + DB Entry only)
+                for (i, (game_id, _game_path, filename)) in game_ids.into_iter().enumerate() {
+                    if i % 50 == 0 || i == total - 1 {
+                        let progress = if total > 0 { i as f32 / total as f32 } else { 1.0 };
+                        let _ = tx.send(AsyncResponse::DeleteProgress(
+                            id.clone(),
+                            progress * 0.9, // Reserve last 10% for platform metadata cleanup
+                            format!("Deleting game {} of {}...", i + 1, total),
+                        ));
+                    }
+                    
+                    // SKIP Flatpak Uninstall - User requested to NOT uninstall content
+                    
+                    // Delete Game Assets
+                    if delete_assets {
+                         if let Ok(Some((platform_folder, _))) = db.get_rom_path_info(&game_id) {
+                             // 1. Try standard stem
+                             let rom_stem_std = std::path::Path::new(&filename).file_stem().and_then(|s| s.to_str()).unwrap_or(&filename);
+                             let _ = crate::core::metadata_manager::MetadataManager::delete_assets(&platform_folder, rom_stem_std);
+                             
+                             // 2. Try full filename (fallback for flatpaks/etc)
+                             if rom_stem_std != filename {
+                                 let _ = crate::core::metadata_manager::MetadataManager::delete_assets(&platform_folder, &filename);
+                             }
                          }
                     }
+                    
+                    // Delete Game from DB
+                    let _ = db.delete_rom(&game_id);
                 }
-            }
-            
-            // 4. Delete Platform from DB
-            if let Err(e) = db.delete_platform(&id) {
-                log::error!("Failed to delete platform: {}", e);
+
+                let _ = tx.send(AsyncResponse::DeleteProgress(
+                    id.clone(),
+                    0.95,
+                    "Cleaning up platform data...".to_string(),
+                ));
+
+                // 3. Delete Platform Assets Folder (if requested)
+                if delete_assets {
+                    if let Ok(platforms) = db.get_platforms() {
+                        if let Some(p) = platforms.iter().find(|p| p.id == id) {
+                             // Use platform name as folder name (sanitized)
+                             let folder_name = p.name.replace("/", "-").replace("\\", "-");
+                             let _ = crate::core::metadata_manager::MetadataManager::delete_platform_assets(&folder_name);
+                             
+                             // Also try slug just in case
+                             if p.slug != folder_name {
+                                 let _ = crate::core::metadata_manager::MetadataManager::delete_platform_assets(&p.slug);
+                             }
+                        }
+                    }
+                }
+                
+                // 4. Delete Platform from DB
+                if let Err(e) = db.delete_platform(&id) {
+                    log::error!("Failed to delete platform: {}", e);
+                    let _ = tx.send(AsyncResponse::DeleteFinished(
+                        id.clone(),
+                        false,
+                        format!("Failed to delete platform: {}", e),
+                    ));
+                } else {
+                    let _ = tx.send(AsyncResponse::DeleteFinished(
+                        id.clone(),
+                        true,
+                        "Platform deleted successfully".to_string(),
+                    ));
+                }
             } else {
-                self.refresh();
+                let _ = tx.send(AsyncResponse::DeleteFinished(
+                    id.clone(),
+                    false,
+                    "Failed to open database".to_string(),
+                ));
             }
-        }
+        });
     }
 
     #[allow(non_snake_case)]
@@ -445,16 +494,32 @@ impl PlatformListModel {
 
     #[allow(non_snake_case)]
     fn checkAsyncResponses(&mut self) {
-        let mut rx_borrow = self.rx.borrow_mut();
-        if let Some(rx) = rx_borrow.as_mut() {
-            while let Ok(msg) = rx.try_recv() {
-                match msg {
-                    AsyncResponse::IconSearchFinished(json) => self.iconSearchFinished(json),
-                    AsyncResponse::IconDownloadFinished(path) => {
-                        self.cache_buster += 1;
-                        self.cache_buster_changed();
-                        self.iconDownloadFinished(path);
+        let mut messages = Vec::new();
+        {
+            let mut rx_borrow = self.rx.borrow_mut();
+            if let Some(rx) = rx_borrow.as_mut() {
+                while let Ok(msg) = rx.try_recv() {
+                    messages.push(msg);
+                }
+            }
+        }
+
+        for msg in messages {
+            match msg {
+                AsyncResponse::IconSearchFinished(json) => self.iconSearchFinished(json),
+                AsyncResponse::IconDownloadFinished(path) => {
+                    self.cache_buster += 1;
+                    self.cache_buster_changed();
+                    self.iconDownloadFinished(path);
+                }
+                AsyncResponse::DeleteProgress(id, p, s) => {
+                    self.deleteProgress(id.into(), p, s.into());
+                }
+                AsyncResponse::DeleteFinished(id, success, message) => {
+                    if success {
+                        self.refresh();
                     }
+                    self.deleteFinished(id.into(), success, message.into());
                 }
             }
         }

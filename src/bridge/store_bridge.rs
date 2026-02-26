@@ -472,7 +472,7 @@ impl StoreBridge {
     }
 
     fn refresh_exodos_library(&self, path: String) {
-        log::info!("Scanning ExoDOS library at: {}", path);
+        log::info!("Scanning eXoDOS library at: {}", path);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         std::thread::spawn(move || {
@@ -521,7 +521,7 @@ impl StoreBridge {
     fn install_legendary_game(&self, app_name: String, path: String) {
         log::info!("[LegendaryBridge] Starting install for: {} at {:?}", app_name, path);
         self.ensure_channels();
-        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        let _tx = self.tx.borrow().as_ref().unwrap().clone();
         let app_name_clone = app_name.clone();
         let install_path = if path.trim().is_empty() { None } else { Some(path.clone()) };
 
@@ -530,7 +530,7 @@ impl StoreBridge {
             
             match StoreManager::install_legendary_game(app_name_clone.clone(), install_path) {
                 Ok(mut child) => {
-                    use std::io::{BufRead, BufReader, Read};
+                    use std::io::{BufReader, Read};
                     
                     // Send PID to main thread to be stored in active processes BEFORE spawning reader
                     let _ = broadcast_msg(StoreMsg::InstallStarted(app_name_clone.clone(), child.id()));
@@ -658,7 +658,7 @@ impl StoreBridge {
             
             match StoreManager::import_legendary_game(app_name_clone.clone(), import_path) {
                 Ok(mut child) => {
-                    use std::io::{BufRead, BufReader, Read};
+                    use std::io::{BufReader, Read};
                     
                     // Track PID for import
                     let _ = broadcast_msg(StoreMsg::InstallStarted(app_name_clone.clone(), child.id()));
@@ -1051,10 +1051,17 @@ impl StoreBridge {
                 }
             }
 
+            let folder_name = p.file_name().and_then(|s| s.to_str()).unwrap_or_default();
+            let collection_name = if folder_name.to_lowercase() == "exodos" {
+                "eXoDOS".to_string()
+            } else {
+                folder_name.to_string()
+            };
+
             let result = serde_json::json!({
                 "extensions": top_exts.join(","),
                 "platform_type": platform_type,
-                "collection_name": p.file_name().and_then(|s| s.to_str()).unwrap_or_default()
+                "collection_name": collection_name
             });
             log::info!("[FolderAnalyze] Result: {}", result);
 
@@ -1107,7 +1114,7 @@ impl StoreBridge {
     }
 
     fn import_exodos_games(&self, roms_json: String, platform_id: String, exodos_base_path: String) {
-        log::info!("Importing ExoDOS games for platform: {}", platform_id);
+        log::info!("Importing eXoDOS games for platform: {}", platform_id);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         
@@ -1129,11 +1136,10 @@ impl StoreBridge {
                 };
 
                 let total = roms.len();
-                let total = roms.len();
                 
                 // --- Phase 1: Immediate Batch Insertion ---
                 // We do a fast pass to get games into the library immediately.
-                if let Ok(mut db) = crate::core::db::DbManager::open(&db_path) {
+                if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
                     let _ = db.get_connection().execute("BEGIN TRANSACTION", []);
                     for rom in &roms {
                         let mut final_rom = rom.clone();
@@ -1156,7 +1162,7 @@ impl StoreBridge {
                         
                         // Clear out old "ExoDOS" tags strictly, otherwise apply the fallback
                         let current_tags = meta.tags.as_deref().unwrap_or("");
-                        if current_tags == "ExoDOS" || current_tags == "" {
+                        if current_tags == "eXoDOS" || current_tags == "" {
                             meta.tags = final_rom.tags.clone();
                         }
 
@@ -1176,7 +1182,7 @@ impl StoreBridge {
 
                 // --- Phase 2: Background Enrichment ---
                 if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
-                    for (i, mut rom) in roms.into_iter().enumerate() {
+                    for (i, rom) in roms.into_iter().enumerate() {
                         let title = rom.title.clone().unwrap_or_else(|| "Unknown".to_string());
                         
                         if i % 20 == 0 || i == total - 1 {
@@ -1243,7 +1249,7 @@ impl StoreBridge {
                         if meta.description.is_none() || meta.description.as_deref() == Some("") { meta.description = rom.description.clone(); }
                         
                         let current_tags2 = meta.tags.as_deref().unwrap_or("");
-                        if current_tags2 == "ExoDOS" || current_tags2 == "" {
+                        if current_tags2 == "eXoDOS" || current_tags2 == "" {
                             meta.tags = rom.tags.clone();
                         }
                         

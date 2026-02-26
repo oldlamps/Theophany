@@ -232,8 +232,8 @@ Dialog {
                     Layout.fillWidth: true
 
                     TheophanyButton {
-                        text: "Import from ExoDOS"
-                        iconSource: "assets/systems/dosbox.png" // Guessing there's a dosbox or similar icon
+                        text: "Import from eXoDOS"
+                        iconSource: "assets/systems/exodos.png"
                         Layout.fillWidth: true
                         onClicked: {
                             root.close()

@@ -1,6 +1,6 @@
 use crate::core::models::Rom;
 use crate::core::paths::get_data_dir;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::fs;
 use std::os::unix::fs::symlink;
 use walkdir::WalkDir;
@@ -8,7 +8,6 @@ use uuid::Uuid;
 use chrono;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
-use std::collections::HashMap;
 
 pub struct ExoDosManager;
 
@@ -33,10 +32,10 @@ impl ExoDosManager {
         let mut roms = Vec::new();
         let dos_path = base_path.join("eXo/eXoDOS/!dos");
         
-        log::info!("Scanning ExoDOS directory: {:?}", dos_path);
+        log::info!("Scanning eXoDOS directory: {:?}", dos_path);
 
         if !dos_path.exists() {
-            log::warn!("ExoDOS path not found: {:?}", dos_path);
+            log::warn!("eXoDOS path not found: {:?}", dos_path);
             return roms;
         }
 

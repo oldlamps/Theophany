@@ -113,6 +113,8 @@ struct SettingsData {
     pub steam_id: String,
     #[serde(default)]
     pub steam_api_key: String,
+    #[serde(default)]
+    pub exodos_path: String,
 }
 
 impl Default for SettingsData {
@@ -171,6 +173,7 @@ impl Default for SettingsData {
             check_for_updates_on_startup: true,
             steam_id: String::new(),
             steam_api_key: String::new(),
+            exodos_path: String::new(),
         }
     }
 }
@@ -285,6 +288,7 @@ pub struct AppSettings {
     checkForUpdatesOnStartup: qt_property!(bool; NOTIFY settingsChanged),
     steamId: qt_property!(QString; NOTIFY settingsChanged),
     steamApiKey: qt_property!(QString; NOTIFY settingsChanged),
+    exodosPath: qt_property!(QString; NOTIFY settingsChanged),
     closeToTrayChanged: qt_signal!(),
     settingsChanged: qt_signal!(),
     defaultPlatformsJson: qt_property!(QString; CONST),
@@ -404,6 +408,7 @@ impl AppSettings {
             check_for_updates_on_startup: self.checkForUpdatesOnStartup,
             steam_id: self.steamId.to_string(),
             steam_api_key: self.steamApiKey.to_string(),
+            exodos_path: self.exodosPath.to_string(),
         };
         
         if let Ok(json) = serde_json::to_string_pretty(&data) {
@@ -497,6 +502,7 @@ impl AppSettings {
                     self.checkForUpdatesOnStartup = data.check_for_updates_on_startup;
                     self.steamId = QString::from(data.steam_id);
                     self.steamApiKey = QString::from(data.steam_api_key);
+                    self.exodosPath = QString::from(data.exodos_path);
                     
                     self.settingsChanged();
                 }
@@ -578,6 +584,7 @@ impl Default for AppSettings {
             checkForUpdatesOnStartup: true,
             steamId: Default::default(),
             steamApiKey: Default::default(),
+            exodosPath: Default::default(),
             saveHeroicAssetsLocally: false,
             autoRescanOnStartup: false,
             confirmOnQuit: true,
@@ -665,6 +672,7 @@ impl Default for AppSettings {
         s.checkForUpdatesOnStartup = s.data.check_for_updates_on_startup;
         s.steamId = QString::from(s.data.steam_id.clone());
         s.steamApiKey = QString::from(s.data.steam_api_key.clone());
+        s.exodosPath = QString::from(s.data.exodos_path.clone());
  
         s
     }

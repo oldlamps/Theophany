@@ -1242,6 +1242,25 @@ ApplicationWindow {
                 }
             }
             
+            Connections {
+                target: sidebar.platformModel
+                
+                function onDeleteProgress(platformId, progress, status) {
+                    window.backgroundActivityId = "Deletion"
+                    window.backgroundActivityStatus = status
+                    window.backgroundActivityProgress = progress
+                    window.hasBackgroundActivity = true
+                }
+                
+                function onDeleteFinished(platformId, success, message) {
+                    window.hasBackgroundActivity = false
+                    if (!success) {
+                        scrapeErrorDialog.text = "Deletion Failed: " + message
+                        scrapeErrorDialog.open()
+                    }
+                }
+            }
+            
             Component.onCompleted: {
                 sidebar.setPlatformTypes(gameModel.getPlatformTypes())
             }
@@ -1780,6 +1799,7 @@ ApplicationWindow {
                     running: true
                     onTriggered: {
                         gameModel.checkAsyncResponses()
+                        sidebar.platformModel.checkAsyncResponses()
                         storeBridge.poll()
                     }
                 }
