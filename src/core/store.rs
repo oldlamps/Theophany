@@ -1098,21 +1098,30 @@ impl StoreManager {
                                     rom.developer = meta.developer.clone();
                                     rom.genre = meta.genre.clone();
                                     rom.description = meta.description.clone();
-                                    rom.boxart_path = meta.art_icon.clone();
+                                    // art_cover for Epic is a wide landscape image — use as background
+                                    // boxart_path is intentionally left None here; the local icon file
+                                    // discovered below will be symlinked into the Box-Front slot instead.
                                     rom.background_path = meta.art_cover.clone();
                                     rom.icon_path = meta.art_icon.clone();
                                 }
 
-                                // 2a. Epic Specific: Parse Metadata for Backgrounds (DieselGameBox)
+                                // 2a. Epic Specific: Parse Metadata for cover/background from keyImages
                                 let meta_file = heroic_config_dir.join("legendaryConfig/legendary/metadata").join(format!("{}.json", id));
-                                if rom.background_path.is_none() {
+                                if rom.boxart_path.is_none() || rom.background_path.is_none() {
                                     if let Ok(meta_content) = std::fs::read_to_string(&meta_file) {
                                         if let Ok(meta_json) = serde_json::from_str::<serde_json::Value>(&meta_content) {
                                             if let Some(images) = meta_json["keyImages"].as_array() {
                                                 for img in images {
                                                     if let (Some(url), Some(itype)) = (img["url"].as_str(), img["type"].as_str()) {
-                                                        if itype == "DieselGameBox" || itype == "DieselGameBackground" {
+                                                        // Tall portrait cover (box front)
+                                                        if rom.boxart_path.is_none() && (itype == "OfferImageTall" || itype == "DieselStoreFront" || itype == "DieselGameBoxTall") {
+                                                            rom.boxart_path = Some(url.to_string());
+                                                        }
+                                                        // Wide background
+                                                        if rom.background_path.is_none() && (itype == "DieselGameBox" || itype == "DieselGameBackground" || itype == "OfferImageWide") {
                                                             rom.background_path = Some(url.to_string());
+                                                        }
+                                                        if rom.boxart_path.is_some() && rom.background_path.is_some() {
                                                             break;
                                                         }
                                                     }
@@ -1125,7 +1134,12 @@ impl StoreManager {
                                 // Local Asset Discovery
                                 if let Some(p) = Self::find_heroic_icon(&heroic_config_dir, &id) {
                                     if rom.icon_path.is_none() || rom.icon_path.as_ref().map_or(false, |s| s.starts_with("http")) {
-                                         rom.icon_path = Some(p);
+                                         rom.icon_path = Some(p.clone());
+                                    }
+                                    // If we still have no box art (e.g. art_cover was empty), reuse the
+                                    // local icon file — the importer will symlink it into the Box-Front slot.
+                                    if rom.boxart_path.is_none() || rom.boxart_path.as_ref().map_or(false, |s| s.starts_with("http")) {
+                                        rom.boxart_path = Some(p);
                                     }
                                 }
 

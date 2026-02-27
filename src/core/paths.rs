@@ -17,6 +17,14 @@ pub fn get_assets_dir() -> PathBuf {
     path
 }
 
+pub fn get_tools_dir() -> PathBuf {
+    let path = get_data_dir().join("tools");
+    if !path.exists() {
+        let _ = std::fs::create_dir_all(&path);
+    }
+    path
+}
+
 pub fn get_metadata_dir() -> PathBuf {
     let path = get_data_dir().join("Metadata");
     if !path.exists() {

@@ -496,7 +496,7 @@ Rectangle {
             TheophanyLogo { 
                 Layout.fillWidth: true; 
                 Layout.rightMargin: 15
-                visible: !root.collapsed
+                visible: !root.collapsed && root.width >= 200
                 opacity: visible ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: 200 } }
             }

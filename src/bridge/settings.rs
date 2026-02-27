@@ -115,6 +115,14 @@ struct SettingsData {
     pub steam_api_key: String,
     #[serde(default)]
     pub exodos_path: String,
+    #[serde(default = "default_sidebar_width")]
+    pub sidebar_width: f32,
+    #[serde(default = "default_details_width")]
+    pub details_width: f32,
+    #[serde(default)]
+    pub use_custom_legendary: bool,
+    #[serde(default)]
+    pub custom_legendary_path: String,
 }
 
 impl Default for SettingsData {
@@ -174,6 +182,10 @@ impl Default for SettingsData {
             steam_id: String::new(),
             steam_api_key: String::new(),
             exodos_path: String::new(),
+            sidebar_width: default_sidebar_width(),
+            details_width: default_details_width(),
+            use_custom_legendary: false,
+            custom_legendary_path: String::new(),
         }
     }
 }
@@ -186,6 +198,8 @@ fn default_grid_scale() -> f32 { 1.0 }
 fn default_metadata_scraper() -> String { "IGDB".to_string() }
 fn default_image_scraper() -> String { "Web Search".to_string() }
 fn default_llm_provider() -> String { "Gemini".to_string() }
+fn default_sidebar_width() -> f32 { 250.0 }
+fn default_details_width() -> f32 { 350.0 }
 
 fn default_hotkeys() -> HashMap<String, String> {
     let mut map = HashMap::new();
@@ -289,6 +303,10 @@ pub struct AppSettings {
     steamId: qt_property!(QString; NOTIFY settingsChanged),
     steamApiKey: qt_property!(QString; NOTIFY settingsChanged),
     exodosPath: qt_property!(QString; NOTIFY settingsChanged),
+    sidebarWidth: qt_property!(f32; NOTIFY settingsChanged),
+    detailsWidth: qt_property!(f32; NOTIFY settingsChanged),
+    useCustomLegendary: qt_property!(bool; NOTIFY settingsChanged),
+    customLegendaryPath: qt_property!(QString; NOTIFY settingsChanged),
     closeToTrayChanged: qt_signal!(),
     settingsChanged: qt_signal!(),
     defaultPlatformsJson: qt_property!(QString; CONST),
@@ -409,6 +427,10 @@ impl AppSettings {
             steam_id: self.steamId.to_string(),
             steam_api_key: self.steamApiKey.to_string(),
             exodos_path: self.exodosPath.to_string(),
+            sidebar_width: self.sidebarWidth,
+            details_width: self.detailsWidth,
+            use_custom_legendary: self.useCustomLegendary,
+            custom_legendary_path: self.customLegendaryPath.to_string(),
         };
         
         if let Ok(json) = serde_json::to_string_pretty(&data) {
@@ -503,6 +525,10 @@ impl AppSettings {
                     self.steamId = QString::from(data.steam_id);
                     self.steamApiKey = QString::from(data.steam_api_key);
                     self.exodosPath = QString::from(data.exodos_path);
+                    self.sidebarWidth = data.sidebar_width;
+                    self.detailsWidth = data.details_width;
+                    self.useCustomLegendary = data.use_custom_legendary;
+                    self.customLegendaryPath = QString::from(data.custom_legendary_path);
                     
                     self.settingsChanged();
                 }
@@ -604,6 +630,10 @@ impl Default for AppSettings {
             defaultProtonGamescopeScaling: 0,
             defaultProtonGamescopeUpscaler: 0,
             defaultProtonGamescopeFullscreen: false,
+            sidebarWidth: default_sidebar_width(),
+            detailsWidth: default_details_width(),
+            useCustomLegendary: false,
+            customLegendaryPath: Default::default(),
             
             settingsChanged: Default::default(),
             closeToTrayChanged: Default::default(),
@@ -673,6 +703,10 @@ impl Default for AppSettings {
         s.steamId = QString::from(s.data.steam_id.clone());
         s.steamApiKey = QString::from(s.data.steam_api_key.clone());
         s.exodosPath = QString::from(s.data.exodos_path.clone());
+        s.sidebarWidth = s.data.sidebar_width;
+        s.detailsWidth = s.data.details_width;
+        s.useCustomLegendary = s.data.use_custom_legendary;
+        s.customLegendaryPath = QString::from(s.data.custom_legendary_path.clone());
  
         s
     }

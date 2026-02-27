@@ -51,7 +51,28 @@ pub struct LegendaryWrapper;
 impl LegendaryWrapper {
     /// Discovers the path to the legendary binary.
     pub fn find_binary() -> Option<PathBuf> {
-        // 1. Check PATH
+        // 1. Check Settings
+        let path = crate::core::paths::get_config_dir().join("settings.json");
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
+                if data["use_custom_legendary"].as_bool().unwrap_or(false) {
+                    if let Some(custom_path) = data["custom_legendary_path"].as_str() {
+                        let p = PathBuf::from(custom_path);
+                        if !custom_path.is_empty() && p.exists() {
+                            return Some(p);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Check internal tools directory
+        let internal = crate::core::paths::get_tools_dir().join("legendary");
+        if internal.exists() {
+            return Some(internal);
+        }
+
+        // 3. Check PATH
         if let Ok(path) = which::which("legendary") {
             return Some(path);
         }

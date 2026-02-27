@@ -1,5 +1,11 @@
 #![allow(non_snake_case)]
 use qmetaobject::prelude::*;
+use std::sync::mpsc;
+use std::cell::RefCell;
+
+enum AsyncResponse {
+    LegendaryDownloadStatus(bool, String),
+}
 
 #[derive(QObject, Default)]
 #[allow(non_snake_case)]
@@ -10,13 +16,29 @@ pub struct AppInfo {
     getAssetsDir: qt_method!(fn(&self) -> QString),
     getTrayIconPath: qt_method!(fn(&self) -> QString),
     checkYtdlp: qt_method!(fn(&self, custom_path: String) -> String),
+    checkLegendary: qt_method!(fn(&self, custom_path: String) -> String),
+    downloadLegendary: qt_method!(fn(&self)),
+    checkAsyncResponses: qt_method!(fn(&mut self)),
     getVersion: qt_method!(fn(&self) -> QString),
     checkForUpdates: qt_method!(fn(&self)),
     updateAvailable: qt_signal!(version: String, notes: String, url: String),
+    legendaryDownloadStatus: qt_signal!(success: bool, message: String),
+
+    // Internals
+    tx: RefCell<Option<mpsc::Sender<AsyncResponse>>>,
+    rx: RefCell<Option<mpsc::Receiver<AsyncResponse>>>,
 }
 
 #[allow(non_snake_case)]
 impl AppInfo {
+    fn ensure_channels(&self) {
+        if self.tx.borrow().is_none() {
+            let (tx, rx) = mpsc::channel();
+            *self.tx.borrow_mut() = Some(tx);
+            *self.rx.borrow_mut() = Some(rx);
+        }
+    }
+
     fn getDataPath(&self) -> QString {
         crate::core::paths::get_data_dir().to_string_lossy().to_string().into()
     }
@@ -36,6 +58,123 @@ impl AppInfo {
 
     fn getVersion(&self) -> QString {
         env!("CARGO_PKG_VERSION").into()
+    }
+
+    fn checkLegendary(&self, custom_path: String) -> String {
+        let binary = if custom_path.is_empty() {
+            // Check tools dir first
+            let internal = crate::core::paths::get_tools_dir().join("legendary");
+            if internal.exists() {
+                internal.to_string_lossy().to_string()
+            } else {
+                "legendary".to_string()
+            }
+        } else {
+            custom_path
+        };
+
+        match std::process::Command::new(&binary).arg("--version").output() {
+            Ok(output) => {
+                if output.status.success() {
+                    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    serde_json::json!({
+                        "found": true,
+                        "path": binary,
+                        "version": version
+                    }).to_string()
+                } else {
+                    serde_json::json!({ "found": false }).to_string()
+                }
+            }
+            Err(_) => {
+                serde_json::json!({ "found": false }).to_string()
+            }
+        }
+    }
+
+    fn downloadLegendary(&self) {
+        self.ensure_channels();
+        let tx = match self.tx.borrow().as_ref() {
+            Some(t) => t.clone(),
+            None => return,
+        };
+
+        std::thread::spawn(move || {
+            let tools_dir = crate::core::paths::get_tools_dir();
+            let dest_path = tools_dir.join("legendary");
+            let url = "https://github.com/oldlamps/legendary/releases/latest/download/legendary";
+
+            log::info!("[AppInfo] Downloading Legendary from: {}", url);
+            
+            let client = reqwest::blocking::Client::builder()
+                .user_agent("Theophany")
+                .build()
+                .unwrap_or_default();
+
+            match client.get(url).send() {
+                Ok(mut response) => {
+                    if response.status().is_success() {
+                        if let Err(e) = std::fs::create_dir_all(&tools_dir) {
+                            let _ = tx.send(AsyncResponse::LegendaryDownloadStatus(false, format!("Failed to create tools directory: {}", e)));
+                            return;
+                        }
+
+                        let mut file = match std::fs::File::create(&dest_path) {
+                            Ok(f) => f,
+                            Err(e) => {
+                                let _ = tx.send(AsyncResponse::LegendaryDownloadStatus(false, format!("Failed to create file: {}", e)));
+                                return;
+                            }
+                        };
+
+                        if let Err(e) = std::io::copy(&mut response, &mut file) {
+                            let _ = tx.send(AsyncResponse::LegendaryDownloadStatus(false, format!("Download failed: {}", e)));
+                            return;
+                        }
+
+                        // Set executable permissions
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if let Ok(metadata) = std::fs::metadata(&dest_path) {
+                                let mut perms = metadata.permissions();
+                                perms.set_mode(perms.mode() | 0o111);
+                                let _ = std::fs::set_permissions(&dest_path, perms);
+                            }
+                        }
+
+                        log::info!("[AppInfo] Legendary downloaded successfully to {:?}", dest_path);
+                        let _ = tx.send(AsyncResponse::LegendaryDownloadStatus(true, "Download complete".to_string()));
+                    } else {
+                        let _ = tx.send(AsyncResponse::LegendaryDownloadStatus(false, format!("Server returned error: {}", response.status())));
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(AsyncResponse::LegendaryDownloadStatus(false, format!("Request failed: {}", e)));
+                }
+            }
+        });
+    }
+
+    fn checkAsyncResponses(&mut self) {
+        self.ensure_channels();
+        let mut messages = Vec::new();
+        {
+            let mut rx_borrow = self.rx.borrow_mut();
+            if let Some(rx) = rx_borrow.as_mut() {
+                while let Ok(msg) = rx.try_recv() {
+                    messages.push(msg);
+                }
+            }
+        }
+
+        for msg in messages {
+            match msg {
+                AsyncResponse::LegendaryDownloadStatus(success, message) => {
+                    self.legendaryDownloadStatus(success, message);
+                }
+            }
+        }
     }
 
     fn checkYtdlp(&self, custom_path: String) -> String {

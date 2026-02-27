@@ -177,71 +177,50 @@ Dialog {
                     font.bold: true 
                 }
 
-                RowLayout {
+                Grid {
+                    columns: 3
+                    rows: 2
                     spacing: 10
                     Layout.fillWidth: true
 
+                    property real btnWidth: (parent.width - spacing * (columns - 1)) / columns
+
                     TheophanyButton {
-                        text: "Import from Steam"
+                        text: "Steam"
                         iconSource: "assets/systems/steam.png"
-                        Layout.fillWidth: true
-                        onClicked: {
-                            root.close()
-                            steamImportDialog.openImport()
-                        }
+                        width: parent.btnWidth
+                        onClicked: { root.close(); steamImportDialog.openImport() }
                     }
-
                     TheophanyButton {
-                        text: "Import from Epic Games"
+                        text: "Epic"
                         iconSource: "assets/systems/epic.png"
-                        Layout.fillWidth: true
-                        onClicked: {
-                            root.close()
-                            epicImportDialog.openImport()
-                        }
+                        width: parent.btnWidth
+                        onClicked: { root.close(); epicImportDialog.openImport() }
                     }
-                }
-
-                RowLayout {
-                    spacing: 10
-                    Layout.fillWidth: true
-
                     TheophanyButton {
-                        text: "Import from Heroic"
+                        text: "Heroic"
                         iconSource: "assets/systems/heroic.png"
-                        Layout.fillWidth: true
-                        onClicked: {
-                            root.close()
-                            heroicImportDialog.openImport()
-                        }
+                        width: parent.btnWidth
+                        onClicked: { root.close(); heroicImportDialog.openImport() }
                     }
-
                     TheophanyButton {
-                        text: "Import from Lutris"
+                        text: "Lutris"
                         iconSource: "assets/systems/lutris.png"
-                        Layout.fillWidth: true
-                        onClicked: {
-                            root.close()
-                            lutrisImportDialog.openImport()
-                        }
+                        width: parent.btnWidth
+                        onClicked: { root.close(); lutrisImportDialog.openImport() }
                     }
-                }
-
-                RowLayout {
-                    spacing: 10
-                    Layout.fillWidth: true
-
                     TheophanyButton {
-                        text: "Import from eXoDOS"
+                        text: "eXoDOS"
                         iconSource: "assets/systems/exodos.png"
-                        Layout.fillWidth: true
-                        onClicked: {
-                            root.close()
-                            exodosImportDialog.openImport()
-                        }
+                        width: parent.btnWidth
+                        onClicked: { root.close(); exodosImportDialog.openImport() }
                     }
-                    
-                    Item { Layout.fillWidth: true }
+                    TheophanyButton {
+                        text: "Local App"
+                        iconSource: "assets/systems/linux.png"
+                        width: parent.btnWidth
+                        onClicked: { root.close(); localAppImportDialog.openImport() }
+                    }
                 }
             }
 

@@ -1059,10 +1059,14 @@ ApplicationWindow {
 
         // LEFT PANE (Sidebar + AI)
         Item {
-            Layout.preferredWidth: sidebar.collapsed ? 64 : 250
+            id: sidebarContainer
+            Layout.preferredWidth: sidebar.collapsed ? 64 : appSettings.sidebarWidth
             Layout.fillHeight: true
             
-            Behavior on Layout.preferredWidth { NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } }
+            Behavior on Layout.preferredWidth { 
+                enabled: !sidebarResizer.pressed && !sidebar.collapsed
+                NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } 
+            }
             
             Sidebar {
                 id: sidebar
@@ -1311,6 +1315,41 @@ ApplicationWindow {
                         // window.refreshPlaylists() // Check if available
                     }
                 }
+            }
+        }
+
+        Resizer {
+            id: sidebarResizer
+            visible: true
+            targetWidth: sidebar.collapsed ? 64 : appSettings.sidebarWidth
+            minWidth: sidebar.collapsed ? 64 : 150
+            maxWidth: 250
+            isRightSide: true
+            
+            onTargetWidthChanged: {
+                if (sidebar.collapsed) {
+                    if (targetWidth > 150) {
+                        sidebar.collapsed = false
+                        appSettings.sidebarWidth = targetWidth
+                    }
+                } else {
+                    if (targetWidth <= 150) {
+                        sidebar.collapsed = true
+                    } else {
+                        appSettings.sidebarWidth = targetWidth
+                    }
+                }
+            }
+
+            Connections {
+                target: sidebar
+                function onCollapsedChanged() {
+                    sidebarResizer.targetWidth = sidebar.collapsed ? 64 : appSettings.sidebarWidth
+                }
+            }
+
+            onPressedChanged: {
+                if (!pressed) appSettings.save()
             }
         }
 
@@ -2611,10 +2650,25 @@ ApplicationWindow {
         }
 
         // RIGHT SIDEBAR (Details)
+        Resizer {
+            id: detailsResizer
+            visible: detailsPanel.visible && !window.collapsedMode // Only show if panel is visible and not in mobile/collapsed mode
+            targetWidth: appSettings.detailsWidth
+            minWidth: 250
+            maxWidth: window.width * 0.5
+            isRightSide: false
+            onTargetWidthChanged: {
+                appSettings.detailsWidth = targetWidth
+            }
+            onPressedChanged: {
+                if (!pressed) appSettings.save()
+            }
+        }
+
         DetailsPanel {
             id: detailsPanel
             gameModel: gameModel
-            Layout.preferredWidth: 350
+            Layout.preferredWidth: appSettings.detailsWidth
             Layout.fillHeight: true
             visible: window.statTotalGames > 0
             onPlayRequested: (id) => {
@@ -2844,12 +2898,14 @@ ApplicationWindow {
         currentDefaultProtonGamescopeFullscreen: appSettings.defaultProtonGamescopeFullscreen
         currentHidePlatformsSidebar: appSettings.hidePlatformsSidebar
         currentCheckForUpdatesOnStartup: appSettings.checkForUpdatesOnStartup
+        currentUseCustomLegendary: appSettings.useCustomLegendary
+        currentCustomLegendaryPath: appSettings.customLegendaryPath
         platformModel: sidebar.platformModel
         
         availableRegions: gameModel.getRegions()
         availableScrapers: gameModel.getAvailableScrapers()
         
-        onSettingsApplied: (viewMode, showFilter, defRegion, themeName, raUser, raToken, raEnabled, showTray, closeToTray, aiEnabled, ollamaUrl, ollamaModel, detailsPreferVideo, ignoreTheInSort, aiDescriptionPrompt, defaultIgnoreOnDelete, activeMeta, activeImage, geminiKey, openaiKey, llmProvider, saveHeroicLocally, autoRescan, confirmQuit, gridScale, useCustomYtdlp, customYtdlpPath, defaultProtonRunner, defaultProtonPrefix, defaultProtonWrapper, defaultProtonUseGamescope, defaultProtonUseMangohud, defaultProtonGamescopeArgs, defaultProtonGamescopeW, defaultProtonGamescopeH, defaultProtonGamescopeOutW, defaultProtonGamescopeOutH, defaultProtonGamescopeRefresh, defaultProtonGamescopeScaling, defaultProtonGamescopeUpscaler, defaultProtonGamescopeFullscreen, hidePlatformsSidebar, checkUpdates) => {
+        onSettingsApplied: (viewMode, showFilter, defRegion, themeName, raUser, raToken, raEnabled, showTray, closeToTray, aiEnabled, ollamaUrl, ollamaModel, detailsPreferVideo, ignoreTheInSort, aiDescriptionPrompt, defaultIgnoreOnDelete, activeMeta, activeImage, geminiKey, openaiKey, llmProvider, saveHeroicLocally, autoRescan, confirmQuit, gridScale, useCustomYtdlp, customYtdlpPath, defaultProtonRunner, defaultProtonPrefix, defaultProtonWrapper, defaultProtonUseGamescope, defaultProtonUseMangohud, defaultProtonGamescopeArgs, defaultProtonGamescopeW, defaultProtonGamescopeH, defaultProtonGamescopeOutW, defaultProtonGamescopeOutH, defaultProtonGamescopeRefresh, defaultProtonGamescopeScaling, defaultProtonGamescopeUpscaler, defaultProtonGamescopeFullscreen, hidePlatformsSidebar, checkUpdates, useCustomLegendary, customLegendaryPath) => {
              // Update Settings
              appSettings.defaultView = viewMode
              appSettings.showFilterBar = showFilter
@@ -2905,6 +2961,8 @@ ApplicationWindow {
              
              appSettings.hidePlatformsSidebar = hidePlatformsSidebar
              appSettings.checkForUpdatesOnStartup = checkUpdates
+             appSettings.useCustomLegendary = useCustomLegendary
+             appSettings.customLegendaryPath = customLegendaryPath
              
              appSettings.save()
              

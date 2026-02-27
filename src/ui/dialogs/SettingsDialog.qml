@@ -32,7 +32,7 @@ Dialog {
         }
     }
 
-    signal settingsApplied(int viewMode, bool showFilter, string defRegion, string themeName, string raUser, string raToken, bool raEnabled, bool showTray, bool closeToTray, bool aiEnabled, string ollamaUrl, string ollamaModel, bool detailsPreferVideo, bool ignoreTheInSort, string aiDescriptionPrompt, bool defaultIgnoreOnDelete, string activeMeta, string activeImage, string geminiKey, string openaiKey, string llmProvider, bool saveHeroicLocally, bool autoRescan, bool confirmQuit, real gridScale, bool useCustomYtdlp, string customYtdlpPath, string defaultProtonRunner, string defaultProtonPrefix, string defaultProtonWrapper, bool defaultProtonUseGamescope, bool defaultProtonUseMangohud, string defaultProtonGamescopeArgs, string defaultProtonGamescopeW, string defaultProtonGamescopeH, string defaultProtonGamescopeOutW, string defaultProtonGamescopeOutH, string defaultProtonGamescopeRefresh, int defaultProtonGamescopeScaling, int defaultProtonGamescopeUpscaler, bool defaultProtonGamescopeFullscreen, bool hidePlatformsSidebar, bool checkUpdates)
+    signal settingsApplied(int viewMode, bool showFilter, string defRegion, string themeName, string raUser, string raToken, bool raEnabled, bool showTray, bool closeToTray, bool aiEnabled, string ollamaUrl, string ollamaModel, bool detailsPreferVideo, bool ignoreTheInSort, string aiDescriptionPrompt, bool defaultIgnoreOnDelete, string activeMeta, string activeImage, string geminiKey, string openaiKey, string llmProvider, bool saveHeroicLocally, bool autoRescan, bool confirmQuit, real gridScale, bool useCustomYtdlp, string customYtdlpPath, string defaultProtonRunner, string defaultProtonPrefix, string defaultProtonWrapper, bool defaultProtonUseGamescope, bool defaultProtonUseMangohud, string defaultProtonGamescopeArgs, string defaultProtonGamescopeW, string defaultProtonGamescopeH, string defaultProtonGamescopeOutW, string defaultProtonGamescopeOutH, string defaultProtonGamescopeRefresh, int defaultProtonGamescopeScaling, int defaultProtonGamescopeUpscaler, bool defaultProtonGamescopeFullscreen, bool hidePlatformsSidebar, bool checkUpdates, bool useCustomLegendary, string customLegendaryPath)
 
     property int currentViewMode: 0
     property bool currentShowFilterBar: false
@@ -80,9 +80,13 @@ Dialog {
     property bool currentDefaultProtonGamescopeFullscreen: false
     property bool currentHidePlatformsSidebar: false
     property bool currentCheckForUpdatesOnStartup: true
+    property bool currentUseCustomLegendary: false
+    property string currentCustomLegendaryPath: ""
 
     property string ytdlpStatus: ""
     property bool ytdlpFound: false
+    property string legendaryStatus: ""
+    property bool legendaryFound: false
 
     function checkYtdlp() {
         var customPath = customYtdlpSwitch.checked ? ytdlpPathField.text : ""
@@ -92,6 +96,17 @@ Dialog {
             ytdlpStatus = "Detected (Version: " + result.version + ")"
         } else {
             ytdlpStatus = "Not Found"
+        }
+    }
+
+    function checkLegendary() {
+        var customPath = customLegendarySwitch.checked ? legendaryPathField.text : ""
+        var result = JSON.parse(appInfo.checkLegendary(customPath))
+        legendaryFound = result.found
+        if (legendaryFound) {
+            legendaryStatus = "Detected (Version: " + result.version + ")"
+        } else {
+            legendaryStatus = "Not Found"
         }
     }
 
@@ -123,7 +138,25 @@ Dialog {
         }
     }
 
-    AppInfo { id: appInfo }
+    AppInfo { 
+        id: appInfo 
+        onLegendaryDownloadStatus: (success, message) => {
+            legendaryPollTimer.stop()
+            legendaryStatus = message
+            legendaryFound = success
+            if (success) {
+                checkLegendary()
+            }
+        }
+    }
+
+    Timer {
+        id: legendaryPollTimer
+        interval: 100
+        repeat: true
+        running: false
+        onTriggered: appInfo.checkAsyncResponses()
+    }
     StoreBridge { id: storeBridge }
 
     ListModel {
@@ -426,6 +459,10 @@ Dialog {
         customYtdlpSwitch.checked = currentUseCustomYtdlp
         ytdlpPathField.text = currentCustomYtdlpPath
         checkYtdlp()
+
+        customLegendarySwitch.checked = currentUseCustomLegendary
+        legendaryPathField.text = currentCustomLegendaryPath
+        checkLegendary()
 
         // Proton Defaults
         var runnerIdx = 0
@@ -1152,14 +1189,62 @@ Dialog {
                                              onClicked: root.checkYtdlp()
                                          }
                                      }
-                                     Label {
-                                         text: "Status: " + root.ytdlpStatus
-                                         color: root.ytdlpFound ? Theme.accent : "#ff5555"
-                                         font.bold: true
-                                         font.pixelSize: 12
-                                         Layout.leftMargin: 55
-                                     }
-                                 }
+                                      Label {
+                                          text: "Status: " + root.ytdlpStatus
+                                          color: root.ytdlpFound ? Theme.accent : "#ff5555"
+                                          font.bold: true
+                                          font.pixelSize: 12
+                                          Layout.leftMargin: 55
+                                      }
+
+                                      Item { Layout.preferredHeight: 10 }
+
+                                      RowLayout {
+                                          spacing: 15
+                                          TheophanySwitch { id: customLegendarySwitch; checked: root.currentUseCustomLegendary }
+                                          Label { text: "Use custom Legendary binary"; color: Theme.text }
+                                      }
+                                      RowLayout {
+                                          spacing: 10
+                                          Layout.fillWidth: true
+                                          enabled: customLegendarySwitch.checked
+                                          opacity: customLegendarySwitch.checked ? 1.0 : 0.4
+                                          Label { text: "Path:"; color: Theme.text }
+                                          TheophanyTextField {
+                                              id: legendaryPathField
+                                              Layout.fillWidth: true
+                                              text: root.currentCustomLegendaryPath
+                                              placeholderText: "/usr/bin/legendary"
+                                              onTextChanged: root.checkLegendary()
+                                          }
+                                          TheophanyButton {
+                                              text: "Check"
+                                              Layout.preferredHeight: 36
+                                              onClicked: root.checkLegendary()
+                                          }
+                                      }
+                                      RowLayout {
+                                          spacing: 10
+                                          Layout.leftMargin: 55
+                                          Label {
+                                              text: "Status: " + root.legendaryStatus
+                                              color: root.legendaryFound ? Theme.accent : "#ff5555"
+                                              font.bold: true
+                                              font.pixelSize: 12
+                                              Layout.fillWidth: true
+                                          }
+                                          TheophanyButton {
+                                              text: "Download Latest"
+                                              visible: !customLegendarySwitch.checked
+                                              Layout.preferredHeight: 32
+                                              onClicked: {
+                                                  root.legendaryStatus = "Downloading..."
+                                                  legendaryPollTimer.start()
+                                                  appInfo.downloadLegendary()
+                                              }
+                                          }
+                                      }
+                                  }
 
                                  Rectangle { height: 1; Layout.fillWidth: true; color: Theme.border; opacity: 0.3 }
 
@@ -1491,7 +1576,9 @@ Dialog {
                                     gsUpscalerCombo.currentIndex,
                                     gsFullscreenCheck.checked,
                                     hidePlatformsSidebarSwitch.checked,
-                                    checkUpdatesSwitch.checked
+                                    checkUpdatesSwitch.checked,
+                                    customLegendarySwitch.checked,
+                                    legendaryPathField.text
                                 )
                                 root.accept()
                             }

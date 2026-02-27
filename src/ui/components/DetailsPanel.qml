@@ -525,7 +525,9 @@ Rectangle {
         Rectangle {
             id: headerArea
             Layout.fillWidth: true
-            Layout.preferredHeight: 200
+            Layout.preferredHeight: width * 0.5 // Proportional height (2:1 ratio approx)
+            Layout.maximumHeight: 450
+            Layout.minimumHeight: 180
             color: Theme.secondaryBackground
             radius: 8
             clip: true
