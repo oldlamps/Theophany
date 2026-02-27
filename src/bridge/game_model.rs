@@ -99,6 +99,9 @@ enum AsyncResponse {
 
     // Cloud Saves
     CloudSaveSyncFinished(String, bool, String), // rom_id, success, message
+
+    // EOS Overlay
+    EosOverlayEnabled(String, bool),
 }
 
 #[derive(QObject, Default)]
@@ -223,6 +226,11 @@ pub struct GameListModel {
     removeFromIgnoreList: qt_method!(fn(&mut self, platform_id: String, path: String)),
     bulkUpdateMetadata: qt_method!(fn(&mut self, rom_ids_json: String, json_data: String)),
     deleteGamesBulk: qt_method!(fn(&mut self, rom_ids_json: String, ignore: bool, delete_assets: bool)),
+    enableEosOverlay: qt_method!(fn(&mut self, rom_id: String) -> bool),
+    disableEosOverlay: qt_method!(fn(&mut self, rom_id: String) -> bool),
+    isEosOverlayEnabled: qt_method!(fn(&mut self, rom_id: String) -> bool),
+    checkEosOverlayEnabled: qt_method!(fn(&mut self, rom_id: String)),
+    eosOverlayEnabledResult: qt_signal!(rom_id: String, enabled: bool),
 
     // Scraping
     searchGameImages: qt_method!(fn(&mut self, query: String)),
@@ -2279,7 +2287,7 @@ impl GameListModel {
                 let cmd = format!("{} {}", exe, args);
                 // println!("DEBUG: Launching via UI selected profile: {}", cmd);
                 let wd = std::path::Path::new(&rom_path).parent().map(|p| p.to_string_lossy().to_string());
-                let _ = crate::core::launcher::Launcher::launch(&cmd, &rom_path, wd.as_deref(), None, None);
+                let _ = crate::core::launcher::Launcher::launch(&cmd, &rom_path, wd.as_deref(), None, None, false);
                 
                 let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
                 let _ = conn.execute(
@@ -2678,8 +2686,15 @@ impl GameListModel {
                      }
                  }
 
+                 let mut eos_overlay_enabled = false;
+                 if rom_path.starts_with("epic://") {
+                     let app_name = rom_path.trim_start_matches("epic://launch/");
+                     let prefix = self.get_wine_prefix(&rom_id_clone);
+                     eos_overlay_enabled = crate::core::legendary::LegendaryWrapper::is_eos_overlay_enabled(prefix.as_deref());
+                 }
+
                  // Launch process
-                 match Launcher::launch(&command_template, &rom_path, working_dir.as_deref(), env_vars_opt, wrapper_opt) {
+                 match Launcher::launch(&command_template, &rom_path, working_dir.as_deref(), env_vars_opt, wrapper_opt, eos_overlay_enabled) {
                      Ok(mut child) => {
                          log::info!("Launched successfully.");
                          
@@ -4155,6 +4170,9 @@ impl GameListModel {
                 AsyncResponse::CloudSaveSyncFinished(rom_id, success, message) => {
                     self.cloudSaveSyncFinished(rom_id.into(), success, message.into());
                 }
+                AsyncResponse::EosOverlayEnabled(rom_id, enabled) => {
+                    self.eosOverlayEnabledResult(rom_id.into(), enabled);
+                }
             }
         }
     }
@@ -4680,6 +4698,83 @@ impl GameListModel {
             }
         }
     }
+
+    fn get_wine_prefix(&self, rom_id: &str) -> Option<String> {
+        let db_path = self.db_path.borrow().clone();
+        if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+            if let Ok(Some(config)) = db.get_pc_config(rom_id) {
+                if let Some(prefix) = config.wine_prefix.filter(|s| !s.trim().is_empty()) {
+                    log::info!("[EOS Overlay] Found wine prefix in PC config for {}: {}", rom_id, prefix);
+                    return Some(prefix);
+                }
+            }
+            if let Ok(Some((_, _, _, platform_pc_defaults))) = db.get_launch_info(rom_id) {
+                let platform_defaults = platform_pc_defaults.as_ref().and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok());
+                if let Some(d) = platform_defaults {
+                    if let Some(prefix) = d["wine_prefix"].as_str().map(|s| s.to_string()).filter(|s| !s.trim().is_empty()) {
+                        log::info!("[EOS Overlay] Found wine prefix in platform defaults for {}: {}", rom_id, prefix);
+                        return Some(prefix);
+                    }
+                }
+            }
+        }
+        log::info!("[EOS Overlay] No wine prefix found for {}", rom_id);
+        None
+    }
+
+    #[allow(non_snake_case)]
+    fn enableEosOverlay(&mut self, rom_id: String) -> bool {
+        log::info!("[EOS Overlay] Attempting to ENABLE overlay for {}", rom_id);
+        if let Some(_app_id) = rom_id.strip_prefix("legendary-") {
+            let prefix = self.get_wine_prefix(&rom_id);
+            let tools_dir = crate::core::paths::get_data_dir().join("tools").join("eos-overlay");
+            let result = crate::core::legendary::LegendaryWrapper::eos_overlay_enable(prefix.as_deref(), Some(tools_dir)).is_ok();
+            log::info!("[EOS Overlay] Result of enabling overlay for {}: {}", rom_id, result);
+            return result;
+        }
+        false
+    }
+
+    #[allow(non_snake_case)]
+    fn disableEosOverlay(&mut self, rom_id: String) -> bool {
+        log::info!("[EOS Overlay] Attempting to DISABLE overlay for {}", rom_id);
+        if let Some(_app_id) = rom_id.strip_prefix("legendary-") {
+            let prefix = self.get_wine_prefix(&rom_id);
+            let tools_dir = crate::core::paths::get_data_dir().join("tools").join("eos-overlay");
+            let result = crate::core::legendary::LegendaryWrapper::eos_overlay_disable(prefix.as_deref(), Some(tools_dir)).is_ok();
+            log::info!("[EOS Overlay] Result of disabling overlay for {}: {}", rom_id, result);
+            return result;
+        }
+        false
+    }
+
+    #[allow(non_snake_case)]
+    fn isEosOverlayEnabled(&mut self, rom_id: String) -> bool {
+        if let Some(_app_id) = rom_id.strip_prefix("legendary-") {
+            let prefix = self.get_wine_prefix(&rom_id);
+            let state = crate::core::legendary::LegendaryWrapper::is_eos_overlay_enabled(prefix.as_deref());
+            log::info!("[EOS Overlay] Synchronous state check for {}: {}", rom_id, state);
+            return state;
+        }
+        false
+    }
+    
+    #[allow(non_snake_case)]
+    fn checkEosOverlayEnabled(&mut self, rom_id: String) {
+        log::info!("[EOS Overlay] Triggering async state check for {}", rom_id);
+        if let Some(_app_id) = rom_id.strip_prefix("legendary-").map(|s| s.to_string()) {
+            let prefix = self.get_wine_prefix(&rom_id);
+            if let Some(ref tx) = *self.tx.borrow() {
+                let tx_clone = tx.clone();
+                let r_id = rom_id.clone();
+                std::thread::spawn(move || {
+                    let enabled = crate::core::legendary::LegendaryWrapper::is_eos_overlay_enabled(prefix.as_deref());
+                    log::info!("[EOS Overlay] Async state check result for {}: {}", r_id, enabled);
+                    let _ = tx_clone.send(AsyncResponse::EosOverlayEnabled(r_id, enabled));
+                });
+            }
+        }
+    }
 }
 
 async fn download_game_assets(
@@ -4800,9 +4895,9 @@ async fn download_game_assets(
                 }
             }
         }
-        
-        let _ = tx.send(AsyncResponse::AssetDownloadProgress("".to_string()));
+    }
+    
+    let _ = tx.send(AsyncResponse::AssetDownloadProgress("".to_string()));
         // Trigger a refresh/update signal for the game to show new images
         let _ = tx.send(AsyncResponse::BulkItemFinished(rom_id)); 
-    }
 }

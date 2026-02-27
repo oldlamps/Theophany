@@ -5,6 +5,8 @@ use std::cell::RefCell;
 
 enum AsyncResponse {
     LegendaryDownloadStatus(bool, String),
+    EosOverlayStatus(bool, String),
+    EosOverlayInfo(String),
 }
 
 #[derive(QObject, Default)]
@@ -21,8 +23,15 @@ pub struct AppInfo {
     checkAsyncResponses: qt_method!(fn(&mut self)),
     getVersion: qt_method!(fn(&self) -> QString),
     checkForUpdates: qt_method!(fn(&self)),
+    triggerEosOverlayCheck: qt_method!(fn(&self)),
+    getEosOverlayInfo: qt_method!(fn(&self) -> String),
+    installEosOverlay: qt_method!(fn(&self)),
+    updateEosOverlay: qt_method!(fn(&self)),
+    removeEosOverlay: qt_method!(fn(&self) -> bool),
     updateAvailable: qt_signal!(version: String, notes: String, url: String),
     legendaryDownloadStatus: qt_signal!(success: bool, message: String),
+    eosOverlayStatus: qt_signal!(success: bool, message: String),
+    eosOverlayInfoReceived: qt_signal!(info: String),
 
     // Internals
     tx: RefCell<Option<mpsc::Sender<AsyncResponse>>>,
@@ -173,6 +182,12 @@ impl AppInfo {
                 AsyncResponse::LegendaryDownloadStatus(success, message) => {
                     self.legendaryDownloadStatus(success, message);
                 }
+                AsyncResponse::EosOverlayStatus(success, message) => {
+                    self.eosOverlayStatus(success, message);
+                }
+                AsyncResponse::EosOverlayInfo(info) => {
+                    self.eosOverlayInfoReceived(info.into());
+                }
             }
         }
     }
@@ -201,6 +216,125 @@ impl AppInfo {
                 serde_json::json!({ "found": false }).to_string()
             }
         }
+    }
+
+
+    fn getEosOverlayInfo(&self) -> String {
+        match crate::core::legendary::LegendaryWrapper::eos_overlay_info() {
+            Ok(info) => info,
+            Err(e) => format!("Error: {}", e),
+        }
+    }
+
+    fn triggerEosOverlayCheck(&self) {
+        self.ensure_channels();
+        let tx = match self.tx.borrow().as_ref() {
+            Some(t) => t.clone(),
+            None => return,
+        };
+
+        std::thread::spawn(move || {
+            let info = match crate::core::legendary::LegendaryWrapper::eos_overlay_info() {
+                Ok(i) => i,
+                Err(e) => format!("Error: {}", e),
+            };
+            let _ = tx.send(AsyncResponse::EosOverlayInfo(info));
+        });
+    }
+
+    fn installEosOverlay(&self) {
+        self.ensure_channels();
+        let tx = match self.tx.borrow().as_ref() {
+            Some(t) => t.clone(),
+            None => return,
+        };
+
+        std::thread::spawn(move || {
+            let path = crate::core::paths::get_tools_dir().join("eos-overlay");
+            match crate::core::legendary::LegendaryWrapper::eos_overlay_install(Some(path)) {
+                Ok(mut child) => {
+                    use std::io::{BufRead, BufReader};
+                    
+                    // Drain stdout and stderr in background threads to avoid deadlocks
+                    let stdout = child.stdout.take();
+                    let stderr = child.stderr.take();
+                    
+                    if let Some(out) = stdout {
+                        std::thread::spawn(move || {
+                            let reader = BufReader::new(out);
+                            for line in reader.lines().flatten() {
+                                log::info!("[EosOverlay] {}", line);
+                            }
+                        });
+                    }
+                    if let Some(err) = stderr {
+                        std::thread::spawn(move || {
+                            let reader = BufReader::new(err);
+                            for line in reader.lines().flatten() {
+                                log::error!("[EosOverlay] {}", line);
+                            }
+                        });
+                    }
+
+                    let status = child.wait();
+                    let success = status.map(|s| s.success()).unwrap_or(false);
+                    let msg = if success { "Installation complete".to_string() } else { "Installation failed".to_string() };
+                    let _ = tx.send(AsyncResponse::EosOverlayStatus(success, msg));
+                }
+                Err(e) => {
+                    let _ = tx.send(AsyncResponse::EosOverlayStatus(false, format!("Failed to start installation: {}", e)));
+                }
+            }
+        });
+    }
+
+    fn updateEosOverlay(&self) {
+        self.ensure_channels();
+        let tx = match self.tx.borrow().as_ref() {
+            Some(t) => t.clone(),
+            None => return,
+        };
+
+        std::thread::spawn(move || {
+            let path = crate::core::paths::get_tools_dir().join("eos-overlay");
+            match crate::core::legendary::LegendaryWrapper::eos_overlay_update(Some(path)) {
+                Ok(mut child) => {
+                    use std::io::{BufRead, BufReader};
+                    
+                    let stdout = child.stdout.take();
+                    let stderr = child.stderr.take();
+                    
+                    if let Some(out) = stdout {
+                        std::thread::spawn(move || {
+                            let reader = BufReader::new(out);
+                            for line in reader.lines().flatten() {
+                                log::info!("[EosOverlay] {}", line);
+                            }
+                        });
+                    }
+                    if let Some(err) = stderr {
+                        std::thread::spawn(move || {
+                            let reader = BufReader::new(err);
+                            for line in reader.lines().flatten() {
+                                log::error!("[EosOverlay] {}", line);
+                            }
+                        });
+                    }
+
+                    let status = child.wait();
+                    let success = status.map(|s| s.success()).unwrap_or(false);
+                    let msg = if success { "Update complete".to_string() } else { "Update failed".to_string() };
+                    let _ = tx.send(AsyncResponse::EosOverlayStatus(success, msg));
+                }
+                Err(e) => {
+                    let _ = tx.send(AsyncResponse::EosOverlayStatus(false, format!("Failed to start update: {}", e)));
+                }
+            }
+        });
+    }
+
+    fn removeEosOverlay(&self) -> bool {
+        crate::core::legendary::LegendaryWrapper::eos_overlay_remove().is_ok()
     }
 
     fn checkForUpdates(&self) {

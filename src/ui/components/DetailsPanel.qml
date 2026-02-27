@@ -25,6 +25,10 @@ Rectangle {
     // View State
     property bool showVideoOverlay: false
     
+    // EOS Overlay State
+    property bool hasEosOverlayState: false
+    property bool currentEosOverlayEnabled: false
+    
     // Watch for setting changes to auto-switch if currently viewing a game with video
     Connections {
         target: appSettings
@@ -133,6 +137,12 @@ Rectangle {
 
     Connections {
         target: root.gameModel
+        function onEosOverlayEnabledResult(romId, enabled) {
+            if (String(root.gameId) === String(romId)) {
+                root.currentEosOverlayEnabled = enabled
+                root.hasEosOverlayState = true
+            }
+        }
         function onPlaytimeUpdated(romId) {
 
             if (String(root.gameId) === String(romId) && (!appSettings.isPlatformRaActive(root.gamePlatformType) || root.gamePlatformType.toLowerCase() === "dos")) {
@@ -170,6 +180,9 @@ Rectangle {
         root._steamAchievementsUnlocked = 0
         root._steamAchievementsCount = 0
         root._steamRecentBadges = []
+        
+        root.hasEosOverlayState = false
+        root.currentEosOverlayEnabled = false
     }
 
     onGameFilenameChanged: {
@@ -1425,11 +1438,11 @@ Rectangle {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     width: 30; height: parent.height
-                    visible: root.emulatorProfiles.length > 0 || (root.fullRomPath.startsWith("epic://") && !root.gameIsInstalled)
+                    visible: root.emulatorProfiles.length > 0 || root.fullRomPath.startsWith("epic://")
                     background: null
                     text: "▼"
                     onClicked: {
-                        if (root.fullRomPath.startsWith("epic://") && !root.gameIsInstalled) {
+                        if (root.fullRomPath.startsWith("epic://")) {
                             epicExtraMenu.popup()
                         } else {
                             profileMenu.popup()
@@ -1453,10 +1466,33 @@ Rectangle {
 
                 Menu {
                     id: epicExtraMenu
+                    onAboutToShow: {
+                        if (root.gamePlatformType === "epic") {
+                            root.gameModel.checkEosOverlayEnabled(root.gameId)
+                        }
+                    }
                     MenuItem {
                         text: "Import Game..."
                         onTriggered: {
                             window.importEpicGame(root.gameId)
+                        }
+                    }
+                    MenuItem {
+                        text: "Enable EOS Overlay"
+                        visible: root.hasEosOverlayState && !root.currentEosOverlayEnabled
+                        onTriggered: {
+                            if (gameModel.enableEosOverlay(root.gameId)) {
+                                root.currentEosOverlayEnabled = true
+                            }
+                        }
+                    }
+                    MenuItem {
+                        text: "Disable EOS Overlay"
+                        visible: root.hasEosOverlayState && root.currentEosOverlayEnabled
+                        onTriggered: {
+                            if (gameModel.disableEosOverlay(root.gameId)) {
+                                root.currentEosOverlayEnabled = false
+                            }
                         }
                     }
                 }

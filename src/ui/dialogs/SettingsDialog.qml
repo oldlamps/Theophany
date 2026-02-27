@@ -87,6 +87,14 @@ Dialog {
     property bool ytdlpFound: false
     property string legendaryStatus: ""
     property bool legendaryFound: false
+    property string eosOverlayInfo: ""
+    property string eosOverlayStatus: ""
+
+    function checkEosOverlay() {
+        eosOverlayInfo = "Checking..."
+        appInfoPollTimer.start()
+        appInfo.triggerEosOverlayCheck()
+    }
 
     function checkYtdlp() {
         var customPath = customYtdlpSwitch.checked ? ytdlpPathField.text : ""
@@ -141,17 +149,30 @@ Dialog {
     AppInfo { 
         id: appInfo 
         onLegendaryDownloadStatus: (success, message) => {
-            legendaryPollTimer.stop()
+            appInfoPollTimer.stop()
             legendaryStatus = message
             legendaryFound = success
             if (success) {
                 checkLegendary()
             }
         }
+        onEosOverlayStatus: (success, message) => {
+            eosOverlayStatus = message
+            checkEosOverlay()
+        }
+        onEosOverlayInfoReceived: (info) => {
+            eosOverlayInfo = info
+            // Clear status message if it was a technical status like "Installing..." or "Checking..."
+            // Leave it if it's "Installation complete" etc? 
+            // Actually, checkEosOverlay sets eosOverlayInfo to "Checking...", let's just clear status.
+            if (eosOverlayStatus.indexOf("...") !== -1) {
+                eosOverlayStatus = ""
+            }
+        }
     }
 
     Timer {
-        id: legendaryPollTimer
+        id: appInfoPollTimer
         interval: 100
         repeat: true
         running: false
@@ -463,6 +484,7 @@ Dialog {
         customLegendarySwitch.checked = currentUseCustomLegendary
         legendaryPathField.text = currentCustomLegendaryPath
         checkLegendary()
+        checkEosOverlay()
 
         // Proton Defaults
         var runnerIdx = 0
@@ -1239,9 +1261,73 @@ Dialog {
                                               Layout.preferredHeight: 32
                                               onClicked: {
                                                   root.legendaryStatus = "Downloading..."
-                                                  legendaryPollTimer.start()
+                                                  appInfoPollTimer.start()
                                                   appInfo.downloadLegendary()
                                               }
+                                          }
+                                      }
+
+                                      Item { Layout.preferredHeight: 15 }
+
+                                      Label { text: "EOS Overlay (Experimental)"; color: Theme.secondaryText; font.bold: true; font.pixelSize: 13 }
+                                      Label {
+                                          text: "Epic Online Services overlay provides friends lists, achievements, and cross-play features."
+                                          color: Theme.secondaryText
+                                          font.pixelSize: 12
+                                          wrapMode: Text.WordWrap
+                                          Layout.fillWidth: true
+                                      }
+                                      ColumnLayout {
+                                          spacing: 10
+                                          Layout.leftMargin: 20
+                                          Layout.fillWidth: true
+
+                                          Label {
+                                              text: root.eosOverlayInfo
+                                              color: Theme.text
+                                              font.family: "Monospace"
+                                              font.pixelSize: 11
+                                              wrapMode: Text.WordWrap
+                                              Layout.fillWidth: true
+                                          }
+
+                                          RowLayout {
+                                              spacing: 10
+                                              TheophanyButton {
+                                                  text: "Install Overlay"
+                                                  enabled: root.legendaryFound && root.eosOverlayInfo.indexOf("Installed version:") === -1 && root.eosOverlayInfo !== "Checking..."
+                                                  onClicked: {
+                                                      root.eosOverlayStatus = "Installing..."
+                                                      appInfoPollTimer.start()
+                                                      appInfo.installEosOverlay()
+                                                  }
+                                              }
+                                              TheophanyButton {
+                                                  text: "Update"
+                                                  enabled: root.legendaryFound && root.eosOverlayInfo.indexOf("Installed version:") !== -1 && root.eosOverlayInfo !== "Checking..."
+                                                  onClicked: {
+                                                      root.eosOverlayStatus = "Updating..."
+                                                      appInfoPollTimer.start()
+                                                      appInfo.updateEosOverlay()
+                                                  }
+                                              }
+                                              TheophanyButton {
+                                                  text: "Remove"
+                                                  enabled: root.legendaryFound && root.eosOverlayInfo.indexOf("Installed version:") !== -1 && root.eosOverlayInfo !== "Checking..."
+                                                  onClicked: {
+                                                      appInfoPollTimer.start()
+                                                      if (appInfo.removeEosOverlay()) {
+                                                          root.checkEosOverlay()
+                                                      }
+                                                  }
+                                              }
+                                          }
+                                          Label {
+                                              text: root.eosOverlayStatus
+                                              visible: text !== ""
+                                              color: Theme.accent
+                                              font.bold: true
+                                              font.pixelSize: 12
                                           }
                                       }
                                   }

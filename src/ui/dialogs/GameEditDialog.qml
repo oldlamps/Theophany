@@ -43,6 +43,7 @@ Dialog {
     property string platformId: ""
     property var currentConfig: ({})
     property var platformDefaults: ({})
+    property bool eosOverlayEnabled: false
     property bool advancedCollapsed: true
     property bool isPc: platformType.includes("PC") || platformId === "epic" || gameId.includes("legendary-")
     property bool isWindows: platformType === "PC (Windows)" || platformId === "epic" || gameId.includes("legendary-")
@@ -57,6 +58,15 @@ Dialog {
     property string geminiKey: ""
     property string openaiKey: ""
     property string llmProvider: ""
+
+    Connections {
+        target: gameModel
+        function onEosOverlayEnabledResult(rId, enabled) {
+            if (rId === root.gameId) {
+                root.eosOverlayEnabled = enabled
+            }
+        }
+    }
     property var platformModel: null
 
     property var allGenres: []
@@ -104,6 +114,11 @@ Dialog {
             if (isPc) {
                 if (isWindows) refreshProtonVersions()
                 loadPcConfig()
+                
+                // Load EOS Overlay status
+                if (gameId.indexOf("legendary-") === 0 || platformId === "epic") {
+                    gameModel.checkEosOverlayEnabled(gameId)
+                }
             }
              
         } catch (e) {
@@ -1104,6 +1119,40 @@ Dialog {
                                         }
                                     }
 
+                                    Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border; visible: root.gameId.toString().indexOf("legendary-") === 0 || root.platformId === "epic" }
+
+                                    // SECTION: EOS OVERLAY (Epic/Legendary only)
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 15
+                                        visible: root.gameId.toString().indexOf("legendary-") === 0 || root.platformId === "epic"
+
+                                        Text { text: "EOS OVERLAY (EXPERIMENTAL)"; color: Theme.accent; font.pixelSize: 11; font.bold: true }
+
+                                        TheophanyCheckBox {
+                                            id: eosOverlayCheck
+                                            text: "Enable EOS Overlay for this game"
+                                            checked: root.eosOverlayEnabled
+                                            onToggled: {
+                                                if (checked) {
+                                                    gameModel.enableEosOverlay(root.gameId)
+                                                } else {
+                                                    gameModel.disableEosOverlay(root.gameId)
+                                                }
+                                                root.eosOverlayEnabled = checked
+                                                gameModel.checkEosOverlayEnabled(root.gameId)
+                                            }
+                                        }
+                                        
+                                        Label {
+                                            text: "The EOS Overlay provides features like social integration and achievements. It can be accessed in-game with Shift+F3."
+                                            color: Theme.secondaryText
+                                            font.pixelSize: 12
+                                            wrapMode: Text.Wrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
                                     Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
                                     ColumnLayout {
                                         Layout.fillWidth: true
@@ -1590,6 +1639,12 @@ Dialog {
 
     Connections {
         target: gameModel
+
+        function onEosOverlayEnabledResult(romId, enabled) {
+            if (String(root.gameId) === String(romId)) {
+                root.eosOverlayEnabled = enabled
+            }
+        }
 
         function onAutoScrapeFinished(rom_id, json) {
             if (!root.visible || String(rom_id) !== String(root.gameId)) return;

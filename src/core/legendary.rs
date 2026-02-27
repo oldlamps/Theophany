@@ -737,4 +737,143 @@ impl LegendaryWrapper {
 
         rom
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // EOS Overlay Management
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Returns the status and version of the installed EOS overlay.
+    pub fn eos_overlay_info() -> anyhow::Result<String> {
+        let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
+        let output = Self::build_command(&binary, "eos-overlay")
+            .arg("info")
+            .output()?;
+
+        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        Ok(combined)
+    }
+
+    /// Installs the EOS overlay. Returns a Child process to monitor output.
+    pub fn eos_overlay_install(path: Option<PathBuf>) -> anyhow::Result<std::process::Child> {
+        let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
+        let mut cmd = Self::build_command(&binary, "eos-overlay");
+        cmd.arg("install").arg("--yes");
+        if let Some(p) = path {
+            cmd.arg("--path").arg(p.to_string_lossy().to_string());
+        }
+        cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+        Ok(cmd.spawn()?)
+    }
+
+    /// Updates the EOS overlay. Returns a Child process to monitor output.
+    pub fn eos_overlay_update(path: Option<PathBuf>) -> anyhow::Result<std::process::Child> {
+        let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
+        let mut cmd = Self::build_command(&binary, "eos-overlay");
+        cmd.arg("update").arg("--yes");
+        if let Some(p) = path {
+            cmd.arg("--path").arg(p.to_string_lossy().to_string());
+        }
+        cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+        Ok(cmd.spawn()?)
+    }
+
+    /// Removes the EOS overlay.
+    pub fn eos_overlay_remove() -> anyhow::Result<()> {
+        let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
+        let output = Self::build_command(&binary, "eos-overlay")
+            .arg("remove")
+            .arg("--yes")
+            .output()?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Failed to remove EOS overlay: {}", error));
+        }
+        Ok(())
+    }
+
+    /// Enables the EOS overlay for a specific Wine prefix.
+    pub fn eos_overlay_enable(prefix: Option<&str>, path: Option<PathBuf>) -> anyhow::Result<()> {
+        let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
+        let mut cmd = Self::build_command(&binary, "eos-overlay");
+        cmd.arg("enable");
+        if let Some(pfx) = prefix {
+            cmd.arg("--prefix").arg(pfx);
+        }
+        if let Some(p) = path {
+            cmd.arg("--path").arg(p.to_string_lossy().to_string());
+        }
+        
+        log::info!("[Legendary] Executing: {:?}", cmd);
+        let output = cmd.output()?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            log::error!("[Legendary] eos-overlay enable failed: {}", error);
+            return Err(anyhow::anyhow!("Failed to enable EOS overlay: {}", error));
+        }
+        
+        log::info!("[Legendary] eos-overlay enable output: {}", String::from_utf8_lossy(&output.stdout));
+        Ok(())
+    }
+
+    /// Disables the EOS overlay for a specific Wine prefix.
+    pub fn eos_overlay_disable(prefix: Option<&str>, path: Option<PathBuf>) -> anyhow::Result<()> {
+        let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
+        let mut cmd = Self::build_command(&binary, "eos-overlay");
+        cmd.arg("disable");
+        if let Some(pfx) = prefix {
+            cmd.arg("--prefix").arg(pfx);
+        }
+        if let Some(p) = path {
+            cmd.arg("--path").arg(p.to_string_lossy().to_string());
+        }
+        
+        log::info!("[Legendary] Executing: {:?}", cmd);
+        let output = cmd.output()?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            log::error!("[Legendary] eos-overlay disable failed: {}", error);
+            return Err(anyhow::anyhow!("Failed to disable EOS overlay: {}", error));
+        }
+        
+        log::info!("[Legendary] eos-overlay disable output: {}", String::from_utf8_lossy(&output.stdout));
+        Ok(())
+    }
+
+    /// Checks if the EOS overlay is enabled for a specific Wine prefix.
+    pub fn is_eos_overlay_enabled(prefix: Option<&str>) -> bool {
+        let binary = match Self::find_binary() {
+            Some(b) => b,
+            None => {
+                log::warn!("[Legendary] Binary not found for is_eos_overlay_enabled");
+                return false;
+            }
+        };
+        let mut cmd = Self::build_command(&binary, "eos-overlay");
+        cmd.arg("info");
+        if let Some(pfx) = prefix {
+            cmd.arg("--prefix").arg(pfx);
+        }
+        
+        log::info!("[Legendary] Executing: {:?}", cmd);
+        let output = match cmd.output() {
+                Ok(o) => o,
+                Err(e) => {
+                    log::error!("[Legendary] Failed to execute eos-overlay info: {}", e);
+                    return false;
+                }
+            };
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::info!("[Legendary] eos-overlay info stdout: {}", stdout);
+        if !stderr.is_empty() {
+            log::warn!("[Legendary] eos-overlay info stderr: {}", stderr);
+        }
+        
+        let is_enabled_str = "Overlay enabled: Yes";
+        stdout.contains(is_enabled_str) || stderr.contains(is_enabled_str)
+    }
 }

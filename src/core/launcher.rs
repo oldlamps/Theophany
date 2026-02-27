@@ -3,7 +3,7 @@ use std::process::Command;
 pub struct Launcher;
 
 impl Launcher {
-    pub fn launch(command_template: &str, rom_path: &str, mut working_dir: Option<&str>, env_vars: Option<&str>, wrapper: Option<&str>) -> Result<std::process::Child, String> {
+    pub fn launch(command_template: &str, rom_path: &str, mut working_dir: Option<&str>, env_vars: Option<&str>, wrapper: Option<&str>, eos_overlay: bool) -> Result<std::process::Child, String> {
         if command_template.trim().is_empty() {
             return Err("Command template is empty.".to_string());
         }
@@ -47,7 +47,8 @@ impl Launcher {
                 _ => String::new(),
             };
                 
-            let launch_cmd = format!("{} launch \"{}\"{}{}", binary, app_id, wrapper_arg, extra_args);
+            let overlay_arg = if eos_overlay { " --eos-overlay" } else { "" };
+            let launch_cmd = format!("{} launch \"{}\"{}{}{}", binary, app_id, wrapper_arg, extra_args, overlay_arg);
             if command_template.contains("%ROM%") {
                 command_template.replace("%ROM%", &launch_cmd)
             } else {
