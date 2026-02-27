@@ -81,6 +81,13 @@ fn main() {
     // Force Basic style to avoid platform-specific QML bugs (like KDE's ComboBox positionToRectangle error)
     std::env::set_var("QT_QUICK_CONTROLS_STYLE", "Basic");
 
+    // Set private Legendary config path to avoid conflicts with system-wide settings
+    let legendary_config = crate::core::paths::get_config_dir().join("legendary");
+    if !legendary_config.exists() {
+        let _ = std::fs::create_dir_all(&legendary_config);
+    }
+    std::env::set_var("LEGENDARY_CONFIG_PATH", legendary_config.to_string_lossy().to_string());
+
     // Enable logging with default level 'info' if RUST_LOG is not set
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 

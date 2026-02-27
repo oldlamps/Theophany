@@ -250,6 +250,77 @@ impl BulkImporter {
                 }
             }
 
+            // PC Config Inheritance (Minimal Fix)
+            let platform_type_lower = platform.platform_type.as_deref().map(|t| t.to_lowercase()).unwrap_or_default();
+            let platform_name_lower = platform.name.to_lowercase();
+            
+            if platform_type_lower == "epic" || platform_name_lower.contains("epic") {
+                let mut settings_to_apply = platform.pc_config_json.clone();
+                
+                // Fallback: If the collection is empty, check for global defaults
+                if settings_to_apply.is_none() || settings_to_apply.as_ref().map_or(true, |s| s.is_empty()) {
+                    let config_path = crate::core::paths::get_config_dir().join("settings.json");
+                    if let Ok(content) = std::fs::read_to_string(&config_path) {
+                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
+                            settings_to_apply = Some(serde_json::json!({
+                                "umu_proton_version": data.get("default_proton_runner"),
+                                "wine_prefix": data.get("default_proton_prefix"),
+                                "wrapper": data.get("default_proton_wrapper"),
+                                "use_gamescope": data.get("default_proton_use_gamescope"),
+                                "use_mangohud": data.get("default_proton_use_mangohud"),
+                                "gamescope_args": data.get("default_proton_gamescope_args"),
+                                "gs_state": {
+                                    "w": data.get("default_proton_gamescope_w"),
+                                    "h": data.get("default_proton_gamescope_h"),
+                                    "W": data.get("default_proton_gamescope_out_w"),
+                                    "H": data.get("default_proton_gamescope_out_h"),
+                                    "r": data.get("default_proton_gamescope_refresh"),
+                                    "S": data.get("default_proton_gamescope_scaling"),
+                                    "U": data.get("default_proton_gamescope_upscaler"),
+                                    "f": data.get("default_proton_gamescope_fullscreen")
+                                },
+                            }).to_string());
+                        }
+                    }
+                }
+
+                if let Some(pc_json) = settings_to_apply {
+                    if !pc_json.is_empty() {
+                        if let Ok(defaults) = serde_json::from_str::<serde_json::Value>(&pc_json) {
+                            let has_config = db.get_pc_config(&final_rom.id).ok().flatten().is_some();
+                            if !has_config {
+                                let new_config = crate::core::models::PcConfig {
+                                    rom_id: final_rom.id.clone(),
+                                    umu_proton_version: defaults.get("umu_proton_version").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    umu_store: defaults.get("umu_store").and_then(|v| v.as_str()).map(|s| s.to_string())
+                                        .or(Some("none".to_string())),
+                                    wine_prefix: defaults.get("wine_prefix").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    working_dir: defaults.get("working_dir").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    umu_id: defaults.get("umu_id").and_then(|v| v.as_str()).map(|s| s.to_string())
+                                        .or(Some("".to_string())),
+                                    env_vars: defaults.get("env_vars").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    extra_args: defaults.get("extra_args").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    proton_verb: defaults.get("proton_verb").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    disable_fixes: defaults.get("disable_fixes").and_then(|v| v.as_bool()),
+                                    no_runtime: defaults.get("no_runtime").and_then(|v| v.as_bool()),
+                                    log_level: defaults.get("log_level").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    wrapper: defaults.get("wrapper").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    use_gamescope: defaults.get("use_gamescope").and_then(|v| v.as_bool()),
+                                    gamescope_args: defaults.get("gamescope_args").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    use_mangohud: defaults.get("use_mangohud").and_then(|v| v.as_bool()),
+                                    pre_launch_script: defaults.get("pre_launch_script").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    post_launch_script: defaults.get("post_launch_script").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    cloud_saves_enabled: defaults.get("cloud_saves_enabled").and_then(|v| v.as_bool()),
+                                    cloud_save_path: defaults.get("cloud_save_path").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    cloud_save_auto_sync: defaults.get("cloud_save_auto_sync").and_then(|v| v.as_bool()),
+                                };
+                                let _ = db.insert_pc_config(&new_config);
+                            }
+                        }
+                    }
+                }
+            }
+
             success_count += 1;
             if i % 20 == 0 || i == total - 1 {
                 let progress = (i as f32 + 1.0) / total as f32;

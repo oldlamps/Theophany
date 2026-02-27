@@ -92,6 +92,17 @@ impl LegendaryWrapper {
         None
     }
 
+    /// Helper to create a Command configured with the correct paths and environment variables.
+    fn build_command(binary: &PathBuf, subcommand: &str) -> Command {
+        let mut cmd = Command::new(binary);
+        cmd.arg(subcommand);
+        
+        let legendary_config = crate::core::paths::get_config_dir().join("legendary");
+        cmd.env("LEGENDARY_CONFIG_PATH", legendary_config.to_string_lossy().to_string());
+        
+        cmd
+    }
+
     /// Checks if the user is authenticated with Legendary.
     pub fn is_authenticated() -> bool {
         let binary = match Self::find_binary() {
@@ -99,8 +110,7 @@ impl LegendaryWrapper {
             None => return false,
         };
 
-        let output = Command::new(binary)
-            .arg("status")
+        let output = Self::build_command(&binary, "status")
             .output();
 
         match output {
@@ -122,8 +132,12 @@ impl LegendaryWrapper {
         // https://...
         // Then paste the authorization code below:
         
-        let output = Command::new(&binary)
-            .arg("auth")
+        // Use --disable-webview to prevent Legendary from auto-opening the URL in an embedded browser,
+        // which would cause duplicate tabs when the UI also launches it.
+        // We also set BROWSER=/bin/true to prevent Python's webbrowser module from opening xdg-open.
+        let output = Self::build_command(&binary, "auth")
+            .arg("--disable-webview")
+            .env("BROWSER", "/bin/true")
             .output()?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -147,22 +161,39 @@ impl LegendaryWrapper {
     pub fn authenticate(code: &str) -> anyhow::Result<()> {
         let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
 
-        let mut child = Command::new(binary)
-            .arg("auth")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()?;
+        // Use --code to bypass interactive stdin prompts and --disable-webview to prevent UI popups.
+        let output = Self::build_command(&binary, "auth")
+            .arg("--disable-webview")
+            .arg("--code")
+            .arg(code)
+            .env("BROWSER", "/bin/true")
+            .output()?;
 
-        if let Some(mut stdin) = child.stdin.take() {
-            use std::io::Write;
-            writeln!(stdin, "{}", code)?;
+        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+
+        if !output.status.success() || combined.contains("ERROR:") || combined.contains("failed") {
+            return Err(anyhow::anyhow!("Authentication failed: {}", combined));
+        }
+        
+        // Final sanity check since `legendary auth` sometimes returns exit code 0 on failure
+        if !Self::is_authenticated() {
+            return Err(anyhow::anyhow!("Legendary still reports not authenticated. The authorization code may be invalid or expired."));
         }
 
-        let output = child.wait_with_output()?;
+        Ok(())
+    }
+
+    /// Logs out of the current Epic Games account by removing existing authentication.
+    pub fn logout() -> anyhow::Result<()> {
+        let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
+
+        let output = Self::build_command(&binary, "auth")
+            .arg("--delete")
+            .output()?;
+
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Authentication failed: {}", error));
+            return Err(anyhow::anyhow!("Logout failed: {}", error));
         }
 
         Ok(())
@@ -172,8 +203,7 @@ impl LegendaryWrapper {
     pub fn list_games() -> anyhow::Result<Vec<LegendaryGame>> {
         let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
 
-        let output = Command::new(binary)
-            .arg("list-games")
+        let output = Self::build_command(&binary, "list-games")
             .arg("--json")
             .output()?;
 
@@ -194,9 +224,8 @@ impl LegendaryWrapper {
     pub fn install(app_name: &str, install_path: Option<&str>) -> anyhow::Result<std::process::Child> {
         let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
 
-        let mut cmd = Command::new(binary);
+        let mut cmd = Self::build_command(&binary, "install");
         cmd.env("PYTHONUNBUFFERED", "1")
-            .arg("install")
             .arg(app_name)
             .arg("--yes");
 
@@ -221,9 +250,8 @@ impl LegendaryWrapper {
     pub fn import(app_name: &str, install_path: &str) -> anyhow::Result<std::process::Child> {
         let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
 
-        let mut cmd = Command::new(binary);
+        let mut cmd = Self::build_command(&binary, "import");
         cmd.env("PYTHONUNBUFFERED", "1")
-            .arg("import")
             .arg(app_name)
             .arg(install_path);
 
@@ -244,8 +272,7 @@ impl LegendaryWrapper {
     pub fn uninstall(app_name: &str) -> anyhow::Result<()> {
         let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
 
-        let output = Command::new(binary)
-            .arg("uninstall")
+        let output = Self::build_command(&binary, "uninstall")
             .arg(app_name)
             .arg("--yes")
             .output()?;
@@ -373,12 +400,10 @@ impl LegendaryWrapper {
         let binary = Self::find_binary()
             .ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
 
-        let output = Command::new(binary)
-            .arg("info")
+        let output = Self::build_command(&binary, "info")
             .arg(app_name)
             .arg("--json")
             .output()?;
-
         if !output.status.success() {
             let err = String::from_utf8_lossy(&output.stderr);
             return Err(anyhow::anyhow!("legendary info failed: {}", err));

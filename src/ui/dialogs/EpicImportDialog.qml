@@ -77,6 +77,18 @@ Dialog {
                 errorDialog.open()
             }
         }
+
+        onLegendaryLogoutFinished: (success, message) => {
+            loading = false
+            if (success) {
+                isLoggedIn = false
+                waitingForAuth = false
+                epicModel.clear()
+            } else {
+                errorDialog.text = "Logout Failed: " + message
+                errorDialog.open()
+            }
+        }
         
         onInstallProgress: (appName, progress, message) => {
             progressDialog.open()
@@ -498,9 +510,8 @@ Dialog {
                     text: "Logout"
                     visible: isLoggedIn && !waitingForAuth
                     onClicked: {
-                        // Legendary doesn't have a simple 'logout' command that isn't interactive, 
-                        // but we can just clear the local state logic-wise if needed.
-                        // For now we'll just close or let user manage via CLI if they really want to logout.
+                        root.loading = true
+                        storeBridge.logout_legendary()
                     }
                 }
 

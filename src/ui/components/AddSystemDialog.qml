@@ -98,7 +98,7 @@ Dialog {
         var typeLower = (pType || "").toLowerCase()
         if (typeLower === "steam" || typeLower === "heroic" || typeLower === "lutris" || typeLower === "linux" || typeLower === "pc (linux)") {
             currentCategory = 1 // Native
-        } else if (typeLower === "windows" || typeLower === "pc (windows)") {
+        } else if (typeLower === "windows" || typeLower === "pc (windows)" || typeLower === "epic") {
             currentCategory = 2 // Windows/Proton
         } else {
             currentCategory = 0
@@ -209,7 +209,7 @@ Dialog {
         var typeLower = (pType || "").toLowerCase()
         if (typeLower === "pc (linux)" || typeLower === "linux") {
             currentCategory = 1
-        } else if (typeLower === "pc (windows)" || typeLower === "windows") {
+        } else if (typeLower === "pc (windows)" || typeLower === "windows" || typeLower === "epic") {
             currentCategory = 2
         } else {
             currentCategory = 0
@@ -737,7 +737,7 @@ Dialog {
                                             var pVal = item.value || ""
                                             if (pVal === "PC (Linux)" || pVal === "steam" || pVal === "heroic" || pVal === "lutris") {
                                                 currentCategory = 1;
-                                            } else if (pVal === "PC (Windows)") {
+                                            } else if (pVal === "PC (Windows)" || pVal === "epic") {
                                                 currentCategory = 2;
                                             } else {
                                                 currentCategory = 0;

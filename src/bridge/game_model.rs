@@ -1305,7 +1305,8 @@ impl GameListModel {
                             // If no config provided (e.g. from AddContentDialog quick import),
                             // and it's a PC platform, try to use Global Defaults.
                             if let Some(ref t) = type_opt {
-                                if t.to_lowercase().contains("windows") {
+                                let t_lower = t.to_lowercase();
+                                if t_lower.contains("windows") || t_lower.contains("epic") {
                                     let (def_proton, def_prefix, def_wrapper, def_gamescope, def_mangohud, def_gs_args, 
                                          def_gs_w, def_gs_h, def_gs_out_w, def_gs_out_h, def_gs_r, def_gs_s, def_gs_u, def_gs_f) = crate::bridge::settings::AppSettings::get_pc_defaults();
                                     if !def_proton.is_empty() {

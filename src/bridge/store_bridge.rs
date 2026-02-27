@@ -47,6 +47,7 @@ pub struct StoreBridge {
     legendaryLibraryFinished: qt_signal!(results: QString),
     legendaryAuthUrlReceived: qt_signal!(url: QString),
     legendaryAuthFinished: qt_signal!(success: bool, message: QString),
+    legendaryLogoutFinished: qt_signal!(success: bool, message: QString),
     appDetailsReceived: qt_signal!(json: QString),
     featuredContentReceived: qt_signal!(json: QString),
     folderAnalyzed: qt_signal!(json: QString),
@@ -71,6 +72,7 @@ pub struct StoreBridge {
     check_legendary_auth: qt_method!(fn(&self) -> bool),
     get_legendary_auth_url: qt_method!(fn(&self)),
     authenticate_legendary: qt_method!(fn(&self, code: String)),
+    logout_legendary: qt_method!(fn(&self)),
     install_legendary_game: qt_method!(fn(&self, app_name: String, path: String)),
     import_legendary_game: qt_method!(fn(&self, app_name: String, path: String)),
     uninstall_legendary_game: qt_method!(fn(&self, app_name: String)),
@@ -104,6 +106,7 @@ enum StoreMsg {
     LegendaryLibraryFinished(String),
     LegendaryAuthUrlReceived(String),
     LegendaryAuthFinished(bool, String),
+    LegendaryLogoutFinished(bool, String),
     AppDetailsReceived(String),
     CategoryFinished(String, String), // Category, JSON
     FeaturedContentReceived(String),
@@ -155,8 +158,12 @@ impl StoreBridge {
                     StoreMsg::HeroicLibraryFinished(j) => self.heroicLibraryFinished(j.into()),
                     StoreMsg::LutrisLibraryFinished(j) => self.lutrisLibraryFinished(j.into()),
                     StoreMsg::LegendaryLibraryFinished(j) => self.legendaryLibraryFinished(j.into()),
-                    StoreMsg::LegendaryAuthUrlReceived(url) => self.legendaryAuthUrlReceived(url.into()),
+                    StoreMsg::LegendaryAuthUrlReceived(url) => {
+                        log::info!("[StoreBridge] Emitting QML signal onLegendaryAuthUrlReceived for URL: {}", url);
+                        self.legendaryAuthUrlReceived(url.into());
+                    },
                     StoreMsg::LegendaryAuthFinished(s, m) => self.legendaryAuthFinished(s, m.into()),
+                    StoreMsg::LegendaryLogoutFinished(s, m) => self.legendaryLogoutFinished(s, m.into()),
                     StoreMsg::AppDetailsReceived(j) => self.appDetailsReceived(j.into()),
                     StoreMsg::CategoryFinished(cat, json) => {
                         self.category_cache.borrow_mut().insert(cat, json.clone());
@@ -487,11 +494,13 @@ impl StoreBridge {
     }
 
     fn get_legendary_auth_url(&self) {
+        log::info!("[StoreBridge] get_legendary_auth_url() was called from QML!");
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         std::thread::spawn(move || {
             match crate::core::legendary::LegendaryWrapper::get_auth_url() {
                 Ok(url) => {
+                    log::info!("[StoreBridge] LegendaryWrapper successfully returned URL to Bridge. Sending to tx.");
                     let _ = tx.send(StoreMsg::LegendaryAuthUrlReceived(url));
                 },
                 Err(e) => {
@@ -513,6 +522,22 @@ impl StoreBridge {
                 Err(e) => {
                     log::error!("Legendary authentication failed: {}", e);
                     let _ = tx.send(StoreMsg::LegendaryAuthFinished(false, e.to_string()));
+                }
+            }
+        });
+    }
+
+    fn logout_legendary(&self) {
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            match crate::core::legendary::LegendaryWrapper::logout() {
+                Ok(_) => {
+                    let _ = tx.send(StoreMsg::LegendaryLogoutFinished(true, "Logout successful".into()));
+                },
+                Err(e) => {
+                    log::error!("Legendary logout failed: {}", e);
+                    let _ = tx.send(StoreMsg::LegendaryLogoutFinished(false, e.to_string()));
                 }
             }
         });
