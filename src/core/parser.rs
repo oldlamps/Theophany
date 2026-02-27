@@ -97,7 +97,7 @@ impl FileNameParser {
             achievement_unlocked: None,
             ra_game_id: None,
             ra_recent_badges: None,
-            is_installed: false,
+            is_installed: true,
             cloud_saves_supported: false,
             resources: None,
         }

@@ -77,39 +77,6 @@ impl LegendaryWrapper {
             return Some(path);
         }
 
-        // 2. Check common paths and user-relative paths
-        let mut check_paths = Vec::new();
-
-        if let Ok(home) = std::env::var("HOME") {
-            let home_p = PathBuf::from(home);
-            check_paths.push(home_p.join(".local/share/heroic/bin/legendary"));
-            check_paths.push(home_p.join(".config/heroic/bin/legendary"));
-            check_paths.push(home_p.join("Downloads/legendary"));
-        }
-
-        // Current directory
-        if let Ok(cwd) = std::env::current_dir() {
-            check_paths.push(cwd.join("legendary"));
-        }
-
-        for p in check_paths {
-            if p.exists() {
-                // Ensure it's executable on Linux/macOS
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    if let Ok(metadata) = std::fs::metadata(&p) {
-                        let mut perms = metadata.permissions();
-                        if (perms.mode() & 0o111) == 0 {
-                            perms.set_mode(perms.mode() | 0o111);
-                            let _ = std::fs::set_permissions(&p, perms);
-                        }
-                    }
-                }
-                return Some(p);
-            }
-        }
-
         None
     }
 

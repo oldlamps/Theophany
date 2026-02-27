@@ -348,12 +348,18 @@ impl BulkImporter {
 
                 while let Some(item) = stream.next().await {
                     completed_assets += 1;
-                    if completed_assets % 5 == 0 || completed_assets == total_assets {
-                        let progress = completed_assets as f32 / total_assets as f32;
-                        progress_callback(progress, format!("Downloading artwork: {}/{}", completed_assets, total_assets));
+                    
+                    let mut action_label = "Processing artwork";
+                    if let Some((_, _, _, _, did_download)) = &item {
+                        action_label = if *did_download { "Downloading artwork" } else { "Importing artwork" };
                     }
 
-                    if let Some((rom_id, atype, path_str, _)) = item {
+                    if completed_assets % 5 == 0 || completed_assets == total_assets {
+                        let progress = completed_assets as f32 / total_assets as f32;
+                        progress_callback(progress, format!("{}: {}/{}", action_label, completed_assets, total_assets));
+                    }
+
+                    if let Some((rom_id, atype, path_str, _, _)) = item {
                          // We need a fresh DB connection because we're in a different thread/async context
                          let db_path = paths::get_data_dir().join("games.db");
                          if let Ok(db) = DbManager::open(&db_path) {
@@ -385,7 +391,7 @@ struct AssetTask {
 }
 
 impl AssetTask {
-    async fn execute(self) -> Option<(String, String, String, String)> {
+    async fn execute(self) -> Option<(String, String, String, String, bool)> {
         let dest_dir = self.dest_base.join(&self.asset_type);
         let _ = fs::create_dir_all(&dest_dir);
         
@@ -420,13 +426,13 @@ impl AssetTask {
                     if resp.status().is_success() {
                         if let Ok(bytes) = resp.bytes().await {
                             if fs::write(&dest_path, &bytes).is_ok() {
-                                 return Some((self.rom_id, self.asset_type, dest_path.to_string_lossy().to_string(), self.src));
+                                 return Some((self.rom_id, self.asset_type, dest_path.to_string_lossy().to_string(), self.src, true));
                             }
                         }
                     }
                 }
             } else {
-                return Some((self.rom_id, self.asset_type, dest_path.to_string_lossy().to_string(), self.src));
+                return Some((self.rom_id, self.asset_type, dest_path.to_string_lossy().to_string(), self.src, false));
             }
         } else {
             let src_path = Path::new(&self.src);
@@ -458,7 +464,7 @@ impl AssetTask {
                     }
                 }
                 if dest_path.exists() {
-                    return Some((self.rom_id, self.asset_type, dest_path.to_string_lossy().to_string(), self.src));
+                    return Some((self.rom_id, self.asset_type, dest_path.to_string_lossy().to_string(), self.src, false));
                 }
             }
         }
