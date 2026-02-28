@@ -46,6 +46,17 @@ pub enum SyncDirection {
     Both,
 }
 
+/// Result of a cloud save synchronisation.
+#[derive(Debug, Clone, Default)]
+pub struct SyncResult {
+    /// Number of files downloaded.
+    pub downloaded: usize,
+    /// Number of files uploaded.
+    pub uploaded: usize,
+    /// Whether everything was already up-to-date.
+    pub up_to_date: bool,
+}
+
 pub struct LegendaryWrapper;
 
 impl LegendaryWrapper {
@@ -407,7 +418,10 @@ impl LegendaryWrapper {
     /// Queries `legendary info <app_name> --json` and returns the Windows-style
     /// `cloud_save_folder` template string (e.g. `{AppData}/Publisher/Game`).
     /// Returns `Ok(None)` if legendary reports cloud saves are not supported.
-    pub fn get_save_path_template(app_name: &str) -> anyhow::Result<Option<String>> {
+    /// Queries `legendary info <app_name> --json` and returns the Windows-style
+    /// `cloud_save_folder` template string and the `install_path`.
+    /// Returns `Ok((None, None))` if legendary reports cloud saves are not supported.
+    pub fn get_save_info(app_name: &str) -> anyhow::Result<(Option<String>, Option<String>)> {
         let binary = Self::find_binary()
             .ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
 
@@ -422,7 +436,6 @@ impl LegendaryWrapper {
 
         let json: serde_json::Value = serde_json::from_slice(&output.stdout)?;
 
-        // Structure: { game: { cloud_saves_supported: bool, cloud_save_folder: str|null, ... }, ... }
         let game = json.get("game")
             .ok_or_else(|| anyhow::anyhow!("Missing 'game' key in legendary info output"))?;
 
@@ -430,8 +443,13 @@ impl LegendaryWrapper {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
+        let install_path = json.get("install")
+            .and_then(|i| i.get("install_path"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         if !supported {
-            return Ok(None);
+            return Ok((None, install_path));
         }
 
         let folder = game.get("cloud_save_folder")
@@ -439,7 +457,7 @@ impl LegendaryWrapper {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
 
-        Ok(folder)
+        Ok((folder, install_path))
     }
 
     /// Resolves the full host-side Linux path for a game's cloud saves.
@@ -451,11 +469,10 @@ impl LegendaryWrapper {
     pub fn resolve_cloud_save_path(
         app_name: &str,
         prefix: &str,
-        install_path: Option<&str>,
     ) -> anyhow::Result<Option<PathBuf>> {
-        let template = match Self::get_save_path_template(app_name)? {
-            Some(t) => t,
-            None => return Ok(None),
+        let (template, install_path) = match Self::get_save_info(app_name)? {
+            (Some(t), i) => (t, i),
+            (None, _) => return Ok(None),
         };
 
         // UMU always symlinks the real username → steamuser, so we use steamuser.
@@ -488,12 +505,15 @@ impl LegendaryWrapper {
             .replace("{UserDocuments}",   &*documents.to_string_lossy())
             .replace("{userdocuments}",   &*documents.to_string_lossy())
             .replace("{USERDOCUMENTS}",   &*documents.to_string_lossy())
+            .replace("{MyDocuments}",     &*documents.to_string_lossy())
+            .replace("{mydocuments}",     &*documents.to_string_lossy())
+            .replace("{MYDOCUMENTS}",     &*documents.to_string_lossy())
             .replace("{UserDir}",         &*user_root.to_string_lossy())
             .replace("{userdir}",         &*user_root.to_string_lossy())
             .replace("{USERDIR}",         &*user_root.to_string_lossy())
-            .replace("{InstallDir}",      install_path.unwrap_or(""))
-            .replace("{installdir}",      install_path.unwrap_or(""))
-            .replace("{INSTALLDIR}",      install_path.unwrap_or(""))
+            .replace("{InstallDir}",      install_path.as_deref().unwrap_or(""))
+            .replace("{installdir}",      install_path.as_deref().unwrap_or(""))
+            .replace("{INSTALLDIR}",      install_path.as_deref().unwrap_or(""))
             // Some templates use the literal Wine username in braces
             .replace(&format!("{{{}}}", wine_user), &*user_root.to_string_lossy());
 
@@ -535,7 +555,7 @@ impl LegendaryWrapper {
         save_path: &std::path::Path,
         direction: SyncDirection,
         force: bool,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<SyncResult> {
         let binary = Self::find_binary()
             .ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
 
@@ -577,18 +597,29 @@ impl LegendaryWrapper {
         }
 
         let mut child = cmd.spawn()?;
+        let mut result = SyncResult::default();
 
         // Stream output so the log is useful.
-        // We read stderr (legendary logs there) line by line.
+        // We read stderr (legendary logs there) line by line for parsing.
         use std::io::{BufRead, BufReader};
         if let Some(stderr) = child.stderr.take() {
             let reader = BufReader::new(stderr);
             for line in reader.lines() {
                 if let Ok(line) = line {
                     log::info!("[legendary cloud-save] {}", line);
+                    
+                    // Basic parsing for user feedback
+                    if line.contains("Downloading:") {
+                        result.downloaded += 1;
+                    } else if line.contains("Uploading:") {
+                        result.uploaded += 1;
+                    } else if line.contains("Cloud Saves are up-to-date") || line.contains("No cloud or local savegame found") {
+                        result.up_to_date = true;
+                    }
                 }
             }
         }
+
         // Also drain stdout (usually empty but be safe).
         if let Some(stdout) = child.stdout.take() {
             let reader = BufReader::new(stdout);
@@ -608,11 +639,12 @@ impl LegendaryWrapper {
         }
 
         log::info!(
-            "[legendary cloud-save] sync-saves completed ({:?}) for {}",
+            "[legendary cloud-save] sync-saves completed ({:?}) for {} - Result: {:?}",
             direction,
-            app_name
+            app_name,
+            result
         );
-        Ok(())
+        Ok(result)
     }
 
     pub fn to_rom(game: &LegendaryGame) -> Rom {

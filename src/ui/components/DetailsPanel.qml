@@ -1453,11 +1453,11 @@ Rectangle {
                     focusPolicy: Qt.NoFocus
                 }
                 
-                Menu {
+                TheophanyMenu {
                     id: profileMenu
                     Repeater {
                         model: root.emulatorProfiles
-                        MenuItem {
+                        TheophanyMenuItem {
                             text: "Launch with " + modelData.name
                             onTriggered: {
                                 gameModel.launchWithProfile(root.gameId, modelData.id)
@@ -1466,20 +1466,31 @@ Rectangle {
                     }
                 }
 
-                Menu {
+                TheophanyMenu {
                     id: epicExtraMenu
                     onAboutToShow: {
                         if (root.gamePlatformType === "epic") {
                             root.gameModel.checkEosOverlayEnabled(root.gameId)
                         }
                     }
-                    MenuItem {
+                    TheophanyMenuItem {
                         text: "Import Game..."
+                        visible: !root.gameIsInstalled
                         onTriggered: {
                             window.importEpicGame(root.gameId)
                         }
                     }
-                    MenuItem {
+                    TheophanyMenuItem {
+                        text: "Uninstall Game"
+                        visible: root.gameIsInstalled && root.fullRomPath.startsWith("epic://")
+                        onTriggered: {
+                            var appName = root.fullRomPath.replace("epic://launch/", "")
+                            if (confirmUninstallDialog.opened) return
+                            confirmUninstallDialog.appName = appName
+                            confirmUninstallDialog.open()
+                        }
+                    }
+                    TheophanyMenuItem {
                         text: "Enable EOS Overlay"
                         visible: root.hasEosOverlayState && !root.currentEosOverlayEnabled
                         onTriggered: {
@@ -1488,7 +1499,7 @@ Rectangle {
                             }
                         }
                     }
-                    MenuItem {
+                    TheophanyMenuItem {
                         text: "Disable EOS Overlay"
                         visible: root.hasEosOverlayState && root.currentEosOverlayEnabled
                         onTriggered: {
@@ -1500,25 +1511,6 @@ Rectangle {
                 }
             }
 
-            // Epic Uninstall Button
-            TheophanyButton {
-                visible: root.fullRomPath.startsWith("epic://") && root.gameIsInstalled
-                text: "🗑"
-                Layout.preferredWidth: 45
-                Layout.preferredHeight: 45
-                focusPolicy: Qt.NoFocus
-                onClicked: {
-                    var appName = root.fullRomPath.replace("epic://launch/", "")
-                    if (confirmUninstallDialog.opened) return
-                    confirmUninstallDialog.appName = appName
-                    confirmUninstallDialog.open()
-                }
-                
-                TheophanyTooltip {
-                    visible: parent.hovered
-                    text: "Uninstall Epic Game"
-                }
-            }
 
             // PC Configuration Button
             TheophanyButton {

@@ -66,6 +66,20 @@ Dialog {
                 root.eosOverlayEnabled = enabled
             }
         }
+        function onCloudSaveSyncFinished(romId, success, message) {
+            console.log("Cloud save sync finished: " + romId + " success: " + success + " message: " + message)
+            var sId = romId.toString()
+            var targetId = root.gameId.toString()
+            if (sId === targetId || sId.indexOf(targetId) >= 0 || targetId.indexOf(sId) >= 0) {
+                if (success) {
+                    cloudSaveStatusLabel.text = "✅ " + message
+                    cloudSaveStatusLabel.color = Theme.accent
+                } else {
+                    cloudSaveStatusLabel.text = "❌ " + message
+                    cloudSaveStatusLabel.color = Theme.danger || "#ff4444"
+                }
+            }
+        }
     }
     property var platformModel: null
 
@@ -1105,20 +1119,6 @@ Dialog {
                                             }
                                         }
 
-                                        // Wire up the async signal for sync results
-                                        Connections {
-                                            target: gameModel
-                                            function onCloudSaveSyncFinished(rom_id, success, message) {
-                                                if (rom_id !== root.gameId) return
-                                                if (success) {
-                                                    cloudSaveStatusLabel.text = "✅ " + message
-                                                    cloudSaveStatusLabel.color = Theme.accent
-                                                } else {
-                                                    cloudSaveStatusLabel.text = "❌ " + message
-                                                    cloudSaveStatusLabel.color = Theme.danger || "#ff4444"
-                                                }
-                                            }
-                                        }
                                     }
 
                                     Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border; visible: root.gameId.toString().indexOf("legendary-") === 0 || root.platformId === "epic" }

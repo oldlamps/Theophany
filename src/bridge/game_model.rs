@@ -2675,12 +2675,13 @@ impl GameListModel {
                          cloud_save_path_opt.as_deref().map(|p| std::path::PathBuf::from(p))
                          .or_else(|| {
                              let prefix = cloud_wine_prefix_opt.as_deref()?;
-                             LegendaryWrapper::resolve_cloud_save_path(app_name, prefix, None).ok()?
+                             LegendaryWrapper::resolve_cloud_save_path(app_name, prefix).ok()?
                          });
                      if let Some(sp) = save_path_resolved {
                          log::info!("[cloud-save] Pulling saves before launch for {}", app_name);
-                         if let Err(e) = LegendaryWrapper::sync_saves(app_name, &sp, SyncDirection::Pull, false) {
-                             log::warn!("[cloud-save] Pull failed (launching anyway): {}", e);
+                         match LegendaryWrapper::sync_saves(app_name, &sp, SyncDirection::Pull, false) {
+                             Ok(res) => log::info!("[cloud-save] Pull complete: {:?}", res),
+                             Err(e) => log::warn!("[cloud-save] Pull failed (launching anyway): {}", e),
                          }
                      }
                  }
@@ -2761,7 +2762,7 @@ impl GameListModel {
                                  use crate::core::legendary::LegendaryWrapper;
                                  let app_name = cloud_app_name.as_deref()?;
                                  let prefix = cloud_wine_prefix_opt.as_deref()?;
-                                 LegendaryWrapper::resolve_cloud_save_path(app_name, prefix, None).ok()?
+                                 LegendaryWrapper::resolve_cloud_save_path(app_name, prefix).ok()?
                              })
                          } else { None };
                          
@@ -2772,17 +2773,18 @@ impl GameListModel {
                              let _ = child.wait();
 
                              // ── Cloud Save: Push after game exits ─────────────
-                             if let (Some(app_name), Some(sp)) = (&cloud_app_name, &cloud_save_path_for_push) {
-                                 use crate::core::legendary::{LegendaryWrapper, SyncDirection};
-                                 log::info!("[cloud-save] Pushing saves after exit for {}", app_name);
-                                 if let Err(e) = LegendaryWrapper::sync_saves(app_name, sp, SyncDirection::Push, false) {
-                                     log::warn!("[cloud-save] Push failed: {}", e);
-                                 }
-                             }
-                             
+                              if let (Some(app_name), Some(sp)) = (&cloud_app_name, &cloud_save_path_for_push) {
+                                  use crate::core::legendary::{LegendaryWrapper, SyncDirection};
+                                   log::info!("[cloud-save] Pushing saves after exit for {}", app_name);
+                                   match LegendaryWrapper::sync_saves(app_name, sp, SyncDirection::Push, false) {
+                                       Ok(res) => log::info!("[cloud-save] Push complete for {}: {:?}", app_name, res),
+                                       Err(e) => log::warn!("[cloud-save] Push failed: {}", e),
+                                   }
+                              }
+
                              let end_time = std::time::SystemTime::now();
                              let duration = end_time.duration_since(start_time).unwrap_or_default().as_secs() as i64;
-                             
+
                              log::info!("Game exited. Duration: {} seconds", duration);
                              
                              // Update DB
@@ -2960,25 +2962,9 @@ impl GameListModel {
             return QString::from("error:no wine prefix set — configure it in the Proton/UMU section first");
         }
 
-        // Also try to get the install path for {InstallDir} expansion
-        let db_path = self.db_path.borrow().clone();
-        let install_path: Option<String> = if let Ok(_db) = DbManager::open(&db_path) {
-            let conn_db = DbManager::open(&db_path).ok();
-            conn_db.and_then(|cdb| {
-                cdb.get_connection().query_row(
-                    "SELECT r.path FROM roms r WHERE r.id = ?1",
-                    rusqlite::params![rom_id],
-                    |row| row.get::<_, String>(0),
-                ).ok()
-            })
-        } else {
-            None
-        };
-
         match LegendaryWrapper::resolve_cloud_save_path(
             &app_name,
             &prefix,
-            install_path.as_deref(),
         ) {
             Ok(Some(path)) => QString::from(path.to_string_lossy().as_ref()),
             Ok(None) => QString::from("error:game does not support cloud saves"),
@@ -3032,7 +3018,7 @@ impl GameListModel {
             let save_path = if let Some(p) = existing_save_path {
                 std::path::PathBuf::from(p)
             } else if let Some(prefix) = prefix_opt {
-                match LegendaryWrapper::resolve_cloud_save_path(&app_name, &prefix, None) {
+                match LegendaryWrapper::resolve_cloud_save_path(&app_name, &prefix) {
                     Ok(Some(p)) => p,
                     Ok(None) => {
                         if let Some(tx) = tx {
@@ -3067,12 +3053,34 @@ impl GameListModel {
             };
 
             match LegendaryWrapper::sync_saves(&app_name, &save_path, sync_dir, force) {
-                Ok(()) => {
+                Ok(res) => {
                     if let Some(tx) = tx {
+                        let mut msg = String::from("Sync complete");
+                        
+                        if res.up_to_date && res.downloaded == 0 && res.uploaded == 0 {
+                            msg = "Sync complete — Already up-to-date".to_string();
+                        } else {
+                            let mut parts = Vec::new();
+                            if res.downloaded > 0 {
+                                parts.push(format!("pulled {} file{}", res.downloaded, if res.downloaded == 1 { "" } else { "s" }));
+                            }
+                            if res.uploaded > 0 {
+                                parts.push(format!("pushed {} file{}", res.uploaded, if res.uploaded == 1 { "" } else { "s" }));
+                            }
+                            
+                            if !parts.is_empty() {
+                                msg = format!("Sync complete — {}", parts.join(", "));
+                            } else if res.up_to_date {
+                                msg = "Sync complete — Already up-to-date".to_string();
+                            }
+                        }
+
+                        log::info!("[cloud-save] Sync result for {}: {:?} -> Message: {}", rom_id_clone, res, msg);
+
                         let _ = tx.send(AsyncResponse::CloudSaveSyncFinished(
                             rom_id_clone,
                             true,
-                            format!("Sync complete — {}", save_path.display()),
+                            msg,
                         ));
                     }
                 }

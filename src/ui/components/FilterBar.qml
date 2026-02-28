@@ -62,6 +62,37 @@ Rectangle {
 
         // All filters moved to Top Bar or added here
 
+        // Installed Toggle
+        TheophanyButton {
+            id: installedButton
+            checkable: true
+            text: "💾"
+            font.pixelSize: 18
+            Layout.preferredWidth: 40
+            Layout.preferredHeight: 35
+            primary: checked
+            tooltipText: checked ? "Show All Games" : "Show Installed Only"
+            
+            onClicked: {
+                if (gameModel) gameModel.setInstalledOnly(checked)
+            }
+        }
+
+        // Favorites Toggle
+        TheophanyButton {
+            id: favButton
+            checkable: true
+            text: "❤"
+            font.pixelSize: 18
+            Layout.preferredWidth: 40
+            Layout.preferredHeight: 35
+            primary: checked
+            
+            onClicked: {
+                if (gameModel) gameModel.setFavoritesOnly(checked)
+            }
+        }
+
         // Genre Dropdown
         TheophanyComboBox {
             id: genreBox
@@ -164,37 +195,6 @@ Rectangle {
                     // Rust divides by 10.0 for the f32 comparison (e.g., 10 -> 1.0)
                     gameModel.setRatingFilter(index * 10)
                 }
-            }
-        }
-
-        // Installed Toggle
-        TheophanyButton {
-            id: installedButton
-            checkable: true
-            text: "☁"
-            font.pixelSize: 18
-            Layout.preferredWidth: 40
-            Layout.preferredHeight: 35
-            primary: checked
-            tooltipText: checked ? "Show All Games" : "Show Installed Only"
-            
-            onClicked: {
-                if (gameModel) gameModel.setInstalledOnly(checked)
-            }
-        }
-
-        // Favorites Toggle
-        TheophanyButton {
-            id: favButton
-            checkable: true
-            text: "❤"
-            font.pixelSize: 18
-            Layout.preferredWidth: 40
-            Layout.preferredHeight: 35
-            primary: checked
-            
-            onClicked: {
-                if (gameModel) gameModel.setFavoritesOnly(checked)
             }
         }
 
