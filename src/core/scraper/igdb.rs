@@ -96,6 +96,29 @@ impl IGDBProvider {
         
         None
     }
+
+    fn map_website_category(cat: i32) -> String {
+        match cat {
+            1 => "Official Website",
+            2 => "Wikia",
+            3 => "Wikipedia",
+            4 => "Facebook",
+            5 => "Twitter",
+            6 => "Twitch",
+            8 => "Instagram",
+            9 => "YouTube",
+            10 => "iPhone",
+            11 => "iPad",
+            12 => "Android",
+            13 => "Steam",
+            14 => "Reddit",
+            15 => "Itch",
+            16 => "Epic Games",
+            17 => "GOG",
+            18 => "Discord",
+            _ => "Website",
+        }.to_string()
+    }
 }
 
 #[async_trait]
@@ -130,7 +153,7 @@ impl ScraperProvider for IGDBProvider {
         // Use fuzzy search. We fetch platforms to handle filtering on the client side.
         // This is more robust than strict server-side filtering which can fail if IDs or slugs don't match perfectly.
         let body = format!(
-            "fields name, alternative_names.name, platforms.name, first_release_date, cover.url, summary, screenshots.url, artworks.url, total_rating; \
+            "fields name, alternative_names.name, platforms.name, first_release_date, cover.url, summary, screenshots.url, artworks.url, artworks.alpha_channel, total_rating, websites.*; \
              search \"{}\"; limit 20;", 
             safe_query
         );
@@ -223,9 +246,27 @@ impl ScraperProvider for IGDBProvider {
                 if let Some(arts) = item["artworks"].as_array() {
                     for art in arts {
                         if let Some(u) = art["url"].as_str() {
-                            metadata.assets.entry("Background".to_string())
+                            let is_logo = art["alpha_channel"].as_bool().unwrap_or(false);
+                            let category = if is_logo { "Clear Logo" } else { "Background" };
+                            metadata.assets.entry(category.to_string())
                                 .or_default()
                                 .push(fix_url(u, "t_1080p"));
+                        }
+                    }
+                }
+
+                if let Some(sites) = item["websites"].as_array() {
+                    log::info!("[IGDB Search] Found {} websites", sites.len());
+                    for site in sites {
+                        let cat_id = site["type"].as_i64().or(site["category"].as_i64());
+                        if let (Some(u), Some(cat)) = (site["url"].as_str(), cat_id) {
+                            let mapped_label = Self::map_website_category(cat as i32);
+                            log::info!("[IGDB Search] Adding website: {} ({}) -> mapped as '{}'", u, cat, mapped_label);
+                            metadata.resources.push(crate::core::scraper::ScrapedResource {
+                                type_: "URL".to_string(),
+                                url: fix_url(u, ""), // Use the closure we already have for assets
+                                label: mapped_label,
+                            });
                         }
                     }
                 }
@@ -257,16 +298,24 @@ impl ScraperProvider for IGDBProvider {
         let body = format!(
             "fields name, summary, first_release_date, genres.name, \
             involved_companies.company.name, involved_companies.developer, involved_companies.publisher, \
-            cover.url, artworks.url, screenshots.url, total_rating; \
+            cover.url, artworks.url, artworks.alpha_channel, screenshots.url, total_rating, websites.*; \
             where id = {};", 
             result_id
         );
 
         let response = self.client.post_raw(&url, body, self.get_headers()).await?;
-         let json: Value = serde_json::from_str(&response)?;
+        log::info!("[IGDB] Raw Response (Details): {}", response);
+        let json: Value = serde_json::from_str(&response)?;
         
         let item = json.as_array().and_then(|a| a.first())
             .ok_or_else(|| anyhow::anyhow!("No game found with ID {}", result_id))?;
+
+        log::info!("[IGDB] Processing item: {}", item["name"].as_str().unwrap_or("Unknown"));
+        if let Some(sites) = item["websites"].as_array() {
+            log::info!("[IGDB] Found {} websites", sites.len());
+        } else {
+            log::info!("[IGDB] No websites field found in JSON");
+        }
 
         let mut metadata = ScrapedMetadata::default();
         metadata.source = "IGDB".to_string();
@@ -324,7 +373,9 @@ impl ScraperProvider for IGDBProvider {
         if let Some(arts) = item["artworks"].as_array() {
             for art in arts {
                 if let Some(u) = art["url"].as_str() {
-                    metadata.assets.entry("Background".to_string())
+                    let is_logo = art["alpha_channel"].as_bool().unwrap_or(false);
+                    let category = if is_logo { "Clear Logo" } else { "Background" };
+                    metadata.assets.entry(category.to_string())
                         .or_default()
                         .push(fix_url(u, "t_1080p"));
                 }
@@ -337,6 +388,22 @@ impl ScraperProvider for IGDBProvider {
                     metadata.assets.entry("Screenshot".to_string())
                         .or_default()
                         .push(fix_url(u, "t_1080p"));
+                }
+            }
+        }
+
+        if let Some(sites) = item["websites"].as_array() {
+            log::info!("[IGDB Fetch] Processing {} websites", sites.len());
+            for site in sites {
+                let cat_id = site["type"].as_i64().or(site["category"].as_i64());
+                if let (Some(u), Some(cat)) = (site["url"].as_str(), cat_id) {
+                    let mapped_label = Self::map_website_category(cat as i32);
+                    log::info!("[IGDB Fetch] Adding website: {} ({}) -> mapped as '{}'", u, cat, mapped_label);
+                    metadata.resources.push(crate::core::scraper::ScrapedResource {
+                        type_: "URL".to_string(),
+                        url: fix_url(u, ""),
+                        label: mapped_label,
+                    });
                 }
             }
         }

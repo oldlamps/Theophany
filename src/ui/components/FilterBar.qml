@@ -200,6 +200,13 @@ Rectangle {
 
         Item { Layout.fillWidth: true }
     }
+
+    Connections {
+        target: gameModel
+        function onFilterOptionsChanged() {
+            refreshModels()
+        }
+    }
     
     function refreshModels() {
         if (gameModel) {

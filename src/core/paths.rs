@@ -9,6 +9,16 @@ pub fn get_data_dir() -> PathBuf {
     path
 }
 
+pub fn get_default_prefix_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let path = PathBuf::from(home).join("Games").join("theophany").join("default");
+    if !path.exists() {
+        let _ = std::fs::create_dir_all(&path);
+    }
+    path
+}
+
+
 pub fn get_assets_dir() -> PathBuf {
     let path = get_data_dir().join("assets");
     if !path.exists() {

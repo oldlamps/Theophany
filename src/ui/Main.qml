@@ -1330,12 +1330,14 @@ ApplicationWindow {
                 if (sidebar.collapsed) {
                     if (targetWidth > 150) {
                         sidebar.collapsed = false
-                        appSettings.sidebarWidth = targetWidth
+                        if (Math.abs(appSettings.sidebarWidth - targetWidth) > 0.1) {
+                            appSettings.sidebarWidth = targetWidth
+                        }
                     }
                 } else {
                     if (targetWidth <= 150) {
                         sidebar.collapsed = true
-                    } else {
+                    } else if (Math.abs(appSettings.sidebarWidth - targetWidth) > 0.1) {
                         appSettings.sidebarWidth = targetWidth
                     }
                 }
@@ -2658,7 +2660,9 @@ ApplicationWindow {
             maxWidth: window.width * 0.5
             isRightSide: false
             onTargetWidthChanged: {
-                appSettings.detailsWidth = targetWidth
+                if (Math.abs(appSettings.detailsWidth - targetWidth) > 0.1) {
+                    appSettings.detailsWidth = targetWidth
+                }
             }
             onPressedChanged: {
                 if (!pressed) appSettings.save()
@@ -2795,24 +2799,12 @@ ApplicationWindow {
     BulkScrapeDialog {
         id: bulkScrapeDialog
     }
-    
-    FolderDialog {
+    EpicInstallDialog {
         id: epicInstallPathDialog
-        title: "Select Target Installation Folder (or Cancel for Default Location)"
-        property string pendingAppId: ""
-        onAccepted: {
-            var pathStr = selectedFolder.toString()
-            if (pathStr.startsWith("file://")) {
-                pathStr = pathStr.substring(7)
-            }
-            storeBridge.install_legendary_game(pendingAppId, pathStr)
-        }
-        onRejected: {
-            // Proceed with empty path (default)
-            storeBridge.install_legendary_game(pendingAppId, "")
-        }
+        appSettings: appSettings
+        platformModel: sidebar.platformModel
+        storeBridge: storeBridge
     }
-
     FolderDialog {
         id: epicImportPathDialog
         title: "Select Folder Containing Existing Game Data"

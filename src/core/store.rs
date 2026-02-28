@@ -1576,8 +1576,8 @@ impl StoreManager {
     }
 
     /// Triggers installation of a Legendary game.
-    pub fn install_legendary_game(app_name: String, install_path: Option<String>) -> anyhow::Result<std::process::Child> {
-        crate::core::legendary::LegendaryWrapper::install(&app_name, install_path.as_deref())
+    pub fn install_legendary_game(app_name: String, install_path: Option<String>, with_dlcs: bool) -> anyhow::Result<std::process::Child> {
+        crate::core::legendary::LegendaryWrapper::install(&app_name, install_path.as_deref(), with_dlcs)
     }
 
     pub fn import_legendary_game(app_name: String, path: String) -> anyhow::Result<std::process::Child> {

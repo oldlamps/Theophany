@@ -42,11 +42,11 @@ Item {
 
         property real lastX
 
-        onPressed: {
+        onPressed: (mouse) => {
             lastX = mapToItem(null, mouse.x, mouse.y).x
         }
 
-        onPositionChanged: {
+        onPositionChanged: (mouse) => {
             if (pressed) {
                 var currentX = mapToItem(null, mouse.x, mouse.y).x
                 var delta = currentX - lastX

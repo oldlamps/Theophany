@@ -170,6 +170,25 @@ impl BulkImporter {
                         });
                         meta.resources = Some(steam_resources);
                     }
+                } else if final_rom.id.starts_with("legendary-") && meta.resources.as_ref().map_or(true, |r| r.is_empty()) {
+                    let mut slug = final_rom.title.as_deref().unwrap_or("").to_lowercase();
+                    // Slugify: Replace non-alphanumeric chars with dashes
+                    if let Ok(re_slug) = regex::Regex::new(r"[^a-z0-9]+") {
+                        slug = re_slug.replace_all(&slug, "-").to_string();
+                        slug = slug.trim_matches('-').to_string();
+                        
+                        if !slug.is_empty() {
+                            let mut epic_resources = Vec::new();
+                            epic_resources.push(GameResource {
+                                id: Uuid::new_v4().to_string(),
+                                rom_id: final_rom.id.clone(),
+                                type_: "generic".to_string(),
+                                url: format!("https://store.epicgames.com/en-US/p/{}", slug),
+                                label: Some("Epic Store Page".to_string()),
+                            });
+                            meta.resources = Some(epic_resources);
+                        }
+                    }
                 }
 
                 let _ = db.insert_metadata(&meta);
@@ -427,6 +446,19 @@ impl AssetTask {
                         if let Ok(bytes) = resp.bytes().await {
                             if fs::write(&dest_path, &bytes).is_ok() {
                                  return Some((self.rom_id, self.asset_type, dest_path.to_string_lossy().to_string(), self.src, true));
+                            }
+                        }
+                    } else if self.src.contains("library_600x900.jpg") {
+                        let fallback_src = self.src.replace("library_600x900.jpg", "header.jpg");
+                        log::info!("[AssetTask] Failed to download 600x900 boxart, falling back to {}", fallback_src);
+                        if let Ok(fallback_resp) = client.get(&fallback_src).send().await {
+                            if fallback_resp.status().is_success() {
+                                if let Ok(bytes) = fallback_resp.bytes().await {
+                                    if fs::write(&dest_path, &bytes).is_ok() {
+                                        // Return self.src instead of fallback_src to match the Box Front mapping
+                                        return Some((self.rom_id, self.asset_type, dest_path.to_string_lossy().to_string(), self.src, true));
+                                    }
+                                }
                             }
                         }
                     }

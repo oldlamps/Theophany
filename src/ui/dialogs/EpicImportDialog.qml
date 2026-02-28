@@ -73,7 +73,13 @@ Dialog {
                 waitingForAuth = false
                 storeBridge.refresh_legendary_library()
             } else {
-                errorDialog.text = "Login Failed: " + message
+                if (message.indexOf("Legendary binary not found") !== -1) {
+                    errorDialog.text = "Login Failed: " + message + ". Please ensure Legendary is installed via System Settings."
+                    root.redirectAfterError = true
+                } else {
+                    errorDialog.text = "Login Failed: " + message
+                    root.redirectAfterError = false
+                }
                 errorDialog.open()
             }
         }
@@ -128,6 +134,7 @@ Dialog {
     property bool loading: false
     property bool isLoggedIn: false
     property bool waitingForAuth: false
+    property bool redirectAfterError: false
     ListModel { id: epicModel }
     ListModel { id: filteredPlatforms }
 
@@ -230,6 +237,8 @@ Dialog {
                     text: "Login with Epic Games"
                     primary: true
                     Layout.alignment: Qt.AlignCenter
+                    loading: root.loading
+                    enabled: !root.loading
                     onClicked: {
                         root.loading = true
                         storeBridge.get_legendary_auth_url()
@@ -265,6 +274,8 @@ Dialog {
                     TheophanyButton {
                         text: "Submit"
                         primary: true
+                        loading: root.loading
+                        enabled: !root.loading && codeField.text.trim() !== ""
                         onClicked: {
                             root.loading = true
                             storeBridge.authenticate_legendary(codeField.text)
@@ -318,6 +329,8 @@ Dialog {
                     TheophanyButton {
                         text: "Refresh Library"
                         Layout.alignment: Qt.AlignBottom
+                        loading: root.loading
+                        enabled: !root.loading
                         onClicked: {
                             root.loading = true
                             storeBridge.refresh_legendary_library()
@@ -509,6 +522,8 @@ Dialog {
                 TheophanyButton {
                     text: "Logout"
                     visible: isLoggedIn && !waitingForAuth
+                    loading: root.loading
+                    enabled: !root.loading
                     onClicked: {
                         root.loading = true
                         storeBridge.logout_legendary()
@@ -589,5 +604,13 @@ Dialog {
     TheophanyMessageDialog {
         id: errorDialog
         title: "Import Status"
+        onAccepted: {
+            if (root.redirectAfterError) {
+                root.close()
+                settingsDialog.open()
+                settingsDialog.openTab("System")
+                root.redirectAfterError = false
+            }
+        }
     }
 }

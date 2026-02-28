@@ -108,7 +108,7 @@ impl ExoDosManager {
         // Attempt to enrich with XML metadata if available
         let xml_path = base_path.join("xml/all/MS-DOS.xml");
         if xml_path.exists() {
-            log::info!("Found XML metadata file, parsing...");
+            log::debug!("Found XML metadata file, parsing...");
             let xml_games = Self::parse_exodos_metadata(&xml_path);
             
             for rom in roms.iter_mut() {
@@ -117,11 +117,18 @@ impl ExoDosManager {
                 let rom_title = rom.title.as_deref().unwrap_or("");
                 
                 let matched_game = xml_games.iter().find(|xml| {
+                    // Extract the filename stem from the XML ApplicationPath (handling Windows backslashes)
                     let xml_path_str = &xml.application_path;
-                    let xml_file_name_opt = Path::new(xml_path_str).file_name().and_then(|n| n.to_str());
-                    let has_path_match = xml_file_name_opt.map_or(false, |xml_fn| xml_fn == rom_filename);
+                    let xml_file_name = xml_path_str.split('\\').last().unwrap_or("");
+                    let xml_stem = Path::new(xml_file_name).file_stem().and_then(|s| s.to_str()).unwrap_or("");
                     
-                    has_path_match || xml.title.eq_ignore_ascii_case(rom_title)
+                    // Extract the filename stem from our actual scanned ROM
+                    let rom_stem = Path::new(rom_filename).file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    
+                    // Match by filename stem (case-insensitive) - e.g. "Amulet, The (1983)"
+                    let has_stem_match = !xml_stem.is_empty() && xml_stem.eq_ignore_ascii_case(rom_stem);
+                    
+                    has_stem_match || xml.title.eq_ignore_ascii_case(rom_title)
                 });
                 
                 if let Some(xml_game) = matched_game {
@@ -285,7 +292,7 @@ impl ExoDosManager {
                         let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
                         let target_path = dest_dir.join(format!("{}.{}", norm_name, extension));
                         if !printed_log {
-                            log::info!("Linking artwork for {} from {:?} to {:?}", title, images_base_path, base_assets_dir);
+                            log::debug!("Linking artwork for {} from {:?} to {:?}", title, images_base_path, base_assets_dir);
                             printed_log = true;
                         }
 
@@ -378,5 +385,44 @@ mod tests {
         assert_eq!(game.release_date, Some("1993-05-01T00:00:00-05:00".to_string()));
         assert_eq!(game.notes, Some("This is a test game.".to_string()));
         assert_eq!(game.favorite, true);
+    }
+
+    #[test]
+    fn test_exodos_xml_stem_matching() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        
+        // 1. Create scanned structure
+        let dos_path = root.join("eXo/eXoDOS/!dos");
+        fs::create_dir_all(&dos_path).unwrap();
+        let game_dir = dos_path.join("Amulet, The (1983)");
+        fs::create_dir(&game_dir).unwrap();
+        // Local file is .command
+        File::create(game_dir.join("Amulet, The (1983).command")).unwrap();
+        
+        // 2. Create XML registry
+        let xml_dir = root.join("xml/all");
+        fs::create_dir_all(&xml_dir).unwrap();
+        let xml_path = xml_dir.join("MS-DOS.xml");
+        
+        let xml_content = r#"<?xml version="1.0"?>
+<LaunchBox>
+  <Game>
+    <Title>The Amulet</Title>
+    <ApplicationPath>..\eXo\eXoDOS\!dos\Amulet83\Amulet, The (1983).bat</ApplicationPath>
+    <Notes>Matched by stem!</Notes>
+  </Game>
+</LaunchBox>"#;
+        fs::write(&xml_path, xml_content).unwrap();
+        
+        // 3. Scan and verify enrichment
+        let roms = ExoDosManager::scan_directory(root);
+        
+        assert_eq!(roms.len(), 1);
+        let rom = &roms[0];
+        // Title should be pulled from XML ("The Amulet") instead of filename ("Amulet, The")
+        assert_eq!(rom.title.as_ref().unwrap(), "The Amulet");
+        // Notes should be pulled from XML
+        assert_eq!(rom.description.as_ref().unwrap(), "Matched by stem!");
     }
 }

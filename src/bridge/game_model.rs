@@ -300,6 +300,7 @@ pub struct GameListModel {
     gameDataChanged: qt_signal!(rom_id: String),
     platformTypesChanged: qt_signal!(),
     cloudSaveSyncFinished: qt_signal!(rom_id: String, success: bool, message: String),
+    filterOptionsChanged: qt_signal!(),
 }
 
 impl QAbstractListModel for GameListModel {
@@ -398,7 +399,7 @@ impl QAbstractListModel for GameListModel {
 
 impl GameListModel {
     fn init(&mut self, db_path: String) {
-        log::info!("[GameListModel] Initializing with DB path: {}", db_path);
+        log::debug!("[GameListModel] Initializing with DB path: {}", db_path);
         *self.db_path.borrow_mut() = db_path.clone();
         *self.current_sort_method.borrow_mut() = "TitleAZ".to_string();
         self.sortMethod = "TitleAZ".into();
@@ -757,13 +758,13 @@ impl GameListModel {
             *self.current_playlist_filter.borrow_mut() = None; // Clear playlist filter
             
             if let Some(id) = normalized_filter {
-                log::info!("[GameListModel] Filter changed to platform ID: {}", id);
+                log::debug!("[GameListModel] Filter changed to platform ID: {}", id);
                 let db_path = self.db_path.borrow().clone();
                 if !db_path.is_empty() {
                     if let Ok(db) = DbManager::open(&db_path) {
                         if let Ok(Some(platform)) = db.get_platform(&id) {
                             let p_type = platform.platform_type.as_deref().unwrap_or("unknown");
-                            log::info!("[GameListModel] Platform type for {} is: {}", id, p_type);
+                            log::debug!("[GameListModel] Platform type for {} is: {}", id, p_type);
                             if p_type.to_lowercase() == "heroic" {
                                 self.refreshHeroicPlaytime();
                             }
@@ -788,7 +789,7 @@ impl GameListModel {
             match StoreManager::sync_heroic_playtime_bulk(&db) {
                 Ok(count) => {
                     if count > 0 {
-                        log::info!("[GameListModel] Updated playtime for {} Heroic games", count);
+                        log::debug!("[GameListModel] Updated playtime for {} Heroic games", count);
                     }
                 },
                 Err(e) => log::error!("[GameListModel] Failed to sync Heroic playtime: {}", e),
@@ -835,7 +836,7 @@ impl GameListModel {
 
     fn setInstalledOnly(&mut self, installed_only: bool) {
         if *self.current_installed_only.borrow() == installed_only { return; }
-        log::info!("[GameListModel] Setting installed only filter: {}", installed_only);
+        log::debug!("[GameListModel] Setting installed only filter: {}", installed_only);
         *self.current_installed_only.borrow_mut() = installed_only;
         self.refresh();
     }
@@ -1008,7 +1009,7 @@ impl GameListModel {
                 if let Ok(db) = DbManager::open(&db_path) {
                     if let Ok(Some(platform)) = db.get_platform(&id) {
                         let p_type = platform.platform_type.as_deref().unwrap_or("unknown");
-                        log::info!("[GameListModel] Platform type for {} is: {}", id, p_type);
+                        log::debug!("[GameListModel] Platform type for {} is: {}", id, p_type);
                         if p_type.to_lowercase() == "heroic" {
                             self.refreshHeroicPlaytime();
                         }
@@ -1996,16 +1997,15 @@ impl GameListModel {
         let src_path = std::path::Path::new(&src_path);
 
         if let Ok(db) = DbManager::open(&db_path) {
-            // println!("DEBUG: updateGameAsset called for {} type {} path {}", rom_id, asset_type, src_path.display());
             // Get ROM details for pathing
             if let Ok(Some((platform_name, rom_filename))) = db.get_rom_path_info(&rom_id) {
-                // println!("DEBUG: Found ROM info: Platform={}, Filename={}", platform_name, rom_filename);
                 let media_type = match asset_type.as_str() {
                     "boxart" => "Box - Front",
                     "boxart_back" => "Box - Back",
                     "screenshot" => "Screenshot",
                     "banner" => "Banner",
                     "logo" => "Clear Logo",
+                    "clearlogo" => "Clear Logo",
                     "background" => "Background",
                     "video" => "Video",
                     _ => &asset_type,
@@ -2285,7 +2285,6 @@ impl GameListModel {
 
             if let Ok((exe, args)) = profile {
                 let cmd = format!("{} {}", exe, args);
-                // println!("DEBUG: Launching via UI selected profile: {}", cmd);
                 let wd = std::path::Path::new(&rom_path).parent().map(|p| p.to_string_lossy().to_string());
                 let _ = crate::core::launcher::Launcher::launch(&cmd, &rom_path, wd.as_deref(), None, None, false);
                 
@@ -2688,7 +2687,7 @@ impl GameListModel {
 
                  let mut eos_overlay_enabled = false;
                  if rom_path.starts_with("epic://") {
-                     let app_name = rom_path.trim_start_matches("epic://launch/");
+                     let _app_name = rom_path.trim_start_matches("epic://launch/");
                      let prefix = self.get_wine_prefix(&rom_id_clone);
                      eos_overlay_enabled = crate::core::legendary::LegendaryWrapper::is_eos_overlay_enabled(prefix.as_deref());
                  }
@@ -3156,13 +3155,18 @@ impl GameListModel {
             #[serde(default = "default_true")] date: bool,
             #[serde(default = "default_true")] rating: bool,
             #[serde(default = "default_true")] resources: bool,
-            #[serde(default = "default_true")] assets: bool,
+            #[serde(default = "default_true")] asset_boxart: bool,
+            #[serde(default = "default_true")] asset_icon: bool,
+            #[serde(default = "default_true")] asset_logo: bool,
+            #[serde(default = "default_true")] asset_screenshot: bool,
+            #[serde(default = "default_true")] asset_background: bool,
         }
         fn default_true() -> bool { true }
         
         let field_config: FieldConfig = serde_json::from_str(&json_fields).unwrap_or(FieldConfig {
             title: true, description: true, dev_pub: true, genre_tags: true, 
-            date: true, rating: true, resources: true, assets: true
+            date: true, rating: true, resources: true, asset_boxart: true,
+            asset_icon: true, asset_logo: true, asset_screenshot: true, asset_background: true
         });
         
         if ids.is_empty() { return; }
@@ -3487,8 +3491,33 @@ impl GameListModel {
                                     // Moving this to end of loop as BulkItemFinished
 
                                     // Asset Downloads
-                                    if field_config.assets {
+                                    let has_any_asset_checked = field_config.asset_boxart || field_config.asset_icon || field_config.asset_logo || field_config.asset_screenshot || field_config.asset_background;
+                                    if has_any_asset_checked {
+                                        let mut filtered_assets = std::collections::HashMap::new();
                                         if !m.assets.is_empty() {
+                                            for (k, v) in &m.assets {
+                                                let k_lower = k.to_lowercase();
+                                                let mut keep = false;
+                                                
+                                                if field_config.asset_boxart && (k_lower.contains("boxart") || k_lower.contains("cover") || k_lower.contains("capsule") || k_lower.contains("poster") || k_lower.contains("box - front")) {
+                                                    keep = true;
+                                                } else if field_config.asset_icon && k_lower.contains("icon") {
+                                                    keep = true;
+                                                } else if field_config.asset_logo && (k_lower.contains("logo") || k_lower.contains("clearlogo")) {
+                                                    keep = true;
+                                                } else if field_config.asset_screenshot && (k_lower.contains("screenshot") || k_lower.contains("snap")) {
+                                                    keep = true;
+                                                } else if field_config.asset_background && (k_lower.contains("background") || k_lower.contains("fanart") || k_lower.contains("hero") || k_lower.contains("artwork")) {
+                                                    keep = true;
+                                                }
+                                                
+                                                if keep {
+                                                    filtered_assets.insert(k.clone(), v.clone());
+                                                }
+                                            }
+                                        }
+
+                                        if !filtered_assets.is_empty() {
                                             let p_folder = if !job.platform_type.is_empty() { 
                                                 &job.platform_type 
                                             } else { 
@@ -3507,7 +3536,7 @@ impl GameListModel {
                                                 db_path_clone.clone(),
                                                 p_folder.to_string(),
                                                 r_stem,
-                                                m.assets.clone(),
+                                                filtered_assets,
                                             ).await;
                                         }
                                     }
@@ -4159,6 +4188,7 @@ impl GameListModel {
                         self.end_reset_model();
                         self.calculateStats();
                         self.platformTypesChanged();
+                        self.filterOptionsChanged();
                         self.loadingFinished();
                     }
                 },

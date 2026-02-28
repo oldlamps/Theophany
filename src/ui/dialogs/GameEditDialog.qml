@@ -81,6 +81,7 @@ Dialog {
     function load(id, targetTab) {
         gameId = id
         activeTab = targetTab || 0
+        root.eosOverlayEnabled = false // Reset state to prevent sticking from previous games
         var json = gameModel.getGameMetadata(id)
 
         try {
@@ -721,6 +722,7 @@ Dialog {
                                         "Box - Front",
                                         "Hero",
                                         "Logo",
+                                        "Clear Logo",
                                         "Icon",
                                         "Background",
                                         "Banner",

@@ -71,12 +71,21 @@ Dialog {
             var isDifferent = false
             
             if (key === "resources") {
-                var curCount = (curVal && Array.isArray(curVal)) ? curVal.length : 0
-                var newCount = (newVal && Array.isArray(newVal)) ? newVal.length : 0
-                displayCur = curCount + " Links"
-                displayNew = newCount + " Links"
-                isDifferent = newCount > 0 
-                if (newCount === 0) displayNew = "None"
+                var curList = (curVal && Array.isArray(curVal)) ? curVal : []
+                var newList = (newVal && Array.isArray(newVal)) ? newVal : []
+                
+                displayCur = curList.length + " Links"
+                if (curList.length > 0) {
+                    displayCur += ": " + curList.map(function(r) { return r.label || r.type }).join(", ")
+                }
+                
+                displayNew = "Append " + newList.length + " Link" + (newList.length !== 1 ? "s" : "")
+                if (newList.length > 0) {
+                    displayNew += ": " + newList.map(function(r) { return r.label || r.type }).join(", ")
+                }
+                
+                isDifferent = newList.length > 0
+                if (newList.length === 0) displayNew = "None"
             } else if (key === "assets") {
                 var curCount = 0
                 if (currentData.assets) {
@@ -96,12 +105,15 @@ Dialog {
                 
                 // For numbers
                 if (key === "rating" || key === "release_year") {
-                    curVal = curVal.toString()
-                    newVal = newVal.toString()
+                    if (curVal !== "" && curVal !== 0 && curVal !== "0") curVal = curVal.toString()
+                    else curVal = ""
+                    
+                    if (newVal !== "" && newVal !== 0 && newVal !== "0") newVal = newVal.toString()
+                    else newVal = ""
                 }
                 displayCur = curVal
                 displayNew = newVal
-                isDifferent = newVal !== "" && newVal !== curVal
+                isDifferent = newVal !== "" && newVal.toString() !== curVal.toString()
             }
             
             // Only add if relevant (different or non-empty new value)

@@ -24,6 +24,7 @@ Rectangle {
     
     // View State
     property bool showVideoOverlay: false
+    property bool resourcesExpanded: false
     
     // EOS Overlay State
     property bool hasEosOverlayState: false
@@ -183,6 +184,7 @@ Rectangle {
         
         root.hasEosOverlayState = false
         root.currentEosOverlayEnabled = false
+        root.resourcesExpanded = false
     }
 
     onGameFilenameChanged: {
@@ -1506,7 +1508,7 @@ Rectangle {
                 Layout.preferredHeight: 45
                 focusPolicy: Qt.NoFocus
                 onClicked: {
-                    var appName = root.fullRomPath.substring(7)
+                    var appName = root.fullRomPath.replace("epic://launch/", "")
                     if (confirmUninstallDialog.opened) return
                     confirmUninstallDialog.appName = appName
                     confirmUninstallDialog.open()
@@ -1892,56 +1894,91 @@ Rectangle {
                         }
                     }
                     
-                    Flow {
+                    Item {
+                        id: flowWrapper
                         Layout.fillWidth: true
-                        spacing: 8
-                        visible: root.gameResources.length > 0
+                        Layout.preferredHeight: (root.resourcesExpanded || resourceFlow.implicitHeight <= 100) ? resourceFlow.implicitHeight : 100
+                        clip: true
+                        Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.InOutQuad } }
                         
-                        Repeater {
-                            model: root.gameResources
+                        Flow {
+                            id: resourceFlow
+                            width: parent.width
+                            spacing: 8
+                            visible: root.gameResources.length > 0
                             
-                            Label {
-                                height: 28
-                                // Automatic width from text + padding
-                                leftPadding: 16
-                                rightPadding: 16
-                                verticalAlignment: Text.AlignVCenter
+                            Repeater {
+                                model: root.gameResources
                                 
-                                text: {
-                                    var t = modelData.type.toLowerCase()
-                                    var icon = "🔗"
-                                    if (t.includes("wikipedia")) icon = "🌐"
-                                    else if (t.includes("mobygames")) icon = "🎮"
-                                    else if (t.includes("manual")) icon = "📄"
-                                    else if (t.includes("video") || t.includes("trailer")) icon = "🎬"
-                                    else if (modelData.url.startsWith("file://")) icon = "📁"
+                                Label {
+                                    height: 28
+                                    // Automatic width from text + padding
+                                    leftPadding: 16
+                                    rightPadding: 16
+                                    verticalAlignment: Text.AlignVCenter
                                     
-                                    var lbl = modelData.label ? modelData.label : (modelData.type.charAt(0).toUpperCase() + modelData.type.slice(1))
-                                    return icon + "  " + lbl
-                                }
-                                
-                                color: Theme.text
-                                font.pixelSize: 12
-                                font.bold: true
-                                
-                                background: Rectangle {
-                                    radius: 14
-                                    color: resHoverItem.containsMouse ? Theme.accent : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.1)
-                                    border.color: Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.2)
-                                    Behavior on color { ColorAnimation { duration: 150 } }
-                                }
-                                
-                                MouseArea {
-                                    id: resHoverItem
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-
-                                        Qt.openUrlExternally(modelData.url)
+                                    text: {
+                                        var t = modelData.type.toLowerCase()
+                                        var icon = "🔗"
+                                        if (t.includes("wikipedia")) icon = "🌐"
+                                        else if (t.includes("mobygames")) icon = "🎮"
+                                        else if (t.includes("manual")) icon = "📄"
+                                        else if (t.includes("video") || t.includes("trailer")) icon = "🎬"
+                                        else if (modelData.url.startsWith("file://")) icon = "📁"
+                                        
+                                        var lbl = modelData.label ? modelData.label : (modelData.type.charAt(0).toUpperCase() + modelData.type.slice(1))
+                                        return icon + "  " + lbl
+                                    }
+                                    
+                                    color: Theme.text
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    
+                                    background: Rectangle {
+                                        radius: 14
+                                        color: resHoverItem.containsMouse ? Theme.accent : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.1)
+                                        border.color: Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.2)
+                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                    }
+                                    
+                                    MouseArea {
+                                        id: resHoverItem
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            Qt.openUrlExternally(modelData.url)
+                                        }
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    // Expand Button
+                    Rectangle {
+                        Layout.alignment: Qt.AlignHCenter
+                        width: expandText.width + 24
+                        height: 24
+                        radius: 12
+                        color: expandMouse.containsMouse ? Theme.accent : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.05)
+                        visible: resourceFlow.implicitHeight > 100
+                        
+                        Text {
+                            id: expandText
+                            anchors.centerIn: parent
+                            text: root.resourcesExpanded ? "🔼 Show Less" : "🔽 Show More (" + root.gameResources.length + ")"
+                            color: Theme.text
+                            font.pixelSize: 10
+                            font.bold: true
+                        }
+                        
+                        MouseArea {
+                            id: expandMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.resourcesExpanded = !root.resourcesExpanded
                         }
                     }
                 }

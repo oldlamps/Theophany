@@ -18,21 +18,23 @@
 ## Features
 
 ### Library Management
+- **Resizable UI**: Interactive resizable sidebar and details panel for a customized workspace.
 - **ROM Support**: Import individual ROMs or folders for dozens of consoles via drag and drop.
 - **Media & Metadata**: Pull box art, backgrounds, and game data from IGDB.
 - **Video Explorer**: Search, stream, or download trailers and clips using `yt-dlp`.
-- **Search & Filter**: Floating search bar with filtering for genre, year, rating, and collections.
+- **Global Search**: Floating island interface for searching across your entire library.
+- **Real-time Filtering**: Dedicated collection filters for the game list (genre, region, year, rating).
 - **Mass Edit**: Update metadata for multiple games at once.
 - **Resource Manager**: Manage external links for manuals, wikis, and strategy guides.
 - **Playlists**: Organize games into manual collections.
-- **Themes**: 15+ built-in color palettes including System (use your default system theme), Nord, Dracula, and Tokyo Night.
+- **Themes**: 15+ built-in color palettes including **System** (inherits and matches your OS accent colors), Nord, Dracula, and Tokyo Night.
 
 ### Storefront & System Integration
 - **Direct Store Bridges**: Sync libraries and data from major storefronts.
   - <img src="assets/systems/steam.png" height="20"> **Steam**: Full cloud library sync (installed & uninstalled), achievement tracking, and playtime data.
-  - <img src="assets/systems/epic.png" height="20"> **Epic Games Store**: Cloud library import and launching via Legendary.
+  - <img src="assets/systems/epic.png" height="20"> **Legendary (Epic Games)**: Full storefront support for your entire Epic library, including installation management, cloud saves, and overlay support.
   - <img src="assets/systems/heroic.png" height="20"> **Heroic** & <img src="assets/systems/lutris.png" height="20"> **Lutris**: Sync installed games and playtime data.
-- <img src="assets/systems/exodos.png" height="20"> [**eXoDOS Linux**](https://www.retro-exo.com/linux.html): Direct integration for importing and launching eXoDOS collections on Linux.
+- <img src="assets/systems/exodos.png" height="20"> [**eXoDOS Linux**](https://www.retro-exo.com/linux.html): Direct integration for importing and launching eXoDOS collections with Linux patches.
 - <img src="assets/systems/flatpak.png" height="20"> **Flatpak Integration**: Manage and install Flatpak applications within the interface.
 
 ### Running & Compatibility
@@ -79,6 +81,12 @@
    ```bash
    ./build_release.sh
    ```
+
+---
+
+## Documentation
+
+For more detailed guides and technical information, check the [docs](/docs) directory.
 
 ## License
 

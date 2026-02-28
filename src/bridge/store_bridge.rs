@@ -48,6 +48,7 @@ pub struct StoreBridge {
     legendaryAuthUrlReceived: qt_signal!(url: QString),
     legendaryAuthFinished: qt_signal!(success: bool, message: QString),
     legendaryLogoutFinished: qt_signal!(success: bool, message: QString),
+    legendaryAppInfoReceived: qt_signal!(json: QString),
     appDetailsReceived: qt_signal!(json: QString),
     featuredContentReceived: qt_signal!(json: QString),
     folderAnalyzed: qt_signal!(json: QString),
@@ -73,9 +74,12 @@ pub struct StoreBridge {
     get_legendary_auth_url: qt_method!(fn(&self)),
     authenticate_legendary: qt_method!(fn(&self, code: String)),
     logout_legendary: qt_method!(fn(&self)),
-    install_legendary_game: qt_method!(fn(&self, app_name: String, path: String)),
+    install_legendary_game: qt_method!(fn(&self, app_name: String, path: String, with_dlcs: bool)),
     import_legendary_game: qt_method!(fn(&self, app_name: String, path: String)),
     uninstall_legendary_game: qt_method!(fn(&self, app_name: String)),
+    get_legendary_app_info: qt_method!(fn(&self, app_name: String)),
+    get_epic_config: qt_method!(fn(&self, rom_id: String) -> String),
+    save_epic_config: qt_method!(fn(&self, rom_id: String, runner: String, prefix: String)),
     find_icon_path: qt_method!(fn(&self, icon_name: String) -> String),
     get_app_details: qt_method!(fn(&self, app_id: String)),
     analyze_folder: qt_method!(fn(&self, path: String)),
@@ -107,6 +111,7 @@ enum StoreMsg {
     LegendaryAuthUrlReceived(String),
     LegendaryAuthFinished(bool, String),
     LegendaryLogoutFinished(bool, String),
+    LegendaryAppInfoReceived(String),
     AppDetailsReceived(String),
     CategoryFinished(String, String), // Category, JSON
     FeaturedContentReceived(String),
@@ -159,11 +164,12 @@ impl StoreBridge {
                     StoreMsg::LutrisLibraryFinished(j) => self.lutrisLibraryFinished(j.into()),
                     StoreMsg::LegendaryLibraryFinished(j) => self.legendaryLibraryFinished(j.into()),
                     StoreMsg::LegendaryAuthUrlReceived(url) => {
-                        log::info!("[StoreBridge] Emitting QML signal onLegendaryAuthUrlReceived for URL: {}", url);
+                        log::debug!("[StoreBridge] Emitting QML signal onLegendaryAuthUrlReceived for URL: {}", url);
                         self.legendaryAuthUrlReceived(url.into());
                     },
                     StoreMsg::LegendaryAuthFinished(s, m) => self.legendaryAuthFinished(s, m.into()),
                     StoreMsg::LegendaryLogoutFinished(s, m) => self.legendaryLogoutFinished(s, m.into()),
+                    StoreMsg::LegendaryAppInfoReceived(j) => self.legendaryAppInfoReceived(j.into()),
                     StoreMsg::AppDetailsReceived(j) => self.appDetailsReceived(j.into()),
                     StoreMsg::CategoryFinished(cat, json) => {
                         self.category_cache.borrow_mut().insert(cat, json.clone());
@@ -543,8 +549,8 @@ impl StoreBridge {
         });
     }
 
-    fn install_legendary_game(&self, app_name: String, path: String) {
-        log::info!("[LegendaryBridge] Starting install for: {} at {:?}", app_name, path);
+    fn install_legendary_game(&self, app_name: String, path: String, with_dlcs: bool) {
+        log::info!("[LegendaryBridge] Starting install for: {} at {:?} with_dlcs={}", app_name, path, with_dlcs);
         self.ensure_channels();
         let _tx = self.tx.borrow().as_ref().unwrap().clone();
         let app_name_clone = app_name.clone();
@@ -553,7 +559,7 @@ impl StoreBridge {
         std::thread::spawn(move || {
             let _ = broadcast_msg(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Initializing Legendary...".into()));
             
-            match StoreManager::install_legendary_game(app_name_clone.clone(), install_path) {
+            match StoreManager::install_legendary_game(app_name_clone.clone(), install_path, with_dlcs) {
                 Ok(mut child) => {
                     use std::io::{BufReader, Read};
                     
@@ -580,7 +586,7 @@ impl StoreBridge {
                                         if let Ok(line) = String::from_utf8(buf.clone()) {
                                             let trimmed = line.trim();
                                             if !trimmed.is_empty() {
-                                                log::info!("[Legendary-CLI] {}", trimmed);
+                                                log::debug!("[Legendary-CLI] {}", trimmed);
                                                 
                                                 let mut updated = false;
                                                 if let Some(progress) = crate::core::legendary::LegendaryWrapper::parse_progress(trimmed) {
@@ -672,6 +678,72 @@ impl StoreBridge {
         });
     }
 
+    fn get_legendary_app_info(&self, app_name: String) {
+        log::info!("[StoreBridge] get_legendary_app_info called for: {}", app_name);
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        
+        std::thread::spawn(move || {
+            match crate::core::legendary::LegendaryWrapper::get_game_info(&app_name) {
+                Ok(json) => {
+                    let _ = tx.send(StoreMsg::LegendaryAppInfoReceived(json));
+                },
+                Err(e) => {
+                    log::error!("Failed to get legendary app info: {}", e);
+                    // Could send an error signal here if needed, or just an empty json
+                    let error_json = serde_json::json!({"error": e.to_string()}).to_string();
+                    let _ = tx.send(StoreMsg::LegendaryAppInfoReceived(error_json));
+                }
+            }
+        });
+    }
+
+    fn save_epic_config(&self, rom_id: String, runner: String, prefix: String) {
+        log::info!("[StoreBridge] Saving Epic config for {}: runner={}, prefix={}", rom_id, runner, prefix);
+        let db_path = crate::core::paths::get_data_dir().join("games.db");
+        if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+            let conn = db.get_connection();
+            // Check if config exists
+            let mut stmt = conn.prepare("SELECT 1 FROM pc_configurations WHERE rom_id = ?1").unwrap();
+            let exists = stmt.exists([&rom_id]).unwrap_or(false);
+
+            if exists {
+                let _ = conn.execute(
+                    "UPDATE pc_configurations SET umu_proton_version = ?1, wine_prefix = ?2 WHERE rom_id = ?3",
+                    [&runner, &prefix, &rom_id]
+                );
+            } else {
+                let _ = conn.execute(
+                    "INSERT INTO pc_configurations (rom_id, umu_proton_version, wine_prefix) VALUES (?1, ?2, ?3)",
+                    [&rom_id, &runner, &prefix]
+                );
+            }
+        }
+    }
+
+    fn get_epic_config(&self, rom_id: String) -> String {
+        log::info!("[StoreBridge] Fetching Epic config for {}", rom_id);
+        let db_path = crate::core::paths::get_data_dir().join("games.db");
+        if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+            let conn = db.get_connection();
+            let mut stmt = conn.prepare("SELECT umu_proton_version, wine_prefix FROM pc_configurations WHERE rom_id = ?1").unwrap();
+            
+            let mut rows = stmt.query([&rom_id]).unwrap();
+            
+            if let Ok(Some(row)) = rows.next() {
+                let runner: Option<String> = row.get(0).unwrap_or(None);
+                let prefix: Option<String> = row.get(1).unwrap_or(None);
+                
+                let mut map = serde_json::Map::new();
+                if let Some(r) = runner { map.insert("runner".to_string(), serde_json::json!(r)); }
+                if let Some(p) = prefix { map.insert("prefix".to_string(), serde_json::json!(p)); }
+                
+                return serde_json::Value::Object(map).to_string();
+            }
+        }
+        "{}".to_string()
+    }
+
     fn import_legendary_game(&self, app_name: String, path: String) {
         log::info!("[LegendaryBridge] Starting import for: {} at {:?}", app_name, path);
         self.ensure_channels();
@@ -708,7 +780,7 @@ impl StoreBridge {
                                         if let Ok(line) = String::from_utf8(buf.clone()) {
                                             let trimmed = line.trim();
                                             if !trimmed.is_empty() {
-                                                log::info!("[Legendary-CLI] {}", trimmed);
+                                                log::debug!("[Legendary-CLI] {}", trimmed);
                                                 
                                                 let mut updated = false;
                                                 if let Some(progress) = crate::core::legendary::LegendaryWrapper::parse_progress(trimmed) {
@@ -1006,7 +1078,7 @@ impl StoreBridge {
             }
 
             let mut extensions = HashMap::new();
-            log::info!("[FolderAnalyze] Scanning: {:?}", p);
+            log::debug!("[FolderAnalyze] Scanning: {:?}", p);
             let mut file_count = 0;
             
             // Scan top level and 3 levels deep for frequency, limit to 2000 files
@@ -1020,7 +1092,7 @@ impl StoreBridge {
                         // Ignore common non-game extensions
                         let ignored = ["txt", "pdf", "jpg", "png", "nfo", "db", "ini", "xml", "json", "url", "html", "htm"];
                         if !ignored.contains(&ext.as_str()) {
-                            log::info!("[FolderAnalyze] Found file: {:?} with ext: {}", entry.path(), ext);
+                            log::debug!("[FolderAnalyze] Found file: {:?} with ext: {}", entry.path(), ext);
                             *extensions.entry(ext).or_insert(0) += 1;
                         }
                     }
@@ -1033,7 +1105,7 @@ impl StoreBridge {
 
             let top_exts: Vec<String> = sorted_exts.iter().take(3).map(|(e, _)| e.clone()).collect();
             let primary_ext = top_exts.get(0).cloned().unwrap_or_default();
-            log::info!("[FolderAnalyze] Top extensions: {:?}, primary: {}", top_exts, primary_ext);
+            log::debug!("[FolderAnalyze] Top extensions: {:?}, primary: {}", top_exts, primary_ext);
 
             // Suggest platform type based on common extensions
             let mut platform_type = match primary_ext.as_str() {
@@ -1088,7 +1160,7 @@ impl StoreBridge {
                 "platform_type": platform_type,
                 "collection_name": collection_name
             });
-            log::info!("[FolderAnalyze] Result: {}", result);
+            log::debug!("[FolderAnalyze] Result: {}", result);
 
             let _ = tx.send(StoreMsg::FolderAnalyzed(result.to_string()));
         });

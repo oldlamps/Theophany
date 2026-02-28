@@ -206,16 +206,39 @@ impl LegendaryWrapper {
         Ok(games)
     }
 
+    /// Gets detailed information about a specific game in JSON format.
+    pub fn get_game_info(app_name: &str) -> anyhow::Result<String> {
+        let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
+
+        let output = Self::build_command(&binary, "info")
+            .arg(app_name)
+            .arg("--json")
+            .output()?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Legendary failed: {}", error));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
 
 
     /// Installs a game. Returns a Child process to monitor output.
-    pub fn install(app_name: &str, install_path: Option<&str>) -> anyhow::Result<std::process::Child> {
+    pub fn install(app_name: &str, install_path: Option<&str>, with_dlcs: bool) -> anyhow::Result<std::process::Child> {
         let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
 
         let mut cmd = Self::build_command(&binary, "install");
         cmd.env("PYTHONUNBUFFERED", "1")
             .arg(app_name)
             .arg("--yes");
+            
+        if with_dlcs {
+            cmd.arg("--with-dlcs");
+        } else {
+            cmd.arg("--skip-dlcs");
+        }
 
         if let Some(path) = install_path {
             cmd.arg("--base-path").arg(path);
@@ -332,7 +355,7 @@ impl LegendaryWrapper {
             sub = sub.trim_start_matches(|c: char| c.is_whitespace() || c == '-').trim();
             
             // Find next marker or end of group
-            let end = sub.find(',').or_else(|| sub.find(')')).unwrap_or(sub.len());
+            let end = sub.find(',').or_else(|| sub.find('(')).unwrap_or(sub.len());
             return Some(sub[..end].trim().to_string());
         }
         None
@@ -759,12 +782,25 @@ impl LegendaryWrapper {
         Ok(())
     }
 
+    fn ensure_basic_prefix(prefix: &str) {
+        let pfx_path = PathBuf::from(prefix);
+        if !pfx_path.exists() {
+            let _ = std::fs::create_dir_all(&pfx_path);
+        }
+        let user_reg = pfx_path.join("user.reg");
+        if !user_reg.exists() {
+            log::info!("[Legendary] Prefix missing user.reg, creating dummy to satisfy eos-overlay");
+            let _ = std::fs::write(user_reg, "WINE REGISTRY Version 2\n;; All keys relative to \\\\User\\\\S-1-5-21-0-0-0-1000\n\n");
+        }
+    }
+
     /// Enables the EOS overlay for a specific Wine prefix.
     pub fn eos_overlay_enable(prefix: Option<&str>, path: Option<PathBuf>) -> anyhow::Result<()> {
         let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Legendary binary not found"))?;
         let mut cmd = Self::build_command(&binary, "eos-overlay");
         cmd.arg("enable");
         if let Some(pfx) = prefix {
+            Self::ensure_basic_prefix(pfx);
             cmd.arg("--prefix").arg(pfx);
         }
         if let Some(p) = path {
@@ -790,6 +826,7 @@ impl LegendaryWrapper {
         let mut cmd = Self::build_command(&binary, "eos-overlay");
         cmd.arg("disable");
         if let Some(pfx) = prefix {
+            Self::ensure_basic_prefix(pfx);
             cmd.arg("--prefix").arg(pfx);
         }
         if let Some(p) = path {
@@ -821,6 +858,7 @@ impl LegendaryWrapper {
         let mut cmd = Self::build_command(&binary, "eos-overlay");
         cmd.arg("info");
         if let Some(pfx) = prefix {
+            Self::ensure_basic_prefix(pfx);
             cmd.arg("--prefix").arg(pfx);
         }
         

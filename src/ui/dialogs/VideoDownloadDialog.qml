@@ -932,9 +932,9 @@ Dialog {
         var pLower = (gPlatform || "").toLowerCase()
         
         // Use indexOf for broader compatibility/robustness with collection names
-        if (tLower.indexOf("steam") !== -1 || tLower.indexOf("heroic") !== -1 || tLower.indexOf("lutris") !== -1 || 
+        if (tLower.indexOf("steam") !== -1 || tLower.indexOf("heroic") !== -1 || tLower.indexOf("lutris") !== -1 || tLower.indexOf("epic") !== -1 || 
             tLower.indexOf("pc (") !== -1 || tLower === "pc" ||
-            pLower.indexOf("steam") !== -1 || pLower.indexOf("heroic") !== -1 || pLower.indexOf("lutris") !== -1) {
+            pLower.indexOf("steam") !== -1 || pLower.indexOf("heroic") !== -1 || pLower.indexOf("lutris") !== -1 || pLower.indexOf("epic") !== -1) {
             pSearch = "PC"
         } else if (gPlatformType && gPlatformType !== "" && gPlatformType !== "Unknown") {
             pSearch = gPlatformType

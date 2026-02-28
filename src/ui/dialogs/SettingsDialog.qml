@@ -129,6 +129,16 @@ Dialog {
     property string raErrorMessage: ""
 
     property int activeTab: 0
+    
+    function openTab(tabName) {
+        var tabs = ["Interface", "Library", "Accounts", "Input", "System", "About"]
+        for (var i = 0; i < tabs.length; i++) {
+            if (tabs[i].toLowerCase() === tabName.toLowerCase()) {
+                activeTab = i
+                break
+            }
+        }
+    }
 
     RetroAchievements {
         id: raBridge
@@ -150,14 +160,14 @@ Dialog {
         id: appInfo 
         onLegendaryDownloadStatus: (success, message) => {
             appInfoPollTimer.stop()
-            legendaryStatus = message
-            legendaryFound = success
+            root.legendaryStatus = message
+            root.legendaryFound = success
             if (success) {
                 checkLegendary()
             }
         }
         onEosOverlayStatus: (success, message) => {
-            eosOverlayStatus = message
+            root.eosOverlayStatus = message
             checkEosOverlay()
         }
         onEosOverlayInfoReceived: (info) => {
@@ -165,8 +175,8 @@ Dialog {
             // Clear status message if it was a technical status like "Installing..." or "Checking..."
             // Leave it if it's "Installation complete" etc? 
             // Actually, checkEosOverlay sets eosOverlayInfo to "Checking...", let's just clear status.
-            if (eosOverlayStatus.indexOf("...") !== -1) {
-                eosOverlayStatus = ""
+            if (root.eosOverlayStatus.indexOf("...") !== -1) {
+                root.eosOverlayStatus = ""
             }
         }
     }
@@ -886,6 +896,15 @@ Dialog {
                                             echoMode: TextInput.Password
                                             onTextChanged: root.tempRaToken = text
                                         }
+                                        
+                                        Item { Layout.fillWidth: true }
+                                        Text {
+                                            text: "<a href='https://retroachievements.org/settings'>Get API Key from RetroAchievements</a>"
+                                            color: Theme.accent
+                                            linkColor: Theme.accent
+                                            font.pixelSize: 11
+                                            onLinkActivated: (link) => Qt.openUrlExternally(link)
+                                        }
                                     }
 
                                     RowLayout {
@@ -986,7 +1005,7 @@ Dialog {
                                             color: Theme.accent
                                             linkColor: Theme.accent
                                             font.pixelSize: 11
-                                            onLinkActivated: Qt.openUrlExternally(link)
+                                            onLinkActivated: (link) => Qt.openUrlExternally(link)
                                         }
                                     }
                                 }
@@ -1011,7 +1030,7 @@ Dialog {
                                             Label { text: "✨"; font.pixelSize: 32 }
                                             ColumnLayout {
                                                 Label { text: "AI Capabilities"; font.bold: true; font.pixelSize: 18; color: Theme.text }
-                                                Label { text: "Enhance your library with local and cloud intelligence."; color: Theme.secondaryText; font.pixelSize: 12 }
+                                                Label { text: "Use local or cloud based LLMs for metadata (experimental)"; color: Theme.secondaryText; font.pixelSize: 12 }
                                             }
                                             Item { Layout.fillWidth: true }
                                             TheophanySwitch { id: aiOnBtn; checked: root.currentAiEnabled }

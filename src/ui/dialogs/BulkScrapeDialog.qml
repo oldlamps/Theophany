@@ -257,7 +257,30 @@ Dialog {
                     StyledCheckBox { id: checkDate; text: "Release Date"; checked: true }
                     StyledCheckBox { id: checkRating; text: "Rating"; checked: true }
                     StyledCheckBox { id: checkRes; text: "Links (Resources)"; checked: true }
-                    StyledCheckBox { id: checkAssets; text: "Images (Boxart, Screenshots)"; checked: true }
+                }
+
+                Label {
+                    visible: checkMetadata.checked
+                    text: "Select Images"
+                    color: Theme.accent
+                    font.bold: true
+                    font.pixelSize: 12
+                    Layout.topMargin: 5
+                }
+
+                GridLayout {
+                    visible: checkMetadata.checked
+                    columns: 2
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 20
+                    columnSpacing: 10
+                    rowSpacing: 0
+
+                    StyledCheckBox { id: checkAssetBoxart; text: "Box Front"; checked: true }
+                    StyledCheckBox { id: checkAssetIcon; text: "Game Icon"; checked: true }
+                    StyledCheckBox { id: checkAssetLogo; text: "Clear Logo"; checked: true }
+                    StyledCheckBox { id: checkAssetScreenshot; text: "Screenshots"; checked: true }
+                    StyledCheckBox { id: checkAssetBackground; text: "Background"; checked: true }
                 }
 
                 StyledCheckBox {
@@ -509,7 +532,11 @@ Dialog {
                         "date": checkDate.checked,
                         "rating": checkRating.checked,
                         "resources": checkRes.checked,
-                        "assets": checkAssets.checked
+                        "asset_boxart": checkAssetBoxart.checked,
+                        "asset_icon": checkAssetIcon.checked,
+                        "asset_logo": checkAssetLogo.checked,
+                        "asset_screenshot": checkAssetScreenshot.checked,
+                        "asset_background": checkAssetBackground.checked
                     }
                     
                     // Populate Progress Model

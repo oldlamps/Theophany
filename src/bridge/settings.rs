@@ -75,7 +75,7 @@ struct SettingsData {
     pub custom_ytdlp_path: String,
     #[serde(default)]
     pub default_proton_runner: String,
-    #[serde(default)]
+    #[serde(default = "default_prefix")]
     pub default_proton_prefix: String,
     #[serde(default)]
     pub default_proton_wrapper: String,
@@ -162,7 +162,7 @@ impl Default for SettingsData {
             use_custom_ytdlp: false,
             custom_ytdlp_path: String::new(),
             default_proton_runner: String::new(),
-            default_proton_prefix: String::new(),
+            default_proton_prefix: default_prefix(),
             default_proton_wrapper: String::new(),
             default_proton_use_gamescope: false,
             default_proton_use_mangohud: false,
@@ -200,6 +200,9 @@ fn default_image_scraper() -> String { "Web Search".to_string() }
 fn default_llm_provider() -> String { "Gemini".to_string() }
 fn default_sidebar_width() -> f32 { 250.0 }
 fn default_details_width() -> f32 { 350.0 }
+fn default_prefix() -> String { 
+    crate::core::paths::get_default_prefix_dir().to_string_lossy().to_string() 
+}
 
 fn default_hotkeys() -> HashMap<String, String> {
     let mut map = HashMap::new();
@@ -505,7 +508,7 @@ impl AppSettings {
                     self.useCustomYtdlp = data.use_custom_ytdlp;
                     self.customYtdlpPath = QString::from(data.custom_ytdlp_path);
                     self.defaultProtonRunner = QString::from(data.default_proton_runner);
-                    self.defaultProtonPrefix = QString::from(data.default_proton_prefix);
+                    self.defaultProtonPrefix = QString::from(if data.default_proton_prefix.is_empty() { default_prefix() } else { data.default_proton_prefix });
                     self.defaultProtonWrapper = QString::from(data.default_proton_wrapper);
                     self.defaultProtonUseGamescope = data.default_proton_use_gamescope;
                     self.defaultProtonUseMangohud = data.default_proton_use_mangohud;
@@ -617,7 +620,7 @@ impl Default for AppSettings {
             useCustomYtdlp: false,
             customYtdlpPath: Default::default(),
             defaultProtonRunner: Default::default(),
-            defaultProtonPrefix: Default::default(),
+            defaultProtonPrefix: QString::from(default_prefix()),
             defaultProtonWrapper: Default::default(),
             defaultProtonUseGamescope: false,
             defaultProtonUseMangohud: false,
