@@ -136,6 +136,19 @@ Rectangle {
         }
     }
 
+    // Handle completion of operations triggered by this panel's storeBridge instance
+    // (e.g. uninstall via Legendary). Main.qml's storeBridge is a separate instance
+    // and won't receive these signals.
+    Connections {
+        target: storeBridge
+        function onInstallFinished(appId, success, message) {
+            if (success) {
+                // Notify Main.qml to refresh the model and reload our game details
+                root.uninstallComplete(root.gameId)
+            }
+        }
+    }
+
     Connections {
         target: root.gameModel
         function onEosOverlayEnabledResult(romId, enabled) {
@@ -417,6 +430,7 @@ Rectangle {
 
     signal playRequested(string gameId)
     signal filterGenre(string genre)
+    signal uninstallComplete(string romId)  // Notify parent to refresh after uninstall
 
     property bool _silentRefresh: false
     property bool isLaunching: false
@@ -2414,8 +2428,9 @@ Rectangle {
     Dialog {
         id: confirmUninstallDialog
         modal: true
-        x: (parent.width - width) / 2
-        y: (parent.height - height) / 2
+        // Parent to the overlay so the dialog centers on the whole window, not just the DetailsPanel
+        parent: Overlay.overlay
+        anchors.centerIn: parent
         width: 400
         padding: 25
         
@@ -2458,6 +2473,7 @@ Rectangle {
                     onClicked: {
                         storeBridge.uninstall_legendary_game(confirmUninstallDialog.appName)
                         confirmUninstallDialog.close()
+                        // Signal parent (Main.qml) to refresh once the backend confirms completion
                     }
                 }
             }

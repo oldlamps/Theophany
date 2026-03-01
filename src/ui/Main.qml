@@ -2694,6 +2694,11 @@ ApplicationWindow {
                 window.showFilterBar = true
                 filterBar.selectGenre(genre)
             }
+            onUninstallComplete: (romId) => {
+                // Refresh the model and re-select the game so the install status updates
+                pendingSelectionId = romId
+                gameModel.refresh()
+            }
         }
     }
     

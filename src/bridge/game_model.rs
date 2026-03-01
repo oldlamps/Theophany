@@ -2941,7 +2941,8 @@ impl GameListModel {
         } else {
             // For other resources (PDFs, images etc.), just open with system default
             get_runtime().spawn(async move {
-                let clean_url = if url.starts_with("file://") { url } else { format!("file://{}", url) };
+                // Only prepend file:// for bare paths; preserve http://, https://, etc. as-is
+                let clean_url = if url.contains("://") { url } else { format!("file://{}", url) };
                 
                 #[cfg(target_os = "linux")]
                 { let _ = std::process::Command::new("xdg-open").arg(&clean_url).spawn(); }
