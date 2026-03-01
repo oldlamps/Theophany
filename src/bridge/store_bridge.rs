@@ -265,6 +265,7 @@ impl StoreBridge {
                         description: Some(description_clone.clone()),
                         is_installed: Some(true),
                         cloud_saves_supported: None,
+                        resources: None,
                     };
 
                     let db_path = crate::core::paths::get_data_dir().join("games.db");
@@ -1214,8 +1215,15 @@ impl StoreBridge {
         log::info!("Importing eXoDOS games for platform: {}", platform_id);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
-        
-        let roms: Vec<crate::core::models::Rom> = serde_json::from_str(&roms_json).unwrap_or_default();
+        log::info!("Importing eXoDOS games for platform: {}. JSON length: {}", platform_id, roms_json.len());
+        let roms: Vec<crate::core::models::Rom> = match serde_json::from_str(&roms_json) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("[StoreBridge] Failed to parse eXoDOS ROMs JSON: {}. JSON was: {}", e, roms_json);
+                let _ = tx.send(StoreMsg::InstallFinished("exodos".to_string(), false, format!("Failed to parse game data: {}", e)));
+                return;
+            }
+        };
         let db_path = crate::core::paths::get_data_dir().join("games.db");
         let images_path = std::path::Path::new(&exodos_base_path).join("Images/MS-DOS");
 
@@ -1237,6 +1245,20 @@ impl StoreBridge {
                 // --- Phase 1: Immediate Batch Insertion ---
                 // We do a fast pass to get games into the library immediately.
                 if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                    // VERIFY PLATFORM EXISTS (due to FK constraints)
+                    match db.get_platform(&platform_id) {
+                        Ok(Some(_)) => log::info!("[StoreBridge] Confirmed platform {} exists in DB", platform_id),
+                        Ok(None) => {
+                            log::error!("[StoreBridge] Platform {} NOT FOUND in database. Import will fail FK constraints.", platform_id);
+                            let _ = tx.send(StoreMsg::InstallFinished("exodos".to_string(), false, format!("Platform {} not found. Try scanning again.", platform_id)));
+                            return;
+                        },
+                        Err(e) => {
+                            log::error!("[StoreBridge] Database error checking platform: {}", e);
+                            return;
+                        }
+                    }
+
                     let _ = db.get_connection().execute("BEGIN TRANSACTION", []);
                     for rom in &roms {
                         let mut final_rom = rom.clone();
@@ -1251,7 +1273,12 @@ impl StoreBridge {
 
                         let is_inst = meta.is_installed || false; // default false for exodos if no sidecar
                         final_rom.is_installed = Some(is_inst);
-                        let _ = db.insert_rom(&final_rom);
+                        
+                        log::info!("[StoreBridge] Inserting ROM: {} ({})", final_rom.title.as_deref().unwrap_or("Unknown"), final_rom.id);
+                        if let Err(e) = db.insert_rom(&final_rom) {
+                            log::error!("[StoreBridge] Failed to insert ROM {}: {}", final_rom.id, e);
+                            continue;
+                        }
 
                         // Basic metadata so it shows up
                         meta.rom_id = final_rom.id.clone();
@@ -1269,9 +1296,24 @@ impl StoreBridge {
                         if meta.release_date.is_none() || meta.release_date.as_deref() == Some("") { meta.release_date = final_rom.release_date.clone(); }
                         if meta.description.is_none() || meta.description.as_deref() == Some("") { meta.description = final_rom.description.clone(); }
                         meta.is_installed = is_inst;
-                        let _ = db.insert_metadata(&meta);
+                        
+                        if let Err(e) = db.insert_metadata(&meta) {
+                            log::error!("[StoreBridge] Failed to insert metadata for {}: {}", final_rom.id, e);
+                        }
+
+                        // Insert resources if any
+                        if let Some(resources) = &final_rom.resources {
+                            for res in resources {
+                                if let Err(e) = db.insert_resource(res) {
+                                    log::error!("[StoreBridge] Failed to insert resource for {}: {}", final_rom.id, e);
+                                }
+                            }
+                        }
                     }
-                    let _ = db.get_connection().execute("COMMIT", []);
+                    match db.get_connection().execute("COMMIT", []) {
+                        Ok(_) => log::info!("[StoreBridge] Successfully committed eXoDOS import transaction"),
+                        Err(e) => log::error!("[StoreBridge] Failed to commit eXoDOS import transaction: {}", e),
+                    }
                 }
                 
                 // Notify UI that library should be refreshed to show new entries

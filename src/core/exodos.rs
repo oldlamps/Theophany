@@ -67,8 +67,55 @@ impl ExoDosManager {
                                         }
                                     }
 
+                                    let game_folder_name = game_dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+                                    let rom_id = format!("exodos-{}", game_folder_name.replace(" ", "-").to_lowercase());
+                                    let mut resources = Vec::new();
+
+                                    // Scan for Extras subfolder (be case-insensitive for folder name)
+                                    let mut extras_path = game_dir.join("Extras");
+                                    if !extras_path.exists() {
+                                        extras_path = game_dir.join("extras");
+                                    }
+
+                                    if extras_path.exists() && extras_path.is_dir() {
+                                        log::info!("Found Extras folder at: {:?}", extras_path);
+                                        if let Ok(extras_entries) = std::fs::read_dir(&extras_path) {
+                                            for extra_entry in extras_entries.flatten() {
+                                                let extra_path = extra_entry.path();
+                                                if extra_path.is_file() {
+                                                    let extra_filename = extra_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                                                    
+                                                    // Alternate Launcher check
+                                                     if extra_filename == "Alternate Launcher.command" {
+                                                         log::info!("Found Alternate Launcher for: {}", title);
+                                                         resources.push(crate::core::models::GameResource {
+                                                             id: Uuid::new_v4().to_string(),
+                                                             rom_id: rom_id.clone(),
+                                                             type_: "launcher".to_string(),
+                                                             url: extra_path.to_string_lossy().to_string(),
+                                                             label: Some("Alternate Launcher".to_string()),
+                                                         });
+                                                     } else if !extra_filename.starts_with("Alternate Launcher") {
+                                                         // General resource - default to generic as requested
+                                                         // We EXPLICITLY ignore "Alternate Launcher.bat" and "Alternate Launcher.bsh"
+                                                         log::debug!("Found extra resource: {}", extra_filename);
+                                                         resources.push(crate::core::models::GameResource {
+                                                             id: Uuid::new_v4().to_string(),
+                                                             rom_id: rom_id.clone(),
+                                                             type_: "generic".to_string(),
+                                                             url: extra_path.to_string_lossy().to_string(),
+                                                             label: Some(extra_path.file_stem().unwrap_or_default().to_string_lossy().to_string()),
+                                                         });
+                                                     }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        log::debug!("No Extras folder found in: {:?}", game_dir);
+                                    }
+
                                     roms.push(Rom {
-                                        id: format!("exodos-{}", Uuid::new_v4()),
+                                        id: rom_id,
                                         platform_id: "DOS".to_string(), 
                                         path: path.to_string_lossy().to_string(),
                                         filename: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
@@ -76,7 +123,7 @@ impl ExoDosManager {
                                         hash_sha1: None,
                                         title: Some(title),
                                         region: None,
-                                        platform_name: Some("DOS".to_string()),
+                                        platform_name: Some("eXoDOS".to_string()),
                                         platform_type: Some("DOS".to_string()),
                                         platform_icon: Some("dos".to_string()),
                                         boxart_path: None,
@@ -96,6 +143,7 @@ impl ExoDosManager {
                                         description: None,
                                         is_installed: Some(true),
                                         cloud_saves_supported: None,
+                                        resources: if resources.is_empty() { None } else { Some(resources) },
                                     });
                                 }
                             }
@@ -342,6 +390,13 @@ mod tests {
         File::create(game2_dir.join("Zork I (1980).command")).unwrap();
         File::create(game2_dir.join("install.command")).unwrap();
 
+        // Create Extras folder for game2
+        let extras_dir = game2_dir.join("Extras");
+        fs::create_dir(&extras_dir).unwrap();
+        File::create(extras_dir.join("Alternate Launcher.command")).unwrap();
+        File::create(extras_dir.join("Manual.pdf")).unwrap();
+        File::create(extras_dir.join("Map.jpg")).unwrap();
+
         let roms = ExoDosManager::scan_directory(root);
         
         assert_eq!(roms.len(), 2);
@@ -350,6 +405,17 @@ mod tests {
         assert!(titles.contains(&"Zork I".to_string()));
         assert!(!titles.contains(&"install".to_string()));
         assert!(roms.iter().all(|r| r.platform_id == "DOS"));
+
+        // Verify Extras for Zork I
+        let zork = roms.iter().find(|r| r.title.as_ref().unwrap() == "Zork I").unwrap();
+        let resources = zork.resources.as_ref().expect("Zork I should have resources");
+        assert_eq!(resources.len(), 3);
+        
+        let launcher = resources.iter().find(|r| r.type_ == "launcher").expect("Should have a launcher");
+        assert_eq!(launcher.label.as_ref().unwrap(), "Alternate Launcher");
+        
+        let generic_count = resources.iter().filter(|r| r.type_ == "generic").count();
+        assert_eq!(generic_count, 2, "Should have 2 generic resources");
     }
 
     #[test]

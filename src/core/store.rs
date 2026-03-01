@@ -517,6 +517,7 @@ impl StoreManager {
                 description: None,
                 is_installed: Some(true),
                 cloud_saves_supported: None,
+                resources: None,
              });
         }
 
@@ -685,6 +686,7 @@ impl StoreManager {
                         description: None,
                         is_installed: Some(is_installed),
                         cloud_saves_supported: None,
+                        resources: None,
                     });
                 }
             }
@@ -1023,6 +1025,7 @@ impl StoreManager {
                 description: None,
                 is_installed: Some(true),
                 cloud_saves_supported: None,
+                resources: None,
             });
         }
 
@@ -1091,6 +1094,7 @@ impl StoreManager {
                                     description: None,
                                     is_installed: Some(true),
                                     cloud_saves_supported: None,
+                                    resources: None,
                                 };
 
                                 // Enriched Metadata
@@ -1226,6 +1230,7 @@ impl StoreManager {
                                     description: None,
                                     is_installed: Some(true),
                                     cloud_saves_supported: None,
+                                    resources: None,
                                 };
 
                                 // Enriched Metadata
@@ -1304,6 +1309,7 @@ impl StoreManager {
                                 description: None,
                                 is_installed: Some(true),
                                 cloud_saves_supported: None,
+                                resources: None,
                             });
                         }
                     }
@@ -1464,6 +1470,7 @@ impl StoreManager {
                                 release_date: None,
                                 description: None,
                                 is_installed: Some(true),
+                                resources: None,
                             });
                         }
                     }

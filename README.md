@@ -18,15 +18,16 @@
 ## Features
 
 ### Library Management
-- **Resizable UI**: Interactive resizable sidebar and details panel for a customized workspace.
+- **Resizable UI**: Interactive resizable sidebar and details panel for a customized interface.
 - **ROM Support**: Import individual ROMs or folders for dozens of consoles via drag and drop.
+- **Emulator Management**: Manage emulators with pre-defined profiles, or create your own.
 - **Media & Metadata**: Pull box art, backgrounds, and game data from IGDB.
 - **Video Explorer**: Search, stream, or download trailers and clips using `yt-dlp`.
 - **Global Search**: Floating island interface for searching across your entire library.
 - **Real-time Filtering**: Dedicated collection filters for the game list (genre, region, year, rating).
 - **Mass Edit**: Update metadata for multiple games at once.
 - **Resource Manager**: Manage external links for manuals, wikis, and strategy guides.
-- **Playlists**: Organize games into manual collections.
+- **Playlists**: Further organize games into manual lists.
 - **Themes**: 15+ built-in color palettes including **System** (inherits and matches your OS accent colors), Nord, Dracula, and Tokyo Night.
 
 ### Storefront & System Integration

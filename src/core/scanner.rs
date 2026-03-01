@@ -73,6 +73,7 @@ impl Scanner {
                             description: None,
                             is_installed: Some(true),
                             cloud_saves_supported: None,
+                            resources: None,
                         });
                     }
                 }

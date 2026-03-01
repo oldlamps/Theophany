@@ -2707,6 +2707,7 @@ ApplicationWindow {
         geminiKey: appSettings.geminiApiKey
         openaiKey: appSettings.openaiApiKey
         llmProvider: appSettings.llmApiProvider
+        storeBridge: storeBridge
         onAccepted: {
              var savedId = gameEditDialog.gameId 
              gameModel.refresh()

@@ -1440,7 +1440,7 @@ Rectangle {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     width: 30; height: parent.height
-                    visible: root.emulatorProfiles.length > 0 || root.fullRomPath.startsWith("epic://")
+                    visible: root.emulatorProfiles.length > 0 || root.fullRomPath.startsWith("epic://") || (root.gameResources && root.gameResources.some(r => r.type === "launcher"))
                     background: null
                     text: "▼"
                     onClicked: {
@@ -1461,6 +1461,16 @@ Rectangle {
                             text: "Launch with " + modelData.name
                             onTriggered: {
                                 gameModel.launchWithProfile(root.gameId, modelData.id)
+                            }
+                        }
+                    }
+                    
+                    Repeater {
+                        model: root.gameResources ? root.gameResources.filter(r => r.type === "launcher") : []
+                        TheophanyMenuItem {
+                            text: modelData.label || "Alternate Launcher"
+                            onTriggered: {
+                                gameModel.launchResource(root.gameId, modelData.url)
                             }
                         }
                     }
@@ -1900,7 +1910,7 @@ Rectangle {
                             visible: root.gameResources.length > 0
                             
                             Repeater {
-                                model: root.gameResources
+                                model: root.gameResources ? root.gameResources.filter(r => r.type !== "launcher") : []
                                 
                                 Label {
                                     height: 28
@@ -1939,7 +1949,7 @@ Rectangle {
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
-                                            Qt.openUrlExternally(modelData.url)
+                                            gameModel.launchResource(root.gameId, modelData.url)
                                         }
                                     }
                                 }

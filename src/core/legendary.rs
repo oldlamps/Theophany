@@ -679,6 +679,7 @@ impl LegendaryWrapper {
             description: None,
             is_installed: Some(game.is_installed),
             cloud_saves_supported: None,
+            resources: None,
         };
 
         // Enriched Metadata from Legendary JSON

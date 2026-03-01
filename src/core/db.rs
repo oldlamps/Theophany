@@ -578,6 +578,7 @@ impl DbManager {
                 release_date: None,
                 description: None,
                 cloud_saves_supported: None,
+                resources: None,
             })
         })?;
 
@@ -629,6 +630,7 @@ impl DbManager {
                     }
                 })),
                 cloud_saves_supported: None,
+                resources: None,
             })
         })?;
 
@@ -1419,6 +1421,7 @@ impl DbManager {
             release_date: None,
             description: None,
             cloud_saves_supported: None,
+            resources: None,
         })
     }
 

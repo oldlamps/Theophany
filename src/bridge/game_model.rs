@@ -243,6 +243,7 @@ pub struct GameListModel {
     addGameResource: qt_method!(fn(&mut self, rom_id: String, type_: String, url: String, label: String)),
     removeGameResource: qt_method!(fn(&mut self, resource_id: String)),
     updateGameResource: qt_method!(fn(&mut self, resource_id: String, type_: String, url: String, label: String)),
+    launchResource: qt_method!(fn(&mut self, rom_id: String, url: String)),
 
     getPlatformTypes: qt_method!(fn(&mut self) -> QVariantList),
 
@@ -689,6 +690,7 @@ impl GameListModel {
                             is_installed: Some(row.get::<_, Option<i32>>(23).ok().flatten().unwrap_or(1) != 0),
                             cloud_saves_supported: None,
                             description: None,
+                            resources: None,
                         })
                     }) {
                         for rom in stmt_iter {
@@ -1208,6 +1210,7 @@ impl GameListModel {
                         rating: None, tags: None, icon_path: None, background_path: None, release_date: None, description: None,
                         is_installed: Some(true),
                         cloud_saves_supported: None,
+                        resources: None,
                     });
                 }
             }
@@ -1472,7 +1475,21 @@ impl GameListModel {
                         description: None,
                         is_installed: Some(true),
                         cloud_saves_supported: None,
+                        resources: None, // Will be filled from JSON if present
                     };
+
+                    // Extract resources from JSON if present
+                    if let Some(res_val) = rom_val.get("resources").and_then(|v| v.as_array()) {
+                        let mut resources = Vec::new();
+                        for rv in res_val {
+                            if let Ok(res) = serde_json::from_value::<crate::core::models::GameResource>(rv.clone()) {
+                                resources.push(res);
+                            }
+                        }
+                        if !resources.is_empty() {
+                            rom.resources = Some(resources);
+                        }
+                    }
 
                     if platform_folder == "windows" || platform_folder == "PC (Windows)" {
                         rom.icon_path = Some("assets/systems/windows.png".to_string());
@@ -1485,6 +1502,16 @@ impl GameListModel {
                         log::error!("Failed to insert rom: {}", e);
                         continue;
                     }
+
+                    // Insert resources if any
+                    if let Some(resources) = &rom.resources {
+                        for res in resources {
+                            if let Err(e) = db.insert_resource(res) {
+                                log::error!("Failed to insert resource: {}", e);
+                            }
+                        }
+                    }
+
                     imported_ids.push(rom.id.clone());
 
                     // PC Config Inheritance
@@ -2863,6 +2890,70 @@ impl GameListModel {
     }
 
     #[allow(non_snake_case)]
+    fn launchResource(&mut self, rom_id: String, url: String) {
+        log::info!("Requesting launch for resource: {} (ROM: {})", url, rom_id);
+        
+        let path_str = self.db_path.borrow().clone();
+        if path_str.is_empty() { return; }
+
+        let is_launcher = url.ends_with(".command") || url.ends_with(".sh");
+
+        if is_launcher {
+            // For launcher scripts, track playtime the same way launchGame does
+            use crate::core::launcher::Launcher;
+            let tx = self.tx.borrow().as_ref().map(|s| s.clone());
+
+            match Launcher::launch("%ROM%", &url, None, None, None, false) {
+                Ok(mut child) => {
+                    let rom_id_thread = rom_id.clone();
+                    let db_path_thread = path_str.clone();
+                    std::thread::spawn(move || {
+                        let start_time = std::time::SystemTime::now();
+                        let _ = child.wait();
+                        let end_time = std::time::SystemTime::now();
+                        let duration = end_time.duration_since(start_time).unwrap_or_default().as_secs() as i64;
+
+                        log::info!("Alternate launcher exited for {}. Duration: {} seconds", rom_id_thread, duration);
+
+                        if let Ok(db) = DbManager::open(&db_path_thread) {
+                            if let Ok(Some(mut meta)) = db.get_metadata(&rom_id_thread) {
+                                meta.play_count += 1;
+                                meta.total_play_time += duration;
+                                meta.last_played = Some(
+                                    std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs() as i64
+                                );
+                                if let Err(e) = db.insert_metadata(&meta) {
+                                    log::error!("Failed to update playtime after alternate launch: {}", e);
+                                }
+                            }
+                        }
+
+                        if let Some(sender) = tx {
+                            let _ = sender.send(AsyncResponse::PlaytimeUpdated(rom_id_thread));
+                        }
+                    });
+                },
+                Err(e) => log::error!("Failed to launch script resource: {}", e),
+            }
+        } else {
+            // For other resources (PDFs, images etc.), just open with system default
+            get_runtime().spawn(async move {
+                let clean_url = if url.starts_with("file://") { url } else { format!("file://{}", url) };
+                
+                #[cfg(target_os = "linux")]
+                { let _ = std::process::Command::new("xdg-open").arg(&clean_url).spawn(); }
+                #[cfg(target_os = "windows")]
+                { let _ = std::process::Command::new("cmd").args(["/c", "start", &clean_url]).spawn(); }
+                #[cfg(target_os = "macos")]
+                { let _ = std::process::Command::new("open").arg(&clean_url).spawn(); }
+            });
+        }
+    }
+
+    #[allow(non_snake_case)]
     fn uninstallSteamGame(&mut self, rom_id: String) {
         // Only valid for Steam games
         if !rom_id.starts_with("steam-") {
@@ -3474,24 +3565,23 @@ impl GameListModel {
                                                     let rom_stem = Path::new(&filename).file_stem().and_then(|s| s.to_str()).unwrap_or(&filename);
                                                     let _ = MetadataManager::save_sidecar(&platform_folder, rom_stem, &final_meta);
                                                 }
-                                                
-                                                // Save Resources (Filtered)
-                                                if field_config.resources {
-                                                    for r in &m.resources {
-                                                        if let Ok(exists) = db.resource_exists(&r_id, &r.url) {
-                                                            if !exists {
-                                                                 let res = crate::core::models::GameResource {
-                                                                     id: uuid::Uuid::new_v4().to_string(),
-                                                                     rom_id: r_id.clone(),
-                                                                     type_: r.type_.clone(),
-                                                                     url: r.url.clone(),
-                                                                     label: Some(r.label.clone()),
+                                                                                                // Save Resources (Filtered)
+                                                 if field_config.resources {
+                                                     for r in &m.resources {
+                                                         if let Ok(exists) = db.resource_exists(&r_id, &r.url) {
+                                                             if !exists {
+                                                                  let res = crate::core::models::GameResource {
+                                                                      id: uuid::Uuid::new_v4().to_string(),
+                                                                      rom_id: r_id.clone(),
+                                                                      type_: r.type_.clone(),
+                                                                      url: r.url.clone(),
+                                                                      label: Some(r.label.clone()),
                                                                  };
                                                                  let _ = db.insert_resource(&res);
-                                                            }
-                                                        }
-                                                    }
-                                                }
+                                                             }
+                                                         }
+                                                     }
+                                                 }
                                             }
                                         }
                                     }).await;
@@ -4720,6 +4810,7 @@ impl GameListModel {
                         })),
                         background_path: row.get(22)?,
                         description: row.get(24).ok(),
+                        resources: None,
                     })
                 }) {
                     if let Some(Ok(updated_rom)) = rows.next() {

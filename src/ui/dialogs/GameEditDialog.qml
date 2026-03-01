@@ -58,6 +58,10 @@ Dialog {
     property string geminiKey: ""
     property string openaiKey: ""
     property string llmProvider: ""
+    property var storeBridge: null
+    property string epicInstallPath: ""
+    property string epicInstallSize: ""
+    property bool loadingEpicInfo: false
 
     Connections {
         target: gameModel
@@ -79,6 +83,27 @@ Dialog {
                     cloudSaveStatusLabel.color = Theme.danger || "#ff4444"
                 }
             }
+        }
+    }
+
+    Connections {
+        target: storeBridge
+        function onLegendaryAppInfoReceived(json) {
+            if (!root.loadingEpicInfo) return
+            try {
+                var data = JSON.parse(json)
+                if (data.install) {
+                     root.epicInstallPath = data.install.install_path || ""
+                     var sizeBytes = data.install.disk_size || data.install.install_size || 0
+                     if (sizeBytes > 0) {
+                         var gb = sizeBytes / (1024 * 1024 * 1024)
+                         root.epicInstallSize = gb.toFixed(2) + " GB"
+                     }
+                }
+            } catch (e) {
+                console.log("Error parsing legendary info: " + e)
+            }
+            root.loadingEpicInfo = false
         }
     }
     property var platformModel: null
@@ -133,6 +158,15 @@ Dialog {
                 // Load EOS Overlay status
                 if (gameId.indexOf("legendary-") === 0 || platformId === "epic") {
                     gameModel.checkEosOverlayEnabled(gameId)
+
+                    // Fetch Epic/Legendary install info if installed
+                    if (currentData.is_installed && storeBridge) {
+                        root.loadingEpicInfo = true
+                        root.epicInstallPath = ""
+                        root.epicInstallSize = ""
+                        var appName = gameId.replace("legendary-", "")
+                        storeBridge.get_legendary_app_info(appName)
+                    }
                 }
             }
              
@@ -537,6 +571,58 @@ Dialog {
                                             
                                             Label { text: "Platform"; color: Theme.secondaryText; font.bold: true; font.pixelSize: 12 }
                                             Label { text: root.platformName + " (" + root.platformType + ")"; color: Theme.text }
+                                        }
+                                    }
+                                }
+
+                                // Epic Installation Section
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 15
+                                    visible: (root.gameId.indexOf("legendary-") === 0 || root.platformId === "epic") && root.currentData.is_installed
+                                    Text { text: "EPIC INSTALLATION"; color: Theme.accent; font.pixelSize: 11; font.bold: true; font.letterSpacing: 1.5 }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: epicInfoGrid.implicitHeight + 40
+                                        color: Theme.secondaryBackground
+                                        radius: 10
+                                        border.color: Theme.border
+
+                                        GridLayout {
+                                            id: epicInfoGrid
+                                            anchors.fill: parent
+                                            anchors.margins: 20
+                                            columns: 2
+                                            rowSpacing: 15
+                                            columnSpacing: 25
+
+                                            Label { text: "Install Path"; color: Theme.secondaryText; font.bold: true; font.pixelSize: 12; Layout.preferredWidth: 120 }
+                                            Label { 
+                                                text: root.epicInstallPath || (root.loadingEpicInfo ? "Loading..." : "Unknown")
+                                                color: Theme.text
+                                                elide: Text.ElideMiddle
+                                                Layout.fillWidth: true
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        if (parent.text && parent.text !== "Unknown" && parent.text !== "Loading...") {
+                                                            Qt.openUrlExternally("file://" + parent.text)
+                                                        }
+                                                    }
+                                                    TheophanyTooltip {
+                                                        visible: parent.containsMouse
+                                                        text: parent.parent.text
+                                                    }
+                                                }
+                                            }
+
+                                            Label { text: "Install Size"; color: Theme.secondaryText; font.bold: true; font.pixelSize: 12 }
+                                            Label { 
+                                                text: root.epicInstallSize || (root.loadingEpicInfo ? "Loading..." : "Unknown")
+                                                color: Theme.text 
+                                            }
                                         }
                                     }
                                 }

@@ -29,6 +29,7 @@ Dialog {
         
         onExodosLibraryFinished: (resultsJson) => {
             var results = JSON.parse(resultsJson)
+            rawResults = results
             results.sort(function(a, b) {
                 return a.title.localeCompare(b.title)
             })
@@ -50,6 +51,7 @@ Dialog {
                     "genre": item.genre || "",
                     "release_date": item.release_date || "",
                     "description": item.description || "",
+                    "resources": item.resources || [],
                     "is_installed": true,
                     "is_favorite": item.is_favorite === true
                 })
@@ -88,6 +90,7 @@ Dialog {
             } else if (appName === "exodos_immediate" || appName === "exodos_batch") {
                 if (success) {
                     progressDialog.status = message
+                    gameModel.refresh()
                 }
             }
         }
@@ -103,6 +106,7 @@ Dialog {
     property bool loading: false
     property bool selectAllMode: true
     property var manualToggles: ({})
+    property var rawResults: []
 
     ListModel { id: exodosModel }
     ListModel { id: filteredPlatforms }
@@ -431,9 +435,12 @@ Dialog {
                         }
                         
                         var platformId = filteredPlatforms.get(idx).id
+                        var platformName = filteredPlatforms.get(idx).name
+                        console.log("[ExoDosImport] Selected Platform: " + platformName + " (ID: " + platformId + ")")
                         
                         if (platformId === "virtual_dos") {
                                 var newId = "platform-" + Math.random().toString(36).substr(2, 9)
+                                console.log("[ExoDosImport] Creating new eXoDOS platform with ID: " + newId)
                                 sidebar.platformModel.updateSystem(
                                     newId, "eXoDOS", "", "", "", "DOS", "assets/systems/exodos.png", ""
                                 )
@@ -441,37 +448,41 @@ Dialog {
                         }
 
                         var selectedRoms = []
-                        for (var i = 0; i < exodosModel.count; i++) {
-                            var item = exodosModel.get(i)
-                            var isManual = !!manualToggles[item.gameId]
+                        for (var i = 0; i < rawResults.length; i++) {
+                            var rawItem = rawResults[i]
+                            var mid = rawItem.id
+                            var isManual = !!manualToggles[mid]
                             var isSelected = selectAllMode ? !isManual : isManual
                             
                             if (isSelected) {
                                 var romObj = {
-                                    id: item.gameId,
+                                    id: rawItem.id,
                                     platform_id: platformId,
-                                    path: item.path,
-                                    filename: item.filename,
-                                    file_size: 0,
-                                    title: item.title,
-                                    tags: item.tags || "",
+                                    path: rawItem.path,
+                                    filename: rawItem.filename,
+                                    file_size: rawItem.file_size || 0,
+                                    title: rawItem.title || "",
+                                    tags: rawItem.tags || "",
+                                    developer: rawItem.developer || "",
+                                    publisher: rawItem.publisher || "",
+                                    genre: rawItem.genre || "",
+                                    release_date: rawItem.release_date || "",
+                                    description: rawItem.description || "",
                                     is_installed: true,
-                                    is_favorite: item.is_favorite === true
+                                    is_favorite: rawItem.is_favorite === true,
+                                    resources: rawItem.resources || []
                                 };
-                                if (item.developer) romObj.developer = item.developer;
-                                if (item.publisher) romObj.publisher = item.publisher;
-                                if (item.genre) romObj.genre = item.genre;
-                                if (item.release_date) romObj.release_date = item.release_date;
-                                if (item.description) romObj.description = item.description;
                                 selectedRoms.push(romObj);
                             }
                         }
                         
                         if (selectedRoms.length > 0) {
+                            var json = JSON.stringify(selectedRoms)
+                            console.log("[ExoDosImport] Sending JSON: " + json)
                             progressDialog.progress = 0.0
                             progressDialog.status = "Preparing to import " + selectedRoms.length + " games..."
                             progressDialog.open()
-                            storeBridge.import_exodos_games(JSON.stringify(selectedRoms), platformId, appSettings.exodosPath)
+                            storeBridge.import_exodos_games(json, platformId, appSettings.exodosPath)
                         }
                     }
                 }
