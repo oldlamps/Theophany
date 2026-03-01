@@ -123,6 +123,8 @@ struct SettingsData {
     pub use_custom_legendary: bool,
     #[serde(default)]
     pub custom_legendary_path: String,
+    #[serde(default = "default_install_location")]
+    pub default_install_location: String,
 }
 
 impl Default for SettingsData {
@@ -186,6 +188,7 @@ impl Default for SettingsData {
             details_width: default_details_width(),
             use_custom_legendary: false,
             custom_legendary_path: String::new(),
+            default_install_location: default_install_location(),
         }
     }
 }
@@ -202,6 +205,10 @@ fn default_sidebar_width() -> f32 { 250.0 }
 fn default_details_width() -> f32 { 350.0 }
 fn default_prefix() -> String { 
     crate::core::paths::get_default_prefix_dir().to_string_lossy().to_string() 
+}
+
+fn default_install_location() -> String {
+    crate::core::paths::get_default_install_dir().to_string_lossy().to_string()
 }
 
 fn default_hotkeys() -> HashMap<String, String> {
@@ -310,6 +317,7 @@ pub struct AppSettings {
     detailsWidth: qt_property!(f32; NOTIFY settingsChanged),
     useCustomLegendary: qt_property!(bool; NOTIFY settingsChanged),
     customLegendaryPath: qt_property!(QString; NOTIFY settingsChanged),
+    defaultInstallLocation: qt_property!(QString; NOTIFY settingsChanged),
     closeToTrayChanged: qt_signal!(),
     settingsChanged: qt_signal!(),
     defaultPlatformsJson: qt_property!(QString; CONST),
@@ -434,6 +442,7 @@ impl AppSettings {
             details_width: self.detailsWidth,
             use_custom_legendary: self.useCustomLegendary,
             custom_legendary_path: self.customLegendaryPath.to_string(),
+            default_install_location: self.defaultInstallLocation.to_string(),
         };
         
         if let Ok(json) = serde_json::to_string_pretty(&data) {
@@ -532,6 +541,7 @@ impl AppSettings {
                     self.detailsWidth = data.details_width;
                     self.useCustomLegendary = data.use_custom_legendary;
                     self.customLegendaryPath = QString::from(data.custom_legendary_path);
+                    self.defaultInstallLocation = QString::from(if data.default_install_location.is_empty() { default_install_location() } else { data.default_install_location });
                     
                     self.settingsChanged();
                 }
@@ -637,6 +647,7 @@ impl Default for AppSettings {
             detailsWidth: default_details_width(),
             useCustomLegendary: false,
             customLegendaryPath: Default::default(),
+            defaultInstallLocation: QString::from(default_install_location()),
             
             settingsChanged: Default::default(),
             closeToTrayChanged: Default::default(),
@@ -710,6 +721,7 @@ impl Default for AppSettings {
         s.detailsWidth = s.data.details_width;
         s.useCustomLegendary = s.data.use_custom_legendary;
         s.customLegendaryPath = QString::from(s.data.custom_legendary_path.clone());
+        s.defaultInstallLocation = QString::from(s.data.default_install_location.clone());
  
         s
     }

@@ -32,7 +32,7 @@ Dialog {
         }
     }
 
-    signal settingsApplied(int viewMode, bool showFilter, string defRegion, string themeName, string raUser, string raToken, bool raEnabled, bool showTray, bool closeToTray, bool aiEnabled, string ollamaUrl, string ollamaModel, bool detailsPreferVideo, bool ignoreTheInSort, string aiDescriptionPrompt, bool defaultIgnoreOnDelete, string activeMeta, string activeImage, string geminiKey, string openaiKey, string llmProvider, bool saveHeroicLocally, bool autoRescan, bool confirmQuit, real gridScale, bool useCustomYtdlp, string customYtdlpPath, string defaultProtonRunner, string defaultProtonPrefix, string defaultProtonWrapper, bool defaultProtonUseGamescope, bool defaultProtonUseMangohud, string defaultProtonGamescopeArgs, string defaultProtonGamescopeW, string defaultProtonGamescopeH, string defaultProtonGamescopeOutW, string defaultProtonGamescopeOutH, string defaultProtonGamescopeRefresh, int defaultProtonGamescopeScaling, int defaultProtonGamescopeUpscaler, bool defaultProtonGamescopeFullscreen, bool hidePlatformsSidebar, bool checkUpdates, bool useCustomLegendary, string customLegendaryPath)
+    signal settingsApplied(int viewMode, bool showFilter, string defRegion, string themeName, string raUser, string raToken, bool raEnabled, bool showTray, bool closeToTray, bool aiEnabled, string ollamaUrl, string ollamaModel, bool detailsPreferVideo, bool ignoreTheInSort, string aiDescriptionPrompt, bool defaultIgnoreOnDelete, string activeMeta, string activeImage, string geminiKey, string openaiKey, string llmProvider, bool saveHeroicLocally, bool autoRescan, bool confirmQuit, real gridScale, bool useCustomYtdlp, string customYtdlpPath, string defaultProtonRunner, string defaultProtonPrefix, string defaultProtonWrapper, bool defaultProtonUseGamescope, bool defaultProtonUseMangohud, string defaultProtonGamescopeArgs, string defaultProtonGamescopeW, string defaultProtonGamescopeH, string defaultProtonGamescopeOutW, string defaultProtonGamescopeOutH, string defaultProtonGamescopeRefresh, int defaultProtonGamescopeScaling, int defaultProtonGamescopeUpscaler, bool defaultProtonGamescopeFullscreen, bool hidePlatformsSidebar, bool checkUpdates, bool useCustomLegendary, string customLegendaryPath, string defaultInstallLocation)
 
     property int currentViewMode: 0
     property bool currentShowFilterBar: false
@@ -82,6 +82,7 @@ Dialog {
     property bool currentCheckForUpdatesOnStartup: true
     property bool currentUseCustomLegendary: false
     property string currentCustomLegendaryPath: ""
+    property string currentDefaultInstallLocation: ""
 
     property string ytdlpStatus: ""
     property bool ytdlpFound: false
@@ -516,6 +517,7 @@ Dialog {
 
         raUserField.text = tempRaUser
         raKeyField.text = tempRaToken
+        defaultInstallLocationField.text = currentDefaultInstallLocation
 
         refreshIgnoreList()
         refreshHotkeys()
@@ -1353,6 +1355,26 @@ Dialog {
 
                                  Rectangle { height: 1; Layout.fillWidth: true; color: Theme.border; opacity: 0.3 }
 
+                                 Label { text: "Epic Games Defaults"; color: Theme.secondaryText; font.bold: true }
+                                 RowLayout {
+                                     spacing: 12
+                                     Layout.fillWidth: true
+                                     Label { text: "Default Install Location:"; color: Theme.text; Layout.preferredWidth: 160 }
+                                     TheophanyTextField {
+                                         id: defaultInstallLocationField
+                                         Layout.fillWidth: true
+                                         text: root.currentDefaultInstallLocation
+                                         placeholderText: "~/Games"
+                                     }
+                                     TheophanyButton {
+                                         text: "📁"
+                                         Layout.preferredWidth: 36
+                                         onClicked: defaultInstallLocationDialog.open()
+                                     }
+                                 }
+
+                                 Rectangle { height: 1; Layout.fillWidth: true; color: Theme.border; opacity: 0.3 }
+
                                  Label { text: "Proton Defaults (New PC Collections)"; color: Theme.secondaryText; font.bold: true }
                                  ColumnLayout {
                                      spacing: 20
@@ -1683,7 +1705,8 @@ Dialog {
                                     hidePlatformsSidebarSwitch.checked,
                                     checkUpdatesSwitch.checked,
                                     customLegendarySwitch.checked,
-                                    legendaryPathField.text
+                                    legendaryPathField.text,
+                                    defaultInstallLocationField.text
                                 )
                                 root.accept()
                             }
@@ -1714,6 +1737,12 @@ Dialog {
         id: protonPrefixDialog
         title: "Select Wine Prefix Folder"
         onAccepted: protonPrefixField.text = selectedFolder.toString().replace("file://", "")
+    }
+
+    FolderDialog {
+        id: defaultInstallLocationDialog
+        title: "Select Default Install Location"
+        onAccepted: defaultInstallLocationField.text = selectedFolder.toString().replace("file://", "")
     }
 }
 

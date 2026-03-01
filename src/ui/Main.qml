@@ -881,8 +881,10 @@ ApplicationWindow {
                     detailsPanel.bannerSource = "file://" + data.assets["Banner"][0]
                 else detailsPanel.bannerSource = ""
                 
-                if (data.assets["Background"] && data.assets["Background"].length > 0) 
-                    window.globalBackgroundSource = "file://" + data.assets["Background"][0]
+                if (data.assets["Background"] && data.assets["Background"].length > 0) {
+                    var bgs = data.assets["Background"]
+                    window.globalBackgroundSource = "file://" + bgs[Math.floor(Math.random() * bgs.length)]
+                }
                 else {
                     var bg = gameModel.data(gameModel.index(index, 0), 275) || ""
                     window.globalBackgroundSource = bg
@@ -1803,7 +1805,15 @@ ApplicationWindow {
                     onImportProgress: (p, status) => {
                         importProgressDialog.progress = p
                         importProgressDialog.status = status
-                        if (!importProgressDialog.opened) importProgressDialog.open()
+                        
+                        if (importProgressDialog.minimized) {
+                            window.backgroundActivityId = "Import"
+                            window.backgroundActivityStatus = status
+                            window.backgroundActivityProgress = p
+                            window.hasBackgroundActivity = true
+                        } else if (!importProgressDialog.opened) {
+                            importProgressDialog.open()
+                        }
                     }
 
                     onAssetDownloadProgress: (msg) => {
@@ -1813,6 +1823,8 @@ ApplicationWindow {
                     onImportFinished: (pid, jsonIds) => {
                         importProgressDialog.progress = 1.0
                         importProgressDialog.status = "Import complete!"
+                        importProgressDialog.minimized = false
+                        window.hasBackgroundActivity = false
                         sidebar.refresh()
                         filterBar.refreshModels()
 
@@ -2892,12 +2904,13 @@ ApplicationWindow {
         currentCheckForUpdatesOnStartup: appSettings.checkForUpdatesOnStartup
         currentUseCustomLegendary: appSettings.useCustomLegendary
         currentCustomLegendaryPath: appSettings.customLegendaryPath
+        currentDefaultInstallLocation: appSettings.defaultInstallLocation
         platformModel: sidebar.platformModel
         
         availableRegions: gameModel.getRegions()
         availableScrapers: gameModel.getAvailableScrapers()
         
-        onSettingsApplied: (viewMode, showFilter, defRegion, themeName, raUser, raToken, raEnabled, showTray, closeToTray, aiEnabled, ollamaUrl, ollamaModel, detailsPreferVideo, ignoreTheInSort, aiDescriptionPrompt, defaultIgnoreOnDelete, activeMeta, activeImage, geminiKey, openaiKey, llmProvider, saveHeroicLocally, autoRescan, confirmQuit, gridScale, useCustomYtdlp, customYtdlpPath, defaultProtonRunner, defaultProtonPrefix, defaultProtonWrapper, defaultProtonUseGamescope, defaultProtonUseMangohud, defaultProtonGamescopeArgs, defaultProtonGamescopeW, defaultProtonGamescopeH, defaultProtonGamescopeOutW, defaultProtonGamescopeOutH, defaultProtonGamescopeRefresh, defaultProtonGamescopeScaling, defaultProtonGamescopeUpscaler, defaultProtonGamescopeFullscreen, hidePlatformsSidebar, checkUpdates, useCustomLegendary, customLegendaryPath) => {
+        onSettingsApplied: (viewMode, showFilter, defRegion, themeName, raUser, raToken, raEnabled, showTray, closeToTray, aiEnabled, ollamaUrl, ollamaModel, detailsPreferVideo, ignoreTheInSort, aiDescriptionPrompt, defaultIgnoreOnDelete, activeMeta, activeImage, geminiKey, openaiKey, llmProvider, saveHeroicLocally, autoRescan, confirmQuit, gridScale, useCustomYtdlp, customYtdlpPath, defaultProtonRunner, defaultProtonPrefix, defaultProtonWrapper, defaultProtonUseGamescope, defaultProtonUseMangohud, defaultProtonGamescopeArgs, defaultProtonGamescopeW, defaultProtonGamescopeH, defaultProtonGamescopeOutW, defaultProtonGamescopeOutH, defaultProtonGamescopeRefresh, defaultProtonGamescopeScaling, defaultProtonGamescopeUpscaler, defaultProtonGamescopeFullscreen, hidePlatformsSidebar, checkUpdates, useCustomLegendary, customLegendaryPath, defaultInstallLocation) => {
              // Update Settings
              appSettings.defaultView = viewMode
              appSettings.showFilterBar = showFilter
@@ -2955,6 +2968,7 @@ ApplicationWindow {
              appSettings.checkForUpdatesOnStartup = checkUpdates
              appSettings.useCustomLegendary = useCustomLegendary
              appSettings.customLegendaryPath = customLegendaryPath
+             appSettings.defaultInstallLocation = defaultInstallLocation
              
              appSettings.save()
              

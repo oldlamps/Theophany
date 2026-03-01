@@ -14,6 +14,7 @@ Dialog {
     property var platformModel
     property var storeBridge
     property string defaultPrefixDir: appSettings ? (appSettings.defaultProtonPrefix || "~/Games/theophany/default") : "~/Games/theophany/default"
+    property string defaultInstallDir: appSettings ? (appSettings.defaultInstallLocation || "~/Games") : "~/Games"
     
     // New Properties for UI mapping
     property string gameTitleStr: pendingAppId
@@ -36,7 +37,7 @@ Dialog {
     onOpened: {
         loading = true;
         gameTitleStr = "";
-        installPathInput.text = "";
+        installPathInput.text = defaultInstallDir;
         prefixInput.text = defaultPrefixDir;
         installSizeStr = "";
         cloudSavesStr = "";

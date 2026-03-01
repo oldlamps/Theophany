@@ -18,6 +18,9 @@ Dialog {
 
     property real progress: 0.0
     property string status: "Starting import..."
+    property bool minimized: false
+
+    onOpened: minimized = false
 
     background: Rectangle {
         color: Theme.secondaryBackground
@@ -41,9 +44,9 @@ Dialog {
             Layout.fillWidth: true; height: 1; color: Theme.border; opacity: 0.5 
         }
 
-        ColumnLayout {
+        RowLayout {
             Layout.fillWidth: true
-            spacing: 8
+            spacing: 12
             visible: root.progress < 1.0
 
             ProgressBar {
@@ -69,6 +72,14 @@ Dialog {
                     }
                 }
             }
+
+            Text {
+                text: Math.round(root.progress * 100) + "%"
+                color: Theme.accent
+                font.pixelSize: 14
+                font.bold: true
+                Layout.preferredWidth: 40
+            }
         }
 
         Text {
@@ -87,16 +98,10 @@ Dialog {
             text: root.progress >= 1.0 ? "Close" : "Run in Background"
             Layout.alignment: Qt.AlignRight
             primary: true
-            onClicked: root.close()
-        }
-        
-        Text {
-            text: Math.round(root.progress * 100) + "%"
-            color: Theme.accent
-            font.pixelSize: 14
-            font.bold: true
-            Layout.alignment: Qt.AlignRight
-            visible: root.progress < 1.0
+            onClicked: {
+                if (root.progress < 1.0) root.minimized = true
+                root.close()
+            }
         }
     }
 }

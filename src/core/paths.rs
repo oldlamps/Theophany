@@ -18,6 +18,15 @@ pub fn get_default_prefix_dir() -> PathBuf {
     path
 }
 
+pub fn get_default_install_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let path = PathBuf::from(home).join("Games");
+    if !path.exists() {
+        let _ = std::fs::create_dir_all(&path);
+    }
+    path
+}
+
 
 pub fn get_assets_dir() -> PathBuf {
     let path = get_data_dir().join("assets");
