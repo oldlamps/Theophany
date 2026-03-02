@@ -1352,39 +1352,56 @@ impl StoreBridge {
                                 let norm_name = target_cat.to_lowercase().replace(" ", "_");
                                 let cat_dir = base_image_path.join(target_cat);
                                 
-                                for ext in ["jpg", "png", "jpeg"] {
-                                    let asset_file = cat_dir.join(format!("{}.{}", norm_name, ext));
-                                    if asset_file.exists() {
-                                        let abs_path = asset_file.to_string_lossy().to_string();
-                                        let _ = db.insert_asset(&rom.id, target_cat, &abs_path);
-                                        
-                                        if rom_target == "box" {
-                                            let _ = db.get_connection().execute("UPDATE roms SET boxart_path = ?1 WHERE id = ?2", rusqlite::params![abs_path, rom.id]);
-                                        } else if rom_target == "background" {
-                                            let _ = db.get_connection().execute("UPDATE roms SET background_path = ?1 WHERE id = ?2", rusqlite::params![abs_path, rom.id]);
+                                if let Ok(entries) = std::fs::read_dir(&cat_dir) {
+                                    for entry in entries.flatten() {
+                                        let path = entry.path();
+                                        if path.is_file() {
+                                            let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+                                            if file_name.starts_with(&norm_name) {
+                                                let abs_path = path.to_string_lossy().to_string();
+                                                let _ = db.insert_asset(&rom.id, target_cat, &abs_path);
+                                                
+                                                if rom_target == "box" {
+                                                    let _ = db.get_connection().execute("UPDATE roms SET boxart_path = ?1 WHERE id = ?2", rusqlite::params![abs_path, rom.id]);
+                                                } else if rom_target == "background" {
+                                                    let _ = db.get_connection().execute("UPDATE roms SET background_path = ?1 WHERE id = ?2", rusqlite::params![abs_path, rom.id]);
+                                                }
+                                            }
                                         }
-                                        break;
                                     }
                                 }
                             }
                         }
 
-                        // 2. Metadata Sidecar (only update if a real sidecar exists)
+                        // 2. Metadata Sidecar (Ensure sidecar is updated/created)
                         let sidecar = crate::core::metadata_manager::MetadataManager::load_sidecar(&current_platform_folder, rom_stem);
-                        if let Some(mut meta) = sidecar {
-                            // Real sidecar found - merge and save
-                            meta.rom_id = rom.id.clone();
-                            if meta.title.is_none() || meta.title.as_deref() == Some("") { meta.title = rom.title.clone(); }
-                            if meta.description.is_none() || meta.description.as_deref() == Some("") { meta.description = rom.description.clone(); }
-                            let current_tags2 = meta.tags.as_deref().unwrap_or("");
-                            if current_tags2 == "eXoDOS" || current_tags2 == "" { meta.tags = rom.tags.clone(); }
-                            if meta.developer.is_none() || meta.developer.as_deref() == Some("") { meta.developer = rom.developer.clone(); }
-                            if meta.publisher.is_none() || meta.publisher.as_deref() == Some("") { meta.publisher = rom.publisher.clone(); }
-                            if meta.genre.is_none() || meta.genre.as_deref() == Some("") { meta.genre = rom.genre.clone(); }
-                            if meta.release_date.is_none() || meta.release_date.as_deref() == Some("") { meta.release_date = rom.release_date.clone(); }
-                            let _ = db.insert_metadata(&meta);
-                            let _ = MetadataManager::save_sidecar(&current_platform_folder, rom_stem, &meta);
-                        }
+                        let mut meta = if let Some(mut m) = sidecar {
+                            m.rom_id = rom.id.clone();
+                            if m.title.is_none() || m.title.as_deref() == Some("") { m.title = rom.title.clone(); }
+                            if m.description.is_none() || m.description.as_deref() == Some("") { m.description = rom.description.clone(); }
+                            let current_tags2 = m.tags.as_deref().unwrap_or("");
+                            if current_tags2 == "eXoDOS" || current_tags2 == "" { m.tags = rom.tags.clone(); }
+                            if m.developer.is_none() || m.developer.as_deref() == Some("") { m.developer = rom.developer.clone(); }
+                            if m.publisher.is_none() || m.publisher.as_deref() == Some("") { m.publisher = rom.publisher.clone(); }
+                            if m.genre.is_none() || m.genre.as_deref() == Some("") { m.genre = rom.genre.clone(); }
+                            if m.release_date.is_none() || m.release_date.as_deref() == Some("") { m.release_date = rom.release_date.clone(); }
+                            m
+                        } else {
+                            // Minimal: basic metadata from ROM if no sidecar exists
+                            let mut m = crate::core::models::GameMetadata::default();
+                            m.rom_id = rom.id.clone();
+                            m.title = rom.title.clone();
+                            m.description = rom.description.clone();
+                            m.tags = rom.tags.clone();
+                            m.developer = rom.developer.clone();
+                            m.publisher = rom.publisher.clone();
+                            m.genre = rom.genre.clone();
+                            m.release_date = rom.release_date.clone();
+                            m
+                        };
+                        
+                        let _ = db.insert_metadata(&meta);
+                        let _ = crate::core::metadata_manager::MetadataManager::save_sidecar(&current_platform_folder, rom_stem, &meta);
                         // (No sidecar = metadata already inserted correctly in Phase 1, skip disk write)
 
                         // Incremental Refresh every 500 games

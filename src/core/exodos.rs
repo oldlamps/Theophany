@@ -329,34 +329,31 @@ impl ExoDosManager {
                 let _ = fs::create_dir_all(&dest_dir);
             }
 
-            // We use the normalized target name for the final symlink filename
             let norm_name = target_cat.to_lowercase().replace(" ", "_");
 
-            // Check if we already have an asset for this category (even if it's a broken symlink)
-            let mut already_has_asset = false;
-            if let Ok(entries) = fs::read_dir(&dest_dir) {
-                for e in entries.flatten() {
-                    if e.file_name().to_string_lossy().starts_with(&norm_name) {
-                        already_has_asset = true;
-                        break;
-                    }
-                }
-            }
-
-            if already_has_asset {
-                continue; // Skip WalkDir scanning if we already have the asset!
-            }
-
-        for entry in WalkDir::new(&cat_path).into_iter().flatten() {
+            for entry in WalkDir::new(&cat_path).into_iter().flatten() {
                 if entry.file_type().is_file() {
                     let path = entry.path();
                     let file_name = path.file_name().unwrap_or_default().to_string_lossy();
                     
-                    // eXoDOS image filenames convert ' and : to _ so normalize the title the same way
                     let normalized_title = title.replace('\'', "_").replace(':', "_");
                     if file_name.starts_with(normalized_title.as_str()) {
                         let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
-                        let target_path = dest_dir.join(format!("{}.{}", norm_name, extension));
+                        
+                        // Extract suffix from file_name (e.g. "-01")
+                        let stem = path.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
+                        let suffix = if stem.len() > normalized_title.len() {
+                            &stem[normalized_title.len()..]
+                        } else {
+                            ""
+                        };
+
+                        let target_path = dest_dir.join(format!("{}{}.{}", norm_name, suffix, extension));
+                        
+                        if target_path.exists() || target_path.is_symlink() {
+                            continue;
+                        }
+
                         if !printed_log {
                             log::debug!("Linking artwork for {} from {:?} to {:?}", title, images_base_path, base_assets_dir);
                             printed_log = true;
@@ -364,15 +361,9 @@ impl ExoDosManager {
 
                         log::debug!("Linking artwork: {:?} -> {:?}", path, target_path);
                         #[cfg(unix)]
-                        if let Err(e) = symlink(path, &target_path) {
-                            log::error!("Failed to create symlink: {}", e);
-                        }
+                        let _ = symlink(path, &target_path);
                         #[cfg(not(unix))]
-                        if let Err(e) = fs::copy(path, &target_path) {
-                            log::error!("Failed to copy artwork: {}", e);
-                        }
-                        
-                        break; 
+                        let _ = fs::copy(path, &target_path);
                     }
                 }
             }

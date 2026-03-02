@@ -97,27 +97,31 @@ impl IGDBProvider {
         None
     }
 
-    fn map_website_category(cat: i32) -> String {
+    fn map_website_category(cat: i32) -> Option<String> {
         match cat {
-            1 => "Official Website",
-            2 => "Wikia",
-            3 => "Wikipedia",
-            4 => "Facebook",
-            5 => "Twitter",
-            6 => "Twitch",
-            8 => "Instagram",
-            9 => "YouTube",
-            10 => "iPhone",
-            11 => "iPad",
-            12 => "Android",
-            13 => "Steam",
-            14 => "Reddit",
-            15 => "Itch",
-            16 => "Epic Games",
-            17 => "GOG",
-            18 => "Discord",
-            _ => "Website",
-        }.to_string()
+            1 => Some("Official Website"),
+            2 => Some("Wikia"),
+            3 => Some("Wikipedia"),
+            4 => None, // Facebook
+            5 => None, // Twitter
+            6 => Some("Twitch"),
+            8 => None, // Instagram
+            9 => Some("YouTube"),
+            10 => None, // iPhone
+            11 => None, // iPad
+            12 => None, // Android
+            13 => None, // Steam (Handled on import)
+            14 => Some("Reddit"),
+            15 => Some("Itch"),
+            16 => None, // Epic Games (Handled on import)
+            17 => None, // GOG (Handled on import)
+            18 => Some("Discord"),
+            19 => None, // BlueSky
+            22 => None, // Xbox
+            23 => None, // PlayStation
+            24 => None, // Nintendo
+            _ => Some("Website"),
+        }.map(|s| s.to_string())
     }
 }
 
@@ -260,13 +264,14 @@ impl ScraperProvider for IGDBProvider {
                     for site in sites {
                         let cat_id = site["type"].as_i64().or(site["category"].as_i64());
                         if let (Some(u), Some(cat)) = (site["url"].as_str(), cat_id) {
-                            let mapped_label = Self::map_website_category(cat as i32);
-                            log::info!("[IGDB Search] Adding website: {} ({}) -> mapped as '{}'", u, cat, mapped_label);
-                            metadata.resources.push(crate::core::scraper::ScrapedResource {
-                                type_: "URL".to_string(),
-                                url: fix_url(u, ""), // Use the closure we already have for assets
-                                label: mapped_label,
-                            });
+                            if let Some(mapped_label) = Self::map_website_category(cat as i32) {
+                                log::info!("[IGDB Search] Adding website: {} ({}) -> mapped as '{}'", u, cat, mapped_label);
+                                metadata.resources.push(crate::core::scraper::ScrapedResource {
+                                    type_: "URL".to_string(),
+                                    url: fix_url(u, ""), // Use the closure we already have for assets
+                                    label: mapped_label,
+                                });
+                            }
                         }
                     }
                 }
@@ -397,13 +402,14 @@ impl ScraperProvider for IGDBProvider {
             for site in sites {
                 let cat_id = site["type"].as_i64().or(site["category"].as_i64());
                 if let (Some(u), Some(cat)) = (site["url"].as_str(), cat_id) {
-                    let mapped_label = Self::map_website_category(cat as i32);
-                    log::info!("[IGDB Fetch] Adding website: {} ({}) -> mapped as '{}'", u, cat, mapped_label);
-                    metadata.resources.push(crate::core::scraper::ScrapedResource {
-                        type_: "URL".to_string(),
-                        url: fix_url(u, ""),
-                        label: mapped_label,
-                    });
+                    if let Some(mapped_label) = Self::map_website_category(cat as i32) {
+                        log::info!("[IGDB Fetch] Adding website: {} ({}) -> mapped as '{}'", u, cat, mapped_label);
+                        metadata.resources.push(crate::core::scraper::ScrapedResource {
+                            type_: "URL".to_string(),
+                            url: fix_url(u, ""),
+                            label: mapped_label,
+                        });
+                    }
                 }
             }
         }

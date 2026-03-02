@@ -59,6 +59,21 @@ fn resolve_asset_path(path: &str) -> String {
     path.to_string()
 }
 
+fn normalize_url(url: &str) -> String {
+    let mut s = url.trim().to_lowercase();
+    
+    // Protocol normalization
+    if s.starts_with("http://") {
+        s = s.replace("http://", "https://");
+    }
+
+    // Strip all trailing slashes
+    while s.ends_with('/') {
+        s.pop();
+    }
+    s
+}
+
 fn resolve_local_path(path: &str) -> String {
     if path.is_empty() {
         return "".to_string();
@@ -1956,7 +1971,9 @@ impl GameListModel {
                               res.get("label").and_then(|v| v.as_str()),
                               res.get("type").and_then(|v| v.as_str())
                           ) {
-                              if let Ok(exists) = db.resource_exists(&rom_id, url) {
+                              let normalized_url = normalize_url(url);
+                              if let Ok(existing_resources) = db.get_resources(&rom_id) {
+                                  let exists = existing_resources.iter().any(|r| normalize_url(&r.url) == normalized_url);
                                   if !exists {
                                       let new_res = crate::core::models::GameResource {
                                           id: uuid::Uuid::new_v4().to_string(),
@@ -4373,9 +4390,10 @@ impl GameListModel {
         
         if let Ok(db) = DbManager::open(&db_path) {
             // Check if exists first
-            if let Ok(exists) = db.resource_exists(&rom_id, &url) {
-                if exists {
-                    log::warn!("Resource already exists: {} ({})", url, type_);
+            let normalized_url = normalize_url(&url);
+            if let Ok(existing_resources) = db.get_resources(&rom_id) {
+                if existing_resources.iter().any(|r| normalize_url(&r.url) == normalized_url) {
+                    log::warn!("Resource already exists (normalized): {} ({})", url, type_);
                     return;
                 }
             }
