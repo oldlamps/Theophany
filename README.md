@@ -69,7 +69,7 @@
 
 **Download the binary**
 
-Download the [latest release](/releases/latest) from the releases page.
+Download the [latest release](https://github.com/oldlamps/theophany/releases/latest) from the releases page.
 
 Directly from your console
 
