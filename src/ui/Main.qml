@@ -1562,6 +1562,17 @@ ApplicationWindow {
                                      if (gameModel) gameModel.setInstalledOnly(false)
                                  }
                              }
+
+                             Repeater {
+                                 model: filterBar.selectedTags
+                                 FilterTag {
+                                     label: "Tag"
+                                     value: modelData
+                                     onCleared: {
+                                         filterBar.toggleTag(modelData, false)
+                                     }
+                                 }
+                             }
                          }
                          
                          Item { Layout.fillWidth: true }

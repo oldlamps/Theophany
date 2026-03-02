@@ -18,6 +18,9 @@ Rectangle {
     property alias ratingBox: ratingBox
     property alias installedButton: installedButton
     property alias favButton: favButton
+    property var selectedTags: []
+    property var allTags: []
+
     
     // property alias searchFieldRef: searchField // Removed, moving to Top Bar
     
@@ -30,7 +33,8 @@ Rectangle {
                                        (yearBox.currentIndex > 0) || 
                                        (ratingBox.currentIndex > 0) || 
                                        (installedButton.checked) ||
-                                       (favButton.checked)
+                                       (favButton.checked) ||
+                                       (selectedTags.length > 0)
 
     function clearFilters() {
         genreBox.currentIndex = 0
@@ -41,6 +45,7 @@ Rectangle {
         ratingBox.currentIndex = 0
         installedButton.checked = false
         favButton.checked = false
+        selectedTags = []
         
         if (gameModel) {
             gameModel.setGenreFilter("All Genres")
@@ -51,7 +56,24 @@ Rectangle {
             gameModel.setRatingFilter(0)
             gameModel.setInstalledOnly(false)
             gameModel.setFavoritesOnly(false)
+            gameModel.clearTagFilters()
         }
+    }
+
+    function toggleTag(tag, active) {
+        var tags = selectedTags
+        if (active) {
+            if (tags.indexOf(tag) === -1) {
+                tags.push(tag)
+            }
+        } else {
+            var idx = tags.indexOf(tag)
+            if (idx >= 0) {
+                tags.splice(idx, 1)
+            }
+        }
+        selectedTags = tags.slice() // Trigger re-evaluation
+        if (gameModel) gameModel.setTagFilter(tag, active)
     }
 
     RowLayout {
@@ -198,6 +220,90 @@ Rectangle {
             }
         }
 
+        // Tags Button & Popover
+        TheophanyButton {
+            id: tagsButton
+            text: selectedTags.length > 0 ? "Tags (" + selectedTags.length + ") ▼" : "Tags ▼"
+            Layout.preferredWidth: 120
+            Layout.preferredHeight: 35
+            primary: selectedTags.length > 0
+            onClicked: tagPopup.open()
+            
+            Popup {
+                id: tagPopup
+                y: tagsButton.height + 5
+                width: 250
+                height: 350
+                padding: 10
+                background: Rectangle {
+                    color: Theme.background
+                    border.color: Theme.accent
+                    border.width: 1
+                    radius: 4
+                }
+                
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+                    
+                    TheophanyTextField {
+                        id: tagSearch
+                        Layout.fillWidth: true
+                        placeholderText: "Search tags..."
+                        onTextChanged: tagList.model = root.allTags.filter(t => t.toLowerCase().includes(text.toLowerCase()))
+                    }
+                    
+                    ListView {
+                        id: tagList
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        model: root.allTags
+                        spacing: 2
+                        
+                        delegate: Item {
+                            width: tagList.width
+                            height: 30
+                            
+                            RowLayout {
+                                anchors.fill: parent
+                                spacing: 10
+                                
+                                TheophanyCheckBox {
+                                    id: cb
+                                    checked: root.selectedTags.indexOf(modelData) >= 0
+                                    onToggled: root.toggleTag(modelData, checked)
+                                }
+                                
+                                Text {
+                                    text: modelData
+                                    color: Theme.text
+                                    font.pixelSize: 13
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        onClicked: root.toggleTag(modelData, !cb.checked)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    TheophanyButton {
+                        text: "Clear Tags"
+                        Layout.fillWidth: true
+                        visible: selectedTags.length > 0
+                        onClicked: {
+                            root.selectedTags = []
+                            if (gameModel) gameModel.clearTagFilters()
+                            tagPopup.close()
+                        }
+                    }
+                }
+            }
+        }
+
         Item { Layout.fillWidth: true }
     }
 
@@ -215,6 +321,7 @@ Rectangle {
             developerBox.model = gameModel.getDevelopers()
             publisherBox.model = gameModel.getPublishers()
             yearBox.model = gameModel.getYears()
+            allTags = gameModel.getTags()
         }
     }
 

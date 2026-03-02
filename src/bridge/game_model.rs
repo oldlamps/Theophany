@@ -126,6 +126,7 @@ pub struct GameListModel {
     current_platform_type_filter: RefCell<Option<String>>,
     current_recent_only: RefCell<bool>,
     current_installed_only: RefCell<bool>,
+    current_tag_filters: RefCell<Vec<String>>,
     
     pub sortMethod: qt_property!(QString; NOTIFY sortMethodChanged),
     pub sortMethodChanged: qt_signal!(),
@@ -184,6 +185,9 @@ pub struct GameListModel {
     setPublisherFilter: qt_method!(fn(&mut self, publisher: String)),
     setYearFilter: qt_method!(fn(&mut self, year: String)),
     setRatingFilter: qt_method!(fn(&mut self, rating: i32)),
+    setTagFilter: qt_method!(fn(&mut self, tag: String, active: bool)),
+    clearTagFilters: qt_method!(fn(&mut self)),
+    getTags: qt_method!(fn(&mut self) -> QVariantList),
     setFavoritesOnly: qt_method!(fn(&mut self, favorites_only: bool)),
     setSortMethod: qt_method!(fn(&mut self, method: String)),
     setRecentOnly: qt_method!(fn(&mut self, recent_only: bool)),
@@ -469,6 +473,7 @@ impl GameListModel {
         let recent_only = *self.current_recent_only.borrow();
         let ignore_the = *self.ignore_the_in_sort.borrow();
         let installed_only = *self.current_installed_only.borrow();
+        let tag_filters = self.current_tag_filters.borrow().clone();
 
         // Unique ID for this request to avoid race conditions
         let my_id = {
@@ -487,19 +492,7 @@ impl GameListModel {
             let mut total_library_rec = 0;
 
             if let Ok(db) = DbManager::open(&db_path) {
-                // INDEPENDENT RECENTLY PLAYED LOGIC:
-                // If "Recently Played" is selected (indicated by recent_only being TRUE,
-                // which is now exclusively set via batchSetFilters for the recent view),
-                // we IGNORE all other filters (platform, genre, etc.) and just poll the DB.
-                if recent_only {
-                     if let Ok(recent_roms) = db.get_library_view("Recent", None) {
-                        new_roms = recent_roms;
-                        total_library_rec = new_roms.len() as i32;
-                     }
-                } else {
-                    let conn = db.get_connection();
-                // ... logic to build query ...
-                // I will use a simplified version for this chunk but it will be full content
+                let conn = db.get_connection();
                 let mut query = String::from("SELECT r.id, r.platform_id, r.path, r.filename, m.title, m.region, p.name, p.platform_type, COALESCE(r.boxart_path, a.local_path), r.date_added, m.play_count, m.total_play_time, m.last_played, p.icon, m.is_favorite, m.genre, m.developer, m.publisher, m.rating, m.tags, m.release_date, COALESCE(r.icon_path, a_icon.local_path), COALESCE(r.background_path, a_bg.local_path, a_ss.local_path), m.is_installed
                                               FROM roms r 
                                               LEFT JOIN metadata m ON r.id = m.rom_id 
@@ -597,6 +590,14 @@ impl GameListModel {
 
                 if recent_only {
                     query.push_str(" AND m.last_played > 0");
+                }
+
+                // Tag Filter (Multi-select AND logic)
+                if !tag_filters.is_empty() {
+                    for tag in tag_filters.iter() {
+                        query.push_str(" AND instr(', ' || m.tags || ', ', ', ' || ? || ', ') > 0");
+                        params.push(Box::new(tag.clone()));
+                    }
                 }
 
                 query.push_str(" GROUP BY r.id");
@@ -700,7 +701,6 @@ impl GameListModel {
                         }
                     }
                 } // End of complex query block
-                } // End of else block
                 
                 // Calculate Total Library Count (Common)
                 if let Ok(count) = db.get_connection().query_row("SELECT COUNT(*) FROM roms", [], |row| row.get(0)) {
@@ -870,6 +870,31 @@ impl GameListModel {
     fn setRatingFilter(&mut self, rating: i32) {
         *self.current_rating_filter.borrow_mut() = rating;
         self.refresh();
+    }
+
+    fn setTagFilter(&mut self, tag: String, active: bool) {
+        let mut filters = self.current_tag_filters.borrow_mut();
+        if active {
+            if !filters.contains(&tag) {
+                filters.push(tag);
+            }
+        } else {
+            filters.retain(|t| t != &tag);
+        }
+        drop(filters);
+        self.refresh();
+    }
+
+    fn clearTagFilters(&mut self) {
+        self.current_tag_filters.borrow_mut().clear();
+        self.refresh();
+    }
+
+    fn getTags(&mut self) -> QVariantList {
+        let mut result = QVariantList::default();
+        let all = self.get_metadata_list(|db| db.get_all_tags());
+        for i in 0..all.len() { result.push(all[i].clone()); }
+        result
     }
 
     fn setFavoritesOnly(&mut self, favorites_only: bool) {
@@ -2920,11 +2945,12 @@ impl GameListModel {
         let path_str = self.db_path.borrow().clone();
         if path_str.is_empty() { return; }
 
-        let is_launcher = (url.ends_with(".command") || url.ends_with(".sh"))
+        let is_alternate_launcher = (url.ends_with(".command") || url.ends_with(".sh"))
             && url.contains("Alternate Launcher");
+        let is_script = url.ends_with(".command") || url.ends_with(".sh");
 
-        if is_launcher {
-            // For launcher scripts, track playtime the same way launchGame does
+        if is_alternate_launcher {
+            // Alternate Launcher: launch + track playtime
             use crate::core::launcher::Launcher;
             let tx = self.tx.borrow().as_ref().map(|s| s.clone());
 
@@ -2960,6 +2986,15 @@ impl GameListModel {
                             let _ = sender.send(AsyncResponse::PlaytimeUpdated(rom_id_thread));
                         }
                     });
+                },
+                Err(e) => log::error!("Failed to launch script resource: {}", e),
+            }
+        } else if is_script {
+            // Other .command/.sh resources (magazines, extras): launch the same way but no playtime tracking
+            use crate::core::launcher::Launcher;
+            match Launcher::launch("%ROM%", &url, None, None, None, false) {
+                Ok(mut child) => {
+                    std::thread::spawn(move || { let _ = child.wait(); });
                 },
                 Err(e) => log::error!("Failed to launch script resource: {}", e),
             }

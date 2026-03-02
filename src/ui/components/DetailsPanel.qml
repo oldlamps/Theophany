@@ -1938,7 +1938,8 @@ Rectangle {
                                         var icon = "🔗"
                                         if (t.includes("wikipedia")) icon = "🌐"
                                         else if (t.includes("mobygames")) icon = "🎮"
-                                        else if (t.includes("manual")) icon = "📄"
+                                        else if (t.includes("manual")) icon = "📖"
+                                        else if (t.includes("magazine")) icon = "🗞️"
                                         else if (t.includes("video") || t.includes("trailer")) icon = "🎬"
                                         else if (modelData.url.startsWith("file://")) icon = "📁"
                                         
