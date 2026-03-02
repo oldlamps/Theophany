@@ -1597,6 +1597,7 @@ impl GameListModel {
                     }
 
                     let _ = db.insert_metadata(&metadata);
+                    let _ = MetadataManager::save_sidecar(&platform_folder, rom_stem, &metadata);
 
                     // Assets
                     // Note: discover_assets_internal is a &self method, so we can't call it easily here in static context
@@ -2453,6 +2454,7 @@ impl GameListModel {
                                 }
 
                                 let _ = db.insert_metadata(&metadata);
+                                let _ = MetadataManager::save_sidecar(&platform_folder, rom_stem, &metadata);
 
                                 // Automatic Asset Discovery
                                 self.discover_assets_internal(&db, &rom.id, &platform_folder, &rom.filename);
@@ -2830,11 +2832,33 @@ impl GameListModel {
                                      
                                      // Assume ExoDOS games (.command) are installed after first launch
                                      if rom_path_thread.ends_with(".command") {
+                                         let is_first_install = !meta.is_installed;
                                          meta.is_installed = true;
-                                         
-                                         // Update ROM table as well to immediately reflect UI state
                                          let _ = db.get_connection().execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id_thread]);
+
+                                         // Check for a manual PDF only on first install
+                                         if is_first_install {
+                                             let exodos_path = crate::bridge::settings::AppSettings::get_exodos_path();
+                                             if !exodos_path.is_empty() {
+                                                 if let Some(stem) = std::path::Path::new(&rom_path_thread).file_stem().and_then(|s| s.to_str()) {
+                                                     let pdf = std::path::Path::new(&exodos_path).join("Manuals").join("MS-DOS").join(format!("{}.pdf", stem));
+                                                     if pdf.exists() {
+                                                         log::info!("[ExoDOS] Found manual for {}: {:?}", rom_id_thread, pdf);
+                                                         let resource = crate::core::models::GameResource {
+                                                             id: uuid::Uuid::new_v4().to_string(),
+                                                             rom_id: rom_id_thread.clone(),
+                                                             type_: "manual".to_string(),
+                                                             url: pdf.to_string_lossy().to_string(),
+                                                             label: Some(stem.to_string()),
+                                                         };
+                                                         let _ = db.insert_resource(&resource);
+                                                     }
+                                                 }
+                                             }
+                                         }
                                      }
+
+
                                      
                                      if let Err(e) = db.insert_metadata(&meta) {
                                          log::error!("Failed to update playtime metadata: {}", e);
@@ -2896,7 +2920,8 @@ impl GameListModel {
         let path_str = self.db_path.borrow().clone();
         if path_str.is_empty() { return; }
 
-        let is_launcher = url.ends_with(".command") || url.ends_with(".sh");
+        let is_launcher = (url.ends_with(".command") || url.ends_with(".sh"))
+            && url.contains("Alternate Launcher");
 
         if is_launcher {
             // For launcher scripts, track playtime the same way launchGame does

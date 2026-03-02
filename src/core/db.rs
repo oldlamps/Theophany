@@ -11,6 +11,7 @@ impl DbManager {
     /// Simply opens a connection without initializing the schema (Fast)
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let conn = Connection::open(path)?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")?;
         conn.execute("PRAGMA foreign_keys = ON;", [])?;
         Ok(DbManager { conn })
     }

@@ -377,6 +377,16 @@ impl AppSettings {
         }
         (String::new(), String::new(), String::new(), false, false, String::new(), String::new(), String::new(), String::new(), String::new(), String::new(), 0, 0, false)
     }
+
+    pub fn get_exodos_path() -> String {
+        let path = crate::core::paths::get_config_dir().join("settings.json");
+        if let Ok(content) = fs::read_to_string(&path) {
+            if let Ok(data) = serde_json::from_str::<SettingsData>(&content) {
+                return data.exodos_path;
+            }
+        }
+        String::new()
+    }
 }
 
 impl AppSettings {

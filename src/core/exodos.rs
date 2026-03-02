@@ -71,48 +71,64 @@ impl ExoDosManager {
                                     let rom_id = format!("exodos-{}", game_folder_name.replace(" ", "-").to_lowercase());
                                     let mut resources = Vec::new();
 
-                                    // Scan for Extras subfolder (be case-insensitive for folder name)
-                                    let mut extras_path = game_dir.join("Extras");
-                                    if !extras_path.exists() {
-                                        extras_path = game_dir.join("extras");
-                                    }
+                                     let mut extras_path = game_dir.join("Extras");
+                                     if !extras_path.exists() {
+                                         extras_path = game_dir.join("extras");
+                                     }
 
-                                    if extras_path.exists() && extras_path.is_dir() {
-                                        log::info!("Found Extras folder at: {:?}", extras_path);
-                                        if let Ok(extras_entries) = std::fs::read_dir(&extras_path) {
-                                            for extra_entry in extras_entries.flatten() {
-                                                let extra_path = extra_entry.path();
-                                                if extra_path.is_file() {
-                                                    let extra_filename = extra_path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                                                    
-                                                    // Alternate Launcher check
-                                                     if extra_filename == "Alternate Launcher.command" {
-                                                         log::info!("Found Alternate Launcher for: {}", title);
-                                                         resources.push(crate::core::models::GameResource {
-                                                             id: Uuid::new_v4().to_string(),
-                                                             rom_id: rom_id.clone(),
-                                                             type_: "launcher".to_string(),
-                                                             url: extra_path.to_string_lossy().to_string(),
-                                                             label: Some("Alternate Launcher".to_string()),
-                                                         });
-                                                     } else if !extra_filename.starts_with("Alternate Launcher") {
-                                                         // General resource - default to generic as requested
-                                                         // We EXPLICITLY ignore "Alternate Launcher.bat" and "Alternate Launcher.bsh"
-                                                         log::debug!("Found extra resource: {}", extra_filename);
-                                                         resources.push(crate::core::models::GameResource {
-                                                             id: Uuid::new_v4().to_string(),
-                                                             rom_id: rom_id.clone(),
-                                                             type_: "generic".to_string(),
-                                                             url: extra_path.to_string_lossy().to_string(),
-                                                             label: Some(extra_path.file_stem().unwrap_or_default().to_string_lossy().to_string()),
-                                                         });
+                                     // Alternate Launcher always exists for eXoDOS games — add it without scanning
+                                     resources.push(crate::core::models::GameResource {
+                                         id: Uuid::new_v4().to_string(),
+                                         rom_id: rom_id.clone(),
+                                         type_: "launcher".to_string(),
+                                         url: extras_path.join("Alternate Launcher.command").to_string_lossy().to_string(),
+                                         label: Some("Alternate Launcher".to_string()),
+                                     });
+
+                                     // Still scan Extras for other resources (manuals, maps, etc.)
+                                     if extras_path.exists() && extras_path.is_dir() {
+                                         if let Ok(extras_entries) = std::fs::read_dir(&extras_path) {
+                                             for extra_entry in extras_entries.flatten() {
+                                                 let extra_path = extra_entry.path();
+                                                 if extra_path.is_file() {
+                                                     let extra_filename = extra_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                                                     // Skip Alternate Launcher variants — already added above
+                                                     if extra_filename.starts_with("Alternate Launcher") {
+                                                         continue;
                                                      }
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        log::debug!("No Extras folder found in: {:?}", game_dir);
-                                    }
+                                                     log::debug!("Found extra resource: {}", extra_filename);
+                                                     resources.push(crate::core::models::GameResource {
+                                                         id: Uuid::new_v4().to_string(),
+                                                         rom_id: rom_id.clone(),
+                                                         type_: "generic".to_string(),
+                                                         url: extra_path.to_string_lossy().to_string(),
+                                                         label: Some(extra_path.file_stem().unwrap_or_default().to_string_lossy().to_string()),
+                                                     });
+                                                 }
+                                             }
+                                         }
+                                     }
+
+                                     // Scan Magazines folder for .command files
+                                     let magazines_path = game_dir.join("Magazines");
+                                     if magazines_path.exists() && magazines_path.is_dir() {
+                                         if let Ok(mag_entries) = std::fs::read_dir(&magazines_path) {
+                                             for mag_entry in mag_entries.flatten() {
+                                                 let mag_path = mag_entry.path();
+                                                 if mag_path.is_file() && mag_path.extension().and_then(|e| e.to_str()) == Some("command") {
+                                                     let label = mag_path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                                                     log::debug!("Found magazine: {}", label);
+                                                     resources.push(crate::core::models::GameResource {
+                                                         id: Uuid::new_v4().to_string(),
+                                                         rom_id: rom_id.clone(),
+                                                         type_: "magazine".to_string(),
+                                                         url: mag_path.to_string_lossy().to_string(),
+                                                         label: Some(label),
+                                                     });
+                                                 }
+                                             }
+                                         }
+                                     }
 
                                     roms.push(Rom {
                                         id: rom_id,
@@ -331,12 +347,14 @@ impl ExoDosManager {
                 continue; // Skip WalkDir scanning if we already have the asset!
             }
 
-            for entry in WalkDir::new(&cat_path).into_iter().flatten() {
+        for entry in WalkDir::new(&cat_path).into_iter().flatten() {
                 if entry.file_type().is_file() {
                     let path = entry.path();
                     let file_name = path.file_name().unwrap_or_default().to_string_lossy();
                     
-                    if file_name.starts_with(title) {
+                    // eXoDOS image filenames convert ' and : to _ so normalize the title the same way
+                    let normalized_title = title.replace('\'', "_").replace(':', "_");
+                    if file_name.starts_with(normalized_title.as_str()) {
                         let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
                         let target_path = dest_dir.join(format!("{}.{}", norm_name, extension));
                         if !printed_log {
@@ -354,9 +372,6 @@ impl ExoDosManager {
                             log::error!("Failed to copy artwork: {}", e);
                         }
                         
-                        // If it's a screenshot or background, we might have multiple files.
-                        // But for simplicity of the initial import, we break after the first match per Exo category.
-                        // Since we have multiple Exo categories mapping to one target, we'll get one file from each source folder if it exists.
                         break; 
                     }
                 }

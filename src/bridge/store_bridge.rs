@@ -929,6 +929,7 @@ impl StoreBridge {
                                     }
 
                                     let _ = db.insert_metadata(&meta);
+                                    let _ = MetadataManager::save_sidecar(&platform_folder, rom_stem, &meta);
 
                                     // Asset Discovery
                                     let data_dir = crate::core::paths::get_data_dir();
@@ -1263,39 +1264,27 @@ impl StoreBridge {
                     for rom in &roms {
                         let mut final_rom = rom.clone();
                         final_rom.platform_id = platform_id.clone();
-                        let rom_stem = std::path::Path::new(&final_rom.filename)
-                            .file_stem().and_then(|s| s.to_str()).unwrap_or(&final_rom.filename);
                         
-                        let current_platform_folder = if platform_id == "DOS" || platform_id == "dos" { "DOS" } else { &platform_folder };
+                        // Phase 1: fast insert — no disk I/O (no sidecar), use ROM data directly
+                        final_rom.is_installed = Some(false); // default; Phase 2 will fix from sidecars
                         
-                        let mut meta = crate::core::metadata_manager::MetadataManager::load_sidecar(current_platform_folder, rom_stem)
-                            .unwrap_or_else(|| crate::core::models::GameMetadata::default());
-
-                        let is_inst = meta.is_installed || false; // default false for exodos if no sidecar
-                        final_rom.is_installed = Some(is_inst);
-                        
-                        log::info!("[StoreBridge] Inserting ROM: {} ({})", final_rom.title.as_deref().unwrap_or("Unknown"), final_rom.id);
+                        log::debug!("[StoreBridge] Inserting ROM: {} ({})", final_rom.title.as_deref().unwrap_or("Unknown"), final_rom.id);
                         if let Err(e) = db.insert_rom(&final_rom) {
                             log::error!("[StoreBridge] Failed to insert ROM {}: {}", final_rom.id, e);
                             continue;
                         }
 
-                        // Basic metadata so it shows up
+                        // Basic metadata from ROM data only (no sidecar disk read)
+                        let mut meta = crate::core::models::GameMetadata::default();
                         meta.rom_id = final_rom.id.clone();
-                        if meta.title.is_none() || meta.title.as_deref() == Some("") { meta.title = final_rom.title.clone(); }
-                        
-                        // Clear out old "ExoDOS" tags strictly, otherwise apply the fallback
-                        let current_tags = meta.tags.as_deref().unwrap_or("");
-                        if current_tags == "eXoDOS" || current_tags == "" {
-                            meta.tags = final_rom.tags.clone();
-                        }
-
-                        if meta.developer.is_none() || meta.developer.as_deref() == Some("") { meta.developer = final_rom.developer.clone(); }
-                        if meta.publisher.is_none() || meta.publisher.as_deref() == Some("") { meta.publisher = final_rom.publisher.clone(); }
-                        if meta.genre.is_none() || meta.genre.as_deref() == Some("") { meta.genre = final_rom.genre.clone(); }
-                        if meta.release_date.is_none() || meta.release_date.as_deref() == Some("") { meta.release_date = final_rom.release_date.clone(); }
-                        if meta.description.is_none() || meta.description.as_deref() == Some("") { meta.description = final_rom.description.clone(); }
-                        meta.is_installed = is_inst;
+                        meta.title = final_rom.title.clone();
+                        meta.tags = final_rom.tags.clone();
+                        meta.developer = final_rom.developer.clone();
+                        meta.publisher = final_rom.publisher.clone();
+                        meta.genre = final_rom.genre.clone();
+                        meta.release_date = final_rom.release_date.clone();
+                        meta.description = final_rom.description.clone();
+                        meta.is_installed = false;
                         
                         if let Err(e) = db.insert_metadata(&meta) {
                             log::error!("[StoreBridge] Failed to insert metadata for {}: {}", final_rom.id, e);
@@ -1315,6 +1304,7 @@ impl StoreBridge {
                         Err(e) => log::error!("[StoreBridge] Failed to commit eXoDOS import transaction: {}", e),
                     }
                 }
+
                 
                 // Notify UI that library should be refreshed to show new entries
                 let _ = tx.send(StoreMsg::InstallFinished("exodos_immediate".to_string(), true, "Games added to library, processing artwork...".to_string()));
@@ -1379,28 +1369,26 @@ impl StoreBridge {
                             }
                         }
 
-                        // 2. Metadata Sidecar
-                        let mut meta = crate::core::metadata_manager::MetadataManager::load_sidecar(&current_platform_folder, rom_stem)
-                            .unwrap_or_else(|| crate::core::models::GameMetadata::default());
-                        
-                        meta.rom_id = rom.id.clone();
-                        if meta.title.is_none() || meta.title.as_deref() == Some("") { meta.title = rom.title.clone(); }
-                        if meta.description.is_none() || meta.description.as_deref() == Some("") { meta.description = rom.description.clone(); }
-                        
-                        let current_tags2 = meta.tags.as_deref().unwrap_or("");
-                        if current_tags2 == "eXoDOS" || current_tags2 == "" {
-                            meta.tags = rom.tags.clone();
+                        // 2. Metadata Sidecar (only update if a real sidecar exists)
+                        let sidecar = crate::core::metadata_manager::MetadataManager::load_sidecar(&current_platform_folder, rom_stem);
+                        if let Some(mut meta) = sidecar {
+                            // Real sidecar found - merge and save
+                            meta.rom_id = rom.id.clone();
+                            if meta.title.is_none() || meta.title.as_deref() == Some("") { meta.title = rom.title.clone(); }
+                            if meta.description.is_none() || meta.description.as_deref() == Some("") { meta.description = rom.description.clone(); }
+                            let current_tags2 = meta.tags.as_deref().unwrap_or("");
+                            if current_tags2 == "eXoDOS" || current_tags2 == "" { meta.tags = rom.tags.clone(); }
+                            if meta.developer.is_none() || meta.developer.as_deref() == Some("") { meta.developer = rom.developer.clone(); }
+                            if meta.publisher.is_none() || meta.publisher.as_deref() == Some("") { meta.publisher = rom.publisher.clone(); }
+                            if meta.genre.is_none() || meta.genre.as_deref() == Some("") { meta.genre = rom.genre.clone(); }
+                            if meta.release_date.is_none() || meta.release_date.as_deref() == Some("") { meta.release_date = rom.release_date.clone(); }
+                            let _ = db.insert_metadata(&meta);
+                            let _ = MetadataManager::save_sidecar(&current_platform_folder, rom_stem, &meta);
                         }
-                        
-                        if meta.developer.is_none() || meta.developer.as_deref() == Some("") { meta.developer = rom.developer.clone(); }
-                        if meta.publisher.is_none() || meta.publisher.as_deref() == Some("") { meta.publisher = rom.publisher.clone(); }
-                        if meta.genre.is_none() || meta.genre.as_deref() == Some("") { meta.genre = rom.genre.clone(); }
-                        if meta.release_date.is_none() || meta.release_date.as_deref() == Some("") { meta.release_date = rom.release_date.clone(); }
-                        
-                        let _ = MetadataManager::save_sidecar(&current_platform_folder, rom_stem, &meta);
+                        // (No sidecar = metadata already inserted correctly in Phase 1, skip disk write)
 
-                        // Incremental Refresh every 25 games
-                        if i > 0 && i % 25 == 0 {
+                        // Incremental Refresh every 500 games
+                        if i > 0 && i % 500 == 0 {
                             let _ = tx.send(StoreMsg::InstallFinished("exodos_immediate".to_string(), true, "Batch update".to_string()));
                         }
                     }

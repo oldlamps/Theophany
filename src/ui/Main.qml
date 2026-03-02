@@ -3236,7 +3236,19 @@ ApplicationWindow {
                     selectedJson
                 )
             } else {
-                 gameModel.commitSystemImport(
+                 var newId = "platform-" + Math.random().toString(36).substr(2, 9)
+                 sidebar.platformModel.updateSystem(
+                    newId,
+                    tempParams.name,
+                    tempParams.ext,
+                    tempParams.cmd || "",
+                    tempParams.emuId || "",
+                    tempParams.pType || "",
+                    tempParams.icon || "",
+                    tempParams.pcConfig || ""
+                 )
+                 gameModel.commitContentImport(
+                    newId,
                     tempParams.name,
                     tempParams.ext,
                     tempParams.path,
