@@ -67,6 +67,18 @@
 
 ### Installation & Running
 
+**Download the binary**
+
+Download the [latest release](/releases/latest) from the releases page.
+
+Directly from your console
+
+```bash
+  wget https://github.com/oldlamps/theophany/releases/download/latest/theophany_linux_x64
+  mv ./theophany_linux_x64 ~/.local/bin/theophany
+  theophany
+```
+
 **Arch Linux (AUR)**
 ```bash
   yay -S theophany-bin
