@@ -613,7 +613,7 @@ Dialog {
                     Label {
                         Layout.alignment: Qt.AlignHCenter
                         Layout.bottomMargin: 20
-                        text: "v" + rootAppInfo.getVersion() + " Alpha"
+                        text: "v" + rootAppInfo.getVersion() + " Beta"
                         color: Theme.secondaryText
                         font.pixelSize: 10
                     }
@@ -1542,7 +1542,7 @@ Dialog {
                                          }
 
                                           Label {
-                                              text: "v" + rootAppInfo.getVersion() + "-alpha"
+                                              text: "v" + rootAppInfo.getVersion() + "-beta"
                                               color: Theme.secondaryText
                                               font.pixelSize: 14
                                               Layout.alignment: Qt.AlignHCenter

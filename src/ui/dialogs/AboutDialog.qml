@@ -63,7 +63,7 @@ Dialog {
                 }
 
                 Text {
-                    text: "v" + (root.appInfo ? root.appInfo.getVersion() : "--") + "-alpha"
+                    text: "v" + (root.appInfo ? root.appInfo.getVersion() : "--") + "-beta"
                     color: Theme.secondaryText
                     font.pixelSize: 14
                     Layout.alignment: Qt.AlignHCenter

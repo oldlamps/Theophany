@@ -563,7 +563,7 @@ Dialog {
                     font.bold: true
                 }
 
-                // Alpha Disclaimer
+                // Beta Disclaimer
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 70
@@ -580,7 +580,7 @@ Dialog {
                             font.pixelSize: 20
                         }
                         Text {
-                            text: "Theophany is currently in Alpha. Your feedback is vital to our growth! Please report bugs or suggest features on our community channels."
+                            text: "Theophany is currently in Beta. Your feedback is vital to our growth! Please report bugs or suggest features on our community channels."
                             color: Theme.text
                             font.pixelSize: 14
                             Layout.fillWidth: true

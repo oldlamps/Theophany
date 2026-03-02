@@ -202,7 +202,7 @@ fn default_metadata_scraper() -> String { "IGDB".to_string() }
 fn default_image_scraper() -> String { "Web Search".to_string() }
 fn default_llm_provider() -> String { "Gemini".to_string() }
 fn default_sidebar_width() -> f32 { 250.0 }
-fn default_details_width() -> f32 { 350.0 }
+fn default_details_width() -> f32 { 0.0 }
 fn default_prefix() -> String { 
     crate::core::paths::get_default_prefix_dir().to_string_lossy().to_string() 
 }

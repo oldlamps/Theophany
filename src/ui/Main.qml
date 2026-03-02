@@ -2679,7 +2679,7 @@ ApplicationWindow {
         Resizer {
             id: detailsResizer
             visible: detailsPanel.visible && !window.collapsedMode // Only show if panel is visible and not in mobile/collapsed mode
-            targetWidth: appSettings.detailsWidth
+            targetWidth: appSettings.detailsWidth > 0 ? appSettings.detailsWidth : Math.max(250, window.width * 0.3)
             minWidth: 250
             maxWidth: window.width * 0.5
             isRightSide: false
@@ -2696,7 +2696,7 @@ ApplicationWindow {
         DetailsPanel {
             id: detailsPanel
             gameModel: gameModel
-            Layout.preferredWidth: appSettings.detailsWidth
+            Layout.preferredWidth: appSettings.detailsWidth > 0 ? appSettings.detailsWidth : Math.max(250, window.width * 0.3)
             Layout.fillHeight: true
             visible: window.statTotalGames > 0
             onPlayRequested: (id) => {
