@@ -272,21 +272,22 @@ ApplicationWindow {
                 for (var j = 0; j < gameList.selectedIndices.length; j++) {
                     d_ids.push(gameModel.getGameId(gameList.selectedIndices[j]))
                 }
-                window.openBulkScrape(d_ids, "RetroAchievements")
+                window.openBulkScrape(d_ids, "Achievements")
                 return
             } else if (viewStack.currentIndex === 0 && viewStack.sharedSelectedIndices && viewStack.sharedSelectedIndices.length > 1) {
                  var d_ids = []
                  for (var j = 0; j < viewStack.sharedSelectedIndices.length; j++) {
                      d_ids.push(gameModel.getGameId(viewStack.sharedSelectedIndices[j]))
                  }
-                 window.openBulkScrape(d_ids, "RetroAchievements")
+                 window.openBulkScrape(d_ids, "Achievements")
                  return
             }
 
             var index = (viewStack.currentIndex === 0) ? gameGrid.currentIndex : gameList.currentIndex;
-            if (index >= 0 && !detailsPanel.gamePlatformType.includes("PC")) {
-
-                detailsPanel.refreshAchievements(true)
+            if (index >= 0) {
+                 // Steam games refresh through storeBridge, RA games through raBridge
+                 // Both are handled inside detailsPanel.refreshAchievements()
+                 detailsPanel.refreshAchievements(true)
             }
         }
     }
@@ -2854,13 +2855,20 @@ ApplicationWindow {
         if (mode === "Metadata") {
             bulkScrapeDialog.scrapeMetadata = true
             bulkScrapeDialog.scrapeRetroAchievements = false
+            bulkScrapeDialog.scrapeSteamAchievements = false
         } else if (mode === "RetroAchievements") {
             bulkScrapeDialog.scrapeMetadata = false
             bulkScrapeDialog.scrapeRetroAchievements = true
+            bulkScrapeDialog.scrapeSteamAchievements = false
+        } else if (mode === "Achievements") {
+            bulkScrapeDialog.scrapeMetadata = false
+            bulkScrapeDialog.scrapeRetroAchievements = appSettings.retroAchievementsEnabled && appSettings.retroAchievementsUser !== ""
+            bulkScrapeDialog.scrapeSteamAchievements = appSettings.steamId !== "" && appSettings.steamApiKey !== ""
         } else {
             // Default (e.g. from context menu)
             bulkScrapeDialog.scrapeMetadata = true
             bulkScrapeDialog.scrapeRetroAchievements = false
+            bulkScrapeDialog.scrapeSteamAchievements = false
         }
 
         bulkScrapeDialog.open()

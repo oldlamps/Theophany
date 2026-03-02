@@ -52,10 +52,43 @@ Dialog {
     // Config Properties
     property alias scrapeMetadata: checkMetadata.checked
     property alias scrapeRetroAchievements: checkRa.checked
+    property alias scrapeSteamAchievements: checkSteamAchievements.checked
     property alias minDelay: spinMinDelay.value
     property alias maxDelay: spinMaxDelay.value
     
     property var gameIds: [] // IDs to scrape
+    property bool hasSteamGames: false
+    property bool hasRaGames: false
+    
+    onGameIdsChanged: updatePlatformSupport()
+    
+    function updatePlatformSupport() {
+        var steam = false
+        var ra = false
+        for (var i = 0; i < gameIds.length; i++) {
+            var metaStr = gameModel.getGameMetadata(gameIds[i])
+            if (metaStr) {
+                try {
+                    var meta = JSON.parse(metaStr)
+                    var pId = meta.platform_id || ""
+                    var pType = meta.platform_type || ""
+                    var pName = meta.platform_name || ""
+                    
+                    if (pId === "steam" || pName === "Steam" || gameIds[i].startsWith("steam-")) {
+                        steam = true
+                    } else if (appSettings.isPlatformRaActive(pType) || appSettings.isPlatformRaActive(pName)) {
+                        ra = true
+                    }
+                } catch(e) {}
+            }
+        }
+        hasSteamGames = steam
+        hasRaGames = ra
+        
+        // Auto-check defaults if credentials exist
+        checkSteamAchievements.checked = steam && appSettings.steamId !== "" && appSettings.steamApiKey !== ""
+        checkRa.checked = ra && appSettings.retroAchievementsUser !== "" && appSettings.retroAchievementsToken !== ""
+    }
     
     // Close Policy: Don't allow closing if scraping is active (unless cancelled via button)
     // Close Policy: Allow closing (minimizing) even when scraping
@@ -287,12 +320,20 @@ Dialog {
                     id: checkRa
                     text: "RetroAchievements (Hash Check)"
                     checked: false
+                    visible: hasRaGames && appSettings.retroAchievementsUser !== "" && appSettings.retroAchievementsToken !== ""
+                }
+
+                StyledCheckBox {
+                    id: checkSteamAchievements
+                    text: "Steam Achievements"
+                    checked: false
+                    visible: hasSteamGames && appSettings.steamId !== "" && appSettings.steamApiKey !== ""
                 }
             }
 
             // Priority (Conditional)
             ColumnLayout {
-                visible: checkMetadata.checked && checkRa.checked
+                visible: (checkMetadata.checked && checkRa.checked && checkRa.visible) || (checkMetadata.checked && checkSteamAchievements.checked && checkSteamAchievements.visible)
                 spacing: 8
                 Layout.topMargin: 5
                 
@@ -515,6 +556,7 @@ Dialog {
                     var categories = []
                     if (checkMetadata.checked) categories.push("Metadata")
                     if (checkRa.checked) categories.push("RetroAchievements")
+                    if (checkSteamAchievements.checked && checkSteamAchievements.visible) categories.push("SteamAchievements")
                     
                     if (categories.length === 0) return 
                     

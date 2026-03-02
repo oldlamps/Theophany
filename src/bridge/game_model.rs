@@ -3426,8 +3426,16 @@ impl GameListModel {
         get_runtime().spawn(async move {
             let metadata_enabled = categories.contains(&"Metadata".to_string());
             let ra_enabled = categories.contains(&"RetroAchievements".to_string()) && !ra_user_clone.is_empty() && !ra_key_clone.is_empty();
+            let steam_enabled = categories.contains(&"SteamAchievements".to_string());
+            let (steam_id, steam_key) = if steam_enabled {
+                crate::bridge::settings::AppSettings::get_steam_credentials()
+            } else {
+                (String::new(), String::new())
+            };
+            let steam_enabled = steam_enabled && !steam_id.is_empty() && !steam_key.is_empty();
             
-            log::info!("[BulkScrape] Worker Start. Meta: {}, RA: {}, Priority: {}", metadata_enabled, ra_enabled, if prefer_ra { "RA" } else { "Meta" });
+            log::info!("[BulkScrape] Worker Start. Meta: {}, RA: {}, Steam: {}, Priority: {}", 
+                metadata_enabled, ra_enabled, steam_enabled, if prefer_ra { "RA" } else { "Meta" });
             
             let provider = ScraperManager::get_provider(&provider_name, client.clone(), o_url, o_model, g_key, oa_key, l_prov);
             
@@ -3762,6 +3770,36 @@ impl GameListModel {
                     tokio::time::sleep(Duration::from_millis(delay as u64)).await;
                 };
 
+                // Helper to perform Steam scrape for current job
+                let do_steam = async {
+                    if !steam_enabled || !job.id.starts_with("steam-") { return; }
+                    
+                    log::info!("[BulkScrape] Running Steam achievements for {}", job.title);
+                    let _ = tx.send(AsyncResponse::BulkProgress(
+                        index as f32 / total_jobs, 
+                        format!("Checking Steam Achievements: {}", job.title)
+                    ));
+                    
+                    let app_id = job.id.replace("steam-", "");
+                    let s_id = steam_id.clone();
+                    let s_key = steam_key.clone();
+                    let j_id = job.id.clone();
+                    let db_p = db_path_clone.clone();
+
+                    let _res = tokio::task::spawn_blocking(move || {
+                        if let Ok(results) = crate::core::store::StoreManager::fetch_steam_game_achievements(&app_id, &s_id, &s_key) {
+                            if let Ok(db) = DbManager::open(&db_p) {
+                                let unlocked = results["unlocked_count"].as_i64().unwrap_or(0) as i32;
+                                let total = results["total_count"].as_i64().unwrap_or(0) as i32;
+                                let _ = db.update_achievements(&j_id, total, unlocked, None);
+                            }
+                        }
+                    }).await;
+                    
+                    let delay = rand::thread_rng().gen_range(min_delay_ms..=max_delay_ms);
+                    tokio::time::sleep(Duration::from_millis(delay as u64)).await;
+                };
+
                 // Execute based on priority
                 if prefer_ra {
                     do_ra.await;
@@ -3770,6 +3808,7 @@ impl GameListModel {
                     do_metadata.await;
                     do_ra.await;
                 }
+                do_steam.await;
 
                 // ALWAYS signal that this item is finished processing
                 let _ = tx.send(AsyncResponse::BulkItemFinished(job.id.clone()));
