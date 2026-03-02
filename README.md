@@ -35,6 +35,7 @@
   - <img src="assets/systems/epic.png" height="20"> **Legendary (Epic Games)**: Full storefront support for your entire Epic library, including installation management, cloud saves, and overlay support.
   <p align="center">
   <img width="800" height="429" alt="Epic Games Store" src="https://www.theophany.gg/screenshots/epicinstall.png" /></p>
+  
   - <img src="assets/systems/heroic.png" height="20"> **Heroic** & <img src="assets/systems/lutris.png" height="20"> **Lutris**: Sync installed games and playtime data.
 - <img src="assets/systems/exodos.png" height="20"> [**eXoDOS Linux**](https://www.retro-exo.com/linux.html): Direct integration for importing and launching eXoDOS collections with Linux patches.
 - <img src="assets/systems/flatpak.png" height="20"> **Flatpak Integration**: Manage and install Flatpak applications within the interface.
