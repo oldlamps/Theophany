@@ -5,6 +5,7 @@ use std::cell::RefCell;
 
 enum AsyncResponse {
     LegendaryDownloadStatus(bool, String),
+    YtdlpDownloadStatus(bool, String),
     EosOverlayStatus(bool, String),
     EosOverlayInfo(String),
 }
@@ -28,8 +29,10 @@ pub struct AppInfo {
     installEosOverlay: qt_method!(fn(&self)),
     updateEosOverlay: qt_method!(fn(&self)),
     removeEosOverlay: qt_method!(fn(&self) -> bool),
+    downloadYtdlp: qt_method!(fn(&self)),
     updateAvailable: qt_signal!(version: String, notes: String, url: String),
     legendaryDownloadStatus: qt_signal!(success: bool, message: String),
+    ytdlpDownloadStatus: qt_signal!(success: bool, message: String),
     eosOverlayStatus: qt_signal!(success: bool, message: String),
     eosOverlayInfoReceived: qt_signal!(info: String),
 
@@ -165,6 +168,100 @@ impl AppInfo {
         });
     }
 
+    fn downloadYtdlp(&self) {
+        self.ensure_channels();
+        let tx = match self.tx.borrow().as_ref() {
+            Some(t) => t.clone(),
+            None => return,
+        };
+
+        std::thread::spawn(move || {
+            let tools_dir = crate::core::paths::get_tools_dir();
+            if let Err(e) = std::fs::create_dir_all(&tools_dir) {
+                let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, format!("Failed to create tools directory: {}", e)));
+                return;
+            }
+
+            let client = reqwest::blocking::Client::builder()
+                .user_agent("Theophany")
+                .build()
+                .unwrap_or_default();
+
+            // 1. Download yt-dlp
+            let ytdlp_url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp";
+            let ytdlp_path = tools_dir.join("yt-dlp");
+            log::info!("[AppInfo] Downloading yt-dlp from: {}", ytdlp_url);
+            let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, "Downloading yt-dlp...".to_string()));
+
+            match client.get(ytdlp_url).send() {
+                Ok(response) => {
+                    let mut response: reqwest::blocking::Response = response;
+                    if response.status().is_success() {
+                        let mut file = match std::fs::File::create(&ytdlp_path) {
+                            Ok(f) => f,
+                            Err(e) => {
+                                let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, format!("Failed to create yt-dlp file: {}", e)));
+                                return;
+                            }
+                        };
+                        if let Err(e) = std::io::copy(&mut response, &mut file) {
+                            let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, format!("yt-dlp download failed: {}", e)));
+                            return;
+                        }
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if let Ok(metadata) = std::fs::metadata(&ytdlp_path) {
+                                let mut perms = metadata.permissions();
+                                perms.set_mode(perms.mode() | 0o111);
+                                let _ = std::fs::set_permissions(&ytdlp_path, perms);
+                            }
+                        }
+                    } else {
+                        let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, format!("yt-dlp check failed: {}", response.status())));
+                        return;
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, format!("yt-dlp connection failed: {}", e)));
+                    return;
+                }
+            }
+
+            // 2. Download ejs (JavaScript helper)
+            // Note: We use yt.solver.lib.js and save it as yt-dlp-ejs.js
+            let ejs_url = "https://github.com/yt-dlp/ejs/releases/latest/download/yt.solver.lib.js";
+            let ejs_path = tools_dir.join("yt-dlp-ejs.js");
+            log::info!("[AppInfo] Downloading ejs component from: {}", ejs_url);
+            let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, "Downloading ejs helper...".to_string()));
+
+            match client.get(ejs_url).send() {
+                Ok(response) => {
+                    let mut response: reqwest::blocking::Response = response;
+                    if response.status().is_success() {
+                        let mut file = match std::fs::File::create(&ejs_path) {
+                            Ok(f) => f,
+                            Err(e) => {
+                                let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, format!("Failed to create ejs file: {}", e)));
+                                return;
+                            }
+                        };
+                        if let Err(e) = std::io::copy(&mut response, &mut file) {
+                            let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, format!("ejs download failed: {}", e)));
+                            return;
+                        }
+                        let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(true, "Tools installed successfully".to_string()));
+                    } else {
+                        let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, format!("ejs check failed: {}", response.status())));
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, format!("ejs connection failed: {}", e)));
+                }
+            }
+        });
+    }
+
     fn checkAsyncResponses(&mut self) {
         self.ensure_channels();
         let mut messages = Vec::new();
@@ -182,6 +279,9 @@ impl AppInfo {
                 AsyncResponse::LegendaryDownloadStatus(success, message) => {
                     self.legendaryDownloadStatus(success, message);
                 }
+                AsyncResponse::YtdlpDownloadStatus(success, message) => {
+                    self.ytdlpDownloadStatus(success, message);
+                }
                 AsyncResponse::EosOverlayStatus(success, message) => {
                     self.eosOverlayStatus(success, message);
                 }
@@ -193,10 +293,15 @@ impl AppInfo {
     }
 
     fn checkYtdlp(&self, custom_path: String) -> String {
-        let binary = if custom_path.is_empty() {
-            "yt-dlp".to_string()
-        } else {
+        let binary = if !custom_path.is_empty() {
             custom_path
+        } else {
+            let internal = crate::core::paths::get_tools_dir().join("yt-dlp");
+            if internal.exists() {
+                internal.to_string_lossy().to_string()
+            } else {
+                "yt-dlp".to_string()
+            }
         };
 
         match std::process::Command::new(&binary).arg("--version").output() {

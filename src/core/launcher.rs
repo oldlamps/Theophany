@@ -13,18 +13,31 @@ impl Launcher {
             working_dir = None;
         }
 
+        let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
+        
         // 2. Construct Command String
         let cmd_string = if rom_path.starts_with("flatpak://") {
             let app_id = &rom_path[10..];
-            let prefix = if command_template.contains("flatpak run") { "" } else { "flatpak run " };
-            let launch_cmd = format!("{}\"{}\"", prefix, app_id);
-            if command_template.contains("%ROM%") {
-                command_template.replace("%ROM%", &launch_cmd)
+            let flatpak_run = if is_flatpak { "flatpak-spawn --host flatpak run" } else { "flatpak run" };
+            let launch_cmd = if command_template.contains("flatpak run") {
+                // If template already has flatpak run, we just need to ensure host prefix if sandboxed
+                if is_flatpak && !command_template.contains("flatpak-spawn") {
+                    command_template.replace("flatpak run", "flatpak-spawn --host flatpak run")
+                } else {
+                    command_template.to_string()
+                }
+            } else {
+                format!("{} \"{}\"", flatpak_run, app_id)
+            };
+
+            if launch_cmd.contains("%ROM%") {
+                launch_cmd.replace("%ROM%", &format!("\"{}\"", app_id))
             } else {
                 launch_cmd
             }
         } else if rom_path.starts_with("steam://") || rom_path.starts_with("heroic://") || rom_path.starts_with("lutris:") {
-            let launch_cmd = format!("xdg-open \"{}\"", rom_path);
+            let xdg_cmd = if is_flatpak { "flatpak-spawn --host xdg-open" } else { "xdg-open" };
+            let launch_cmd = format!("{} \"{}\"", xdg_cmd, rom_path);
             if command_template.contains("%ROM%") {
                 command_template.replace("%ROM%", &launch_cmd)
             } else {
@@ -35,6 +48,15 @@ impl Launcher {
             let binary = crate::core::legendary::LegendaryWrapper::find_binary()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| "legendary".to_string());
+            
+            // Legendary in Flatpak is usually 'flatpak-spawn --host legendary' if using host binary, 
+            // but we might be using an internal one. LegendaryWrapper::find_binary should handle it.
+            // If it's a host path like /usr/bin/legendary, and we are in flatpak, we need prefix.
+            let binary = if is_flatpak && binary.starts_with('/') {
+                format!("flatpak-spawn --host {}", binary)
+            } else {
+                binary
+            };
                 
             let mut extra_args = String::new();
             let wrapper_arg = match wrapper {
@@ -62,31 +84,49 @@ impl Launcher {
                 command_template.replace("%ROM%", &format!("xdg-open \"{}\"", rom_path))
             }
         } else if rom_path.ends_with(".command") {
-            if let Some(wrapped) = Self::find_terminal_wrapped_cmd(rom_path) {
-                command_template.replace("%ROM%", &wrapped)
+            let cmd = if let Some(wrapped) = Self::find_terminal_wrapped_cmd(rom_path) {
+                wrapped
             } else {
-                command_template.replace("%ROM%", &format!("bash \"{}\"", rom_path))
+                format!("bash \"{}\"", rom_path)
+            };
+            
+            if is_flatpak && !cmd.starts_with("flatpak-spawn") {
+                command_template.replace("%ROM%", &format!("flatpak-spawn --host {}", cmd))
+            } else {
+                command_template.replace("%ROM%", &cmd)
             }
         } else {
             let quoted_path = format!("\"{}\"", rom_path);
             command_template.replace("%ROM%", &quoted_path)
         };
 
-        let mut cmd = Command::new("sh");
-        
-        let final_cmd_string = match env_vars {
-            Some(env) if !env.trim().is_empty() => format!("{} {}", env.trim(), cmd_string),
-            _ => cmd_string,
+        // 3. Final Command Wrapping for Sandbox Escape
+        let final_cmd_string = if is_flatpak {
+            let trimmed = cmd_string.trim();
+            let is_host_targeted = trimmed.starts_with("/usr/") || trimmed.starts_with("/bin/") || trimmed.starts_with("/sbin/") || trimmed.starts_with("/opt/") || trimmed.starts_with("xdg-open") || trimmed.starts_with("flatpak run");
+            
+            if is_host_targeted && !trimmed.starts_with("flatpak-spawn") {
+                format!("flatpak-spawn --host {}", trimmed)
+            } else {
+                trimmed.to_string()
+            }
+        } else {
+            cmd_string
         };
-        
+
+        let mut cmd = Command::new("sh");
         cmd.arg("-c").arg(&final_cmd_string);
 
-        if let Some(wd) = working_dir {
-            if !wd.is_empty() && std::path::Path::new(wd).exists() {
-                cmd.current_dir(wd);
+        // Only set working directory if it's likely accessible (not spawning on host)
+        if !final_cmd_string.starts_with("flatpak-spawn") {
+            if let Some(wd) = working_dir {
+                if !wd.is_empty() && std::path::Path::new(wd).exists() {
+                    cmd.current_dir(wd);
+                }
             }
         }
 
+        log::info!("[Launcher] Final command: {}", final_cmd_string);
         cmd.spawn().map_err(|e| format!("Failed to spawn process: {}", e))
     }
 
@@ -132,8 +172,22 @@ impl Launcher {
             ("eterm", "-e"),
         ];
 
+        let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
+        
         for (term, arg) in terminals {
-            if which::which(term).is_ok() {
+            let exists = if is_flatpak {
+                std::process::Command::new("flatpak-spawn")
+                    .arg("--host")
+                    .arg("which")
+                    .arg(term)
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+            } else {
+                which::which(term).is_ok()
+            };
+            
+            if exists {
                 // By launching via a terminal emulator that ExoDOS recognizes,
                 // the .command script will source the .bsh logic in the current window
                 // INSTEAD of spawning its own backgrounded terminal.

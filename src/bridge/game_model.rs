@@ -906,10 +906,25 @@ impl GameListModel {
     }
 
     fn getTags(&mut self) -> QVariantList {
-        let mut result = QVariantList::default();
-        let all = self.get_metadata_list(|db| db.get_all_tags());
-        for i in 0..all.len() { result.push(all[i].clone()); }
-        result
+        let db_path = self.db_path.borrow().clone();
+        if let Ok(db) = DbManager::open(&db_path) {
+            let platform_filter = self.current_platform_filter.borrow().clone();
+            let platform_type_filter = self.current_platform_type_filter.borrow().clone();
+            let playlist_filter = self.current_playlist_filter.borrow().clone();
+            let installed_only = *self.current_installed_only.borrow();
+            let favorites_only = *self.current_favorites_only.borrow();
+
+            if let Ok(tags) = db.get_tags_filtered(
+                platform_filter.as_deref(),
+                platform_type_filter.as_deref(),
+                playlist_filter.as_deref(),
+                installed_only,
+                favorites_only
+            ) {
+                return tags.into_iter().map(|s| QVariant::from(QString::from(s))).collect();
+            }
+        }
+        QVariantList::default()
     }
 
     fn setFavoritesOnly(&mut self, favorites_only: bool) {

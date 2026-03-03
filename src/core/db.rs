@@ -1506,6 +1506,68 @@ impl DbManager {
         Ok(list)
     }
 
+    pub fn get_tags_filtered(&self, platform_id_filter: Option<&str>, platform_type_filter: Option<&str>, playlist_filter: Option<&str>, installed_only: bool, favorites_only: bool) -> Result<Vec<String>> {
+        let mut query = String::from("SELECT DISTINCT m.tags FROM metadata m 
+                                      JOIN roms r ON m.rom_id = r.id 
+                                      JOIN platforms p ON r.platform_id = p.id");
+        
+        if playlist_filter.is_some() {
+            query.push_str(" JOIN playlist_entries pe ON r.id = pe.rom_id");
+        }
+
+        query.push_str(" WHERE m.tags IS NOT NULL AND m.tags != ''");
+
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(pid) = platform_id_filter {
+            if !pid.is_empty() {
+                query.push_str(" AND r.platform_id = ?");
+                params_vec.push(Box::new(pid.to_string()));
+            }
+        }
+
+        if let Some(pt) = platform_type_filter {
+            if !pt.is_empty() {
+                query.push_str(" AND p.platform_type = ?");
+                params_vec.push(Box::new(pt.to_string()));
+            }
+        }
+
+        if let Some(plid) = playlist_filter {
+            if !plid.is_empty() {
+                query.push_str(" AND pe.playlist_id = ?");
+                params_vec.push(Box::new(plid.to_string()));
+            }
+        }
+
+        if installed_only {
+            query.push_str(" AND m.is_installed = 1");
+        }
+
+        if favorites_only {
+            query.push_str(" AND m.is_favorite = 1");
+        }
+
+        let mut stmt = self.conn.prepare(&query)?;
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(rusqlite::params_from_iter(param_refs), |row| row.get::<_, String>(0))?;
+
+        let mut set = std::collections::HashSet::new();
+        for row in rows {
+            let s = row?;
+            for part in s.split(|c| c == ',' || c == ';' || c == '|' || c == '，') {
+                let mut trimmed = part.trim();
+                trimmed = trimmed.trim_matches(|c| c == '.' || c == ',');
+                if !trimmed.is_empty() {
+                    set.insert(trimmed.to_string());
+                }
+            }
+        }
+        let mut list: Vec<String> = set.into_iter().collect();
+        list.sort();
+        Ok(list)
+    }
+
     pub fn get_all_regions(&self) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare("SELECT DISTINCT region FROM metadata WHERE region IS NOT NULL AND region != ''")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;

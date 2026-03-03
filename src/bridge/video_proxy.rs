@@ -16,14 +16,26 @@ fn get_ytdlp_binary() -> String {
         custom_ytdlp_path: String,
     }
 
+    // 1. Check Settings for custom path
     let path = crate::core::paths::get_config_dir().join("settings.json");
     if let Ok(content) = std::fs::read_to_string(&path) {
         if let Ok(data) = serde_json::from_str::<YtdlpSettings>(&content) {
             if data.use_custom_ytdlp && !data.custom_ytdlp_path.is_empty() {
-                return data.custom_ytdlp_path;
+                let p = std::path::PathBuf::from(&data.custom_ytdlp_path);
+                if p.exists() {
+                    return data.custom_ytdlp_path;
+                }
             }
         }
     }
+
+    // 2. Check internal tools directory
+    let internal = crate::core::paths::get_tools_dir().join("yt-dlp");
+    if internal.exists() {
+        return internal.to_string_lossy().to_string();
+    }
+
+    // 3. Fallback to System PATH
     "yt-dlp".to_string()
 }
 

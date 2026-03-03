@@ -742,11 +742,13 @@ Dialog {
                                             // Handle on-demand creation of default collection
                                             if (platformId === "virtual_flatpak") {
                                                 var newId = "platform-" + Math.random().toString(36).substr(2, 9)
-                                
                                                 
                                                 sidebar.platformModel.updateSystem(
                                                     newId, "Flatpak Games", "*.desktop", "%ROM%", "", "PC (Linux)", "assets/systems/flatpak", ""
                                                 )
+                                                
+                                                root.targetPlatformId = newId
+                                                refreshFilteredPlatforms()
                                                 
                                                 storeBridge.install_app(appId, newId, name, summary, iconUrl || "", "", "[]", developer || "")
                                             } else {
@@ -805,6 +807,10 @@ Dialog {
                          if (platformId === "virtual_flatpak") {
                             var newId = "platform-" + Math.random().toString(36).substr(2, 9)
                             sidebar.platformModel.updateSystem(newId, "Flatpak Games", "*.desktop", "%ROM%", "", "PC (Linux)", "assets/systems/flatpak.png", "")
+                            
+                            root.targetPlatformId = newId
+                            refreshFilteredPlatforms()
+                            
                             storeBridge.install_app(appId, newId, name, summary, iconUrl, description, screenshotsJson, developer)
                          } else {
                              storeBridge.install_app(appId, platformId, name, summary, iconUrl, description, screenshotsJson, developer)

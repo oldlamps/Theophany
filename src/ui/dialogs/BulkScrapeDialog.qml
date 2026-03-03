@@ -76,7 +76,9 @@ Dialog {
                     
                     if (pId === "steam" || pName === "Steam" || gameIds[i].startsWith("steam-")) {
                         steam = true
-                    } else if (appSettings.isPlatformRaActive(pType) || appSettings.isPlatformRaActive(pName)) {
+                    } 
+                    
+                    if (appSettings.isPlatformRaActive(pType) || appSettings.isPlatformRaActive(pName)) {
                         ra = true
                     }
                 } catch(e) {}

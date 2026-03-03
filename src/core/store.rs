@@ -323,12 +323,21 @@ impl StoreManager {
 
     /// Installs a Flatpak application.
     pub fn install_flatpak(app_id: &str) -> anyhow::Result<()> {
-        let status = Command::new("flatpak")
+        let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
+        
+        let mut cmd = if is_flatpak {
+            let mut c = Command::new("flatpak-spawn");
+            c.arg("--host").arg("flatpak");
+            c
+        } else {
+            Command::new("flatpak")
+        };
+
+        let status = cmd
             .arg("install")
             .arg("--user")
             .arg("-y")
             .arg("--noninteractive")
-            .arg("flathub")
             .arg(app_id)
             .status()?;
 

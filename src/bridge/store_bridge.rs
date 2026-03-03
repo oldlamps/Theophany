@@ -223,9 +223,17 @@ impl StoreBridge {
         std::thread::spawn(move || {
             let _ = tx.send(StoreMsg::InstallProgress(app_id_clone.clone(), 0.1, "Starting install...".into()));
             
-            let screenshots: Vec<crate::core::store::Screenshot> = serde_json::from_str(&screenshots_json_clone).unwrap_or_default();
-            
-            match StoreManager::install_flatpak_with_details(&app_id_clone, &description_clone, &screenshots, &icon_url_clone) {
+            // If description or screenshots are missing (e.g. installed from Grid instead of Details), fetch them
+            let (final_desc, final_screenshots) = if description_clone.is_empty() {
+                match StoreManager::get_app_details(&app_id_clone) {
+                    Ok(details) => (details.description, details.screenshots),
+                    Err(_) => (description_clone, serde_json::from_str(&screenshots_json_clone).unwrap_or_default())
+                }
+            } else {
+                (description_clone, serde_json::from_str(&screenshots_json_clone).unwrap_or_default())
+            };
+
+            match StoreManager::install_flatpak_with_details(&app_id_clone, &final_desc, &final_screenshots, &icon_url_clone) {
                 Ok(_) => {
                     log::info!("[FlatpakStore] Install successful, creating library entry...");
                     
@@ -262,7 +270,7 @@ impl StoreBridge {
                         rating: None,
                         tags: None,
                         release_date: None,
-                        description: Some(description_clone.clone()),
+                        description: Some(final_desc.clone()),
                         is_installed: Some(true),
                         cloud_saves_supported: None,
                         resources: None,
@@ -274,7 +282,7 @@ impl StoreBridge {
                         let mut meta = crate::core::models::GameMetadata::default();
                         meta.rom_id = rom.id.clone();
                         meta.title = Some(name_clone.clone());
-                        meta.description = Some(description_clone);
+                        meta.description = Some(final_desc);
                         meta.developer = Some(developer_clone);
                         meta.is_installed = true;
                         let _ = db.insert_metadata(&meta);
@@ -1375,7 +1383,7 @@ impl StoreBridge {
 
                         // 2. Metadata Sidecar (Ensure sidecar is updated/created)
                         let sidecar = crate::core::metadata_manager::MetadataManager::load_sidecar(&current_platform_folder, rom_stem);
-                        let mut meta = if let Some(mut m) = sidecar {
+                        let meta = if let Some(mut m) = sidecar {
                             m.rom_id = rom.id.clone();
                             if m.title.is_none() || m.title.as_deref() == Some("") { m.title = rom.title.clone(); }
                             if m.description.is_none() || m.description.as_deref() == Some("") { m.description = rom.description.clone(); }

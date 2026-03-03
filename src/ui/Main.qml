@@ -37,6 +37,13 @@ ApplicationWindow {
         close.accepted = false
         tryQuit()
     }
+
+    Timer {
+        id: trayInitTimer
+        interval: 500
+        running: appSettings.showTrayIcon
+        onTriggered: trayIcon.visible = true
+    }
     
     // Grid Scaling
     property real gridScale: appSettings.gridScale
@@ -3014,7 +3021,7 @@ ApplicationWindow {
 
     Platform.SystemTrayIcon {
         id: trayIcon
-        visible: appSettings.showTrayIcon
+        visible: false // Start hidden, trayInitTimer will show it
         icon.source: appInfo.getTrayIconPath()
         tooltip: "Theophany"
 

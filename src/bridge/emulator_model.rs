@@ -162,19 +162,52 @@ impl EmulatorListModel {
         self.refresh();
     }
 
+    fn is_flatpak() -> bool {
+        std::path::Path::new("/.flatpak-info").exists()
+    }
+
+    fn host_cmd(bin: &str) -> std::process::Command {
+        if Self::is_flatpak() {
+            let mut cmd = std::process::Command::new("flatpak-spawn");
+            cmd.arg("--host").arg(bin);
+            cmd
+        } else {
+            std::process::Command::new(bin)
+        }
+    }
+
     #[allow(non_snake_case)]
     fn detectRetroArch(&mut self) -> QString {
         // Check for flatpak
-        if let Ok(output) = std::process::Command::new("flatpak").arg("info").arg("org.libretro.RetroArch").output() {
+        if let Ok(output) = Self::host_cmd("flatpak").arg("info").arg("org.libretro.RetroArch").output() {
              if output.status.success() {
                  return QString::from("flatpak run org.libretro.RetroArch");
              }
         }
         
         // Check standard paths
-        let paths = ["/usr/bin/retroarch", "/usr/local/bin/retroarch", "/opt/retroarch/bin/retroarch"];
+        let paths = [
+            "/usr/bin/retroarch", 
+            "/usr/local/bin/retroarch", 
+            "/usr/sbin/retroarch",
+            "/opt/retroarch/bin/retroarch"
+        ];
+        
         for p in paths.iter() {
-            if std::path::Path::new(p).exists() {
+            let exists = if Self::is_flatpak() {
+                std::process::Command::new("flatpak-spawn")
+                    .arg("--host")
+                    .arg("test")
+                    .arg("-e")
+                    .arg(p)
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false)
+            } else {
+                std::path::Path::new(p).exists()
+            };
+
+            if exists {
                 return QString::from(*p);
             }
         }
@@ -194,26 +227,58 @@ impl EmulatorListModel {
             "/usr/lib64/libretro".to_string(), // Fedora/OpenSUSE
         ];
         
-        // Add home directory paths
-        if let Ok(home) = std::env::var("HOME") {
+        // Add home directory paths (adjust for host paths if sandboxed)
+        let home = if Self::is_flatpak() {
+            // In flatpak, HOME is redirected, but we usually want the host home for these paths
+            if let Ok(output) = std::process::Command::new("flatpak-spawn").arg("--host").arg("printenv").arg("HOME").output() {
+                String::from_utf8_lossy(&output.stdout).trim().to_string()
+            } else {
+                std::env::var("HOME").unwrap_or_default()
+            }
+        } else {
+            std::env::var("HOME").unwrap_or_default()
+        };
+
+        if !home.is_empty() {
             search_paths.push(format!("{}/.var/app/org.libretro.RetroArch/config/retroarch/cores", home)); // Flatpak
             search_paths.push(format!("{}/.config/retroarch/cores", home)); // Standard
             search_paths.push(format!("{}/.local/share/retroarch/cores", home)); // Local/Self-built
             search_paths.push(format!("{}/snap/retroarch/current/.config/retroarch/cores", home)); // Snap
         }
-        
-        for path_str in search_paths {
-            let path = std::path::Path::new(&path_str);
-            if path.exists() && path.is_dir() {
-                 if let Ok(entries) = std::fs::read_dir(path) {
-                     for entry in entries.flatten() {
-                         let p = entry.path();
-                         if let Some(ext) = p.extension() {
-                             if ext == "so" {
-                                 if let Some(_name_os) = p.file_stem() {
-                                     // let name = name_os.to_string_lossy().to_string().replace("_libretro", ""); 
+
+        if Self::is_flatpak() {
+            // Use 'find' on host to list cores
+            for path_str in search_paths {
+                if let Ok(output) = std::process::Command::new("flatpak-spawn")
+                    .arg("--host")
+                    .arg("find")
+                    .arg(&path_str)
+                    .arg("-maxdepth")
+                    .arg("1")
+                    .arg("-name")
+                    .arg("*.so")
+                    .output() {
+                    
+                    let result = String::from_utf8_lossy(&output.stdout);
+                    for line in result.lines() {
+                        let full_path = line.trim().to_string();
+                        if !full_path.is_empty() && !visited_paths.contains(&full_path) {
+                            visited_paths.insert(full_path.clone());
+                            cores.push(QString::from(full_path));
+                        }
+                    }
+                }
+            }
+        } else {
+            for path_str in search_paths {
+                let path = std::path::Path::new(&path_str);
+                if path.exists() && path.is_dir() {
+                     if let Ok(entries) = std::fs::read_dir(path) {
+                         for entry in entries.flatten() {
+                             let p = entry.path();
+                             if let Some(ext) = p.extension() {
+                                 if ext == "so" {
                                      let full_path = p.to_string_lossy().to_string();
-                                     
                                      if !visited_paths.contains(&full_path) {
                                           visited_paths.insert(full_path.clone());
                                           cores.push(QString::from(full_path));
@@ -222,7 +287,7 @@ impl EmulatorListModel {
                              }
                          }
                      }
-                 }
+                }
             }
         }
         
@@ -261,7 +326,7 @@ impl EmulatorListModel {
         if app_id.is_empty() || app_id == "custom" { return QString::from(""); }
 
         // 1. Check Flatpak
-        if let Ok(output) = std::process::Command::new("flatpak").arg("info").arg(&app_id).output() {
+        if let Ok(output) = Self::host_cmd("flatpak").arg("info").arg(&app_id).output() {
              if output.status.success() {
                  return QString::from(format!("flatpak run {}", app_id));
              }
@@ -288,7 +353,7 @@ impl EmulatorListModel {
                  }
                  
                  // 3. Check `which` command as fallback for this binary alias
-                 if let Ok(output) = std::process::Command::new("which").arg(bin_name).output() {
+                 if let Ok(output) = Self::host_cmd("which").arg(bin_name).output() {
                      if output.status.success() {
                          let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
                          if !path.is_empty() {

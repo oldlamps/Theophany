@@ -167,6 +167,13 @@ Dialog {
                 checkLegendary()
             }
         }
+        onYtdlpDownloadStatus: (success, message) => {
+            root.ytdlpStatus = String(message)
+            if (success || root.ytdlpStatus.indexOf("failed") !== -1 || root.ytdlpStatus.indexOf("Error") !== -1) {
+                appInfoPollTimer.stop()
+                root.checkYtdlp()
+            }
+        }
         onEosOverlayStatus: (success, message) => {
             root.eosOverlayStatus = message
             checkEosOverlay()
@@ -1226,18 +1233,33 @@ Dialog {
                                              placeholderText: "/usr/bin/yt-dlp"
                                              onTextChanged: root.checkYtdlp()
                                          }
-                                         TheophanyButton {
-                                             text: "Check"
-                                             Layout.preferredHeight: 36
-                                             onClicked: root.checkYtdlp()
-                                         }
-                                     }
-                                      Label {
-                                          text: "Status: " + root.ytdlpStatus
-                                          color: root.ytdlpFound ? Theme.accent : "#ff5555"
-                                          font.bold: true
-                                          font.pixelSize: 12
+                                          TheophanyButton {
+                                              text: "Check"
+                                              Layout.preferredHeight: 36
+                                              onClicked: root.checkYtdlp()
+                                          }
+                                      }
+
+                                      RowLayout {
+                                          spacing: 10
                                           Layout.leftMargin: 55
+                                          Label {
+                                              text: "Status: " + root.ytdlpStatus
+                                              color: root.ytdlpFound ? Theme.accent : "#ff5555"
+                                              font.bold: true
+                                              font.pixelSize: 12
+                                              Layout.fillWidth: true
+                                          }
+                                          TheophanyButton {
+                                              text: "Install yt-dlp & ejs"
+                                              visible: !customYtdlpSwitch.checked
+                                              Layout.preferredHeight: 32
+                                              onClicked: {
+                                                  root.ytdlpStatus = "Starting download..."
+                                                  appInfoPollTimer.start()
+                                                  appInfo.downloadYtdlp()
+                                              }
+                                          }
                                       }
 
                                       Item { Layout.preferredHeight: 10 }
