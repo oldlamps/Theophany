@@ -52,6 +52,33 @@ Dialog {
         ListElement { name: "Emulators"; icon: "📀"; filter: "Emulator" }
     }
 
+    function initiateInstall(appId, name, summary, icon_url, description, screenshots_json, developer) {
+        var idx = platformSelector.currentIndex
+        if (idx < 0) {
+            statusDialog.title = "No Collection Selected"
+            statusDialog.text = "Please select or create a collection to install games into."
+            statusDialog.open()
+            return
+        }
+        var platformId = filteredPlatforms.get(idx).id
+        
+        // Handle on-demand creation of default collection
+        if (platformId === "virtual_flatpak") {
+            var newId = "platform-" + Math.random().toString(36).substr(2, 9)
+            
+            sidebar.platformModel.updateSystem(
+                newId, "Flatpak Games", "*.desktop", "%ROM%", "", "PC (Linux)", "assets/systems/flatpak", ""
+            )
+            
+            root.targetPlatformId = newId
+            refreshFilteredPlatforms()
+            
+            storeBridge.install_app(appId, newId, name, summary, icon_url || "", description || "", screenshots_json || "[]", developer || "")
+        } else {
+            storeBridge.install_app(appId, platformId, name, summary, icon_url || "", description || "", screenshots_json || "[]", developer || "")
+        }
+    }
+
     function updateFilteredModel() {
         filteredModel.clear()
         for (var i = 0; i < storeModel.count; i++) {
@@ -729,32 +756,7 @@ Dialog {
                                         primary: true
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: 32
-                                        onClicked: {
-                                            var idx = platformSelector.currentIndex
-                                            if (idx < 0) {
-                                                statusDialog.title = "No Collection Selected"
-                                                statusDialog.text = "Please select or create a collection to install games into."
-                                                statusDialog.open()
-                                                return
-                                            }
-                                            var platformId = filteredPlatforms.get(idx).id
-                                            
-                                            // Handle on-demand creation of default collection
-                                            if (platformId === "virtual_flatpak") {
-                                                var newId = "platform-" + Math.random().toString(36).substr(2, 9)
-                                                
-                                                sidebar.platformModel.updateSystem(
-                                                    newId, "Flatpak Games", "*.desktop", "%ROM%", "", "PC (Linux)", "assets/systems/flatpak", ""
-                                                )
-                                                
-                                                root.targetPlatformId = newId
-                                                refreshFilteredPlatforms()
-                                                
-                                                storeBridge.install_app(appId, newId, name, summary, iconUrl || "", "", "[]", developer || "")
-                                            } else {
-                                                storeBridge.install_app(appId, platformId, name, summary, iconUrl || "", "", "[]", developer || "")
-                                            }
-                                        }
+                                        onClicked: root.initiateInstall(appId, name, summary, iconUrl, "", "[]", developer)
                                     }
                                 }
                             }
@@ -795,26 +797,7 @@ Dialog {
                     }
                     
                     onInstallClicked: (appId, name, summary, iconUrl, description, screenshotsJson, developer) => {
-                         var idx = platformSelector.currentIndex
-                         if (idx < 0) {
-                             statusDialog.title = "No Collection Selected"
-                             statusDialog.text = "Please select or create a collection to install games into."
-                             statusDialog.open()
-                             return
-                         }
-                         var platformId = filteredPlatforms.get(idx).id
-                         
-                         if (platformId === "virtual_flatpak") {
-                            var newId = "platform-" + Math.random().toString(36).substr(2, 9)
-                            sidebar.platformModel.updateSystem(newId, "Flatpak Games", "*.desktop", "%ROM%", "", "PC (Linux)", "assets/systems/flatpak.png", "")
-                            
-                            root.targetPlatformId = newId
-                            refreshFilteredPlatforms()
-                            
-                            storeBridge.install_app(appId, newId, name, summary, iconUrl, description, screenshotsJson, developer)
-                         } else {
-                             storeBridge.install_app(appId, platformId, name, summary, iconUrl, description, screenshotsJson, developer)
-                         }
+                         root.initiateInstall(appId, name, summary, iconUrl, description, screenshotsJson, developer)
                     }
                 }
             } // End of mainStackLayout

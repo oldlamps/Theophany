@@ -49,28 +49,38 @@ impl Launcher {
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| "legendary".to_string());
             
-            // Legendary in Flatpak is usually 'flatpak-spawn --host legendary' if using host binary, 
-            // but we might be using an internal one. LegendaryWrapper::find_binary should handle it.
-            // If it's a host path like /usr/bin/legendary, and we are in flatpak, we need prefix.
-            let binary = if is_flatpak && binary.starts_with('/') {
-                format!("flatpak-spawn --host {}", binary)
-            } else {
-                binary
-            };
-                
+            // We keep legendary sandboxed. If it's our internal tool, it's already in the sandbox.
+            // If it's a system utility, the final wrapping logic below will handle it if it's in /usr/bin etc.
+            
             let mut extra_args = String::new();
-            let wrapper_arg = match wrapper {
+            
+            // Handle host-escape for wrapper if needed (only if it's a known host utility)
+            let final_wrapper = match wrapper {
                 Some(w) if !w.trim().is_empty() => {
-                    // When using a wrapper (like umu-run), we usually want legendary 
-                    // to not prepend 'wine' itself, as the wrapper handles it.
-                    extra_args.push_str(" --no-wine");
-                    format!(" --wrapper \"{}\"", w.trim())
+                    let w_trimmed = w.trim();
+                    if is_flatpak && (w_trimmed == "umu-run" || w_trimmed == "gamescope" || w_trimmed == "mangohud") {
+                        format!("flatpak-spawn --host {}", w_trimmed)
+                    } else {
+                        w_trimmed.to_string()
+                    }
                 },
                 _ => String::new(),
             };
+
+            let wrapper_arg = if !final_wrapper.is_empty() {
+                extra_args.push_str(" --no-wine");
+                format!(" --wrapper \"{}\"", final_wrapper)
+            } else {
+                String::new()
+            };
                 
             let overlay_arg = if eos_overlay { " --eos-overlay" } else { "" };
-            let launch_cmd = format!("{} launch \"{}\"{}{}{}", binary, app_id, wrapper_arg, extra_args, overlay_arg);
+            
+            // Ensure sandboxed config path is passed
+            let config_dir = crate::core::paths::get_config_dir().join("legendary");
+            let config_env = format!("LEGENDARY_CONFIG_PATH=\"{}\" ", config_dir.to_string_lossy());
+            
+            let launch_cmd = format!("{}{}{} launch \"{}\"{}{}{}", config_env, binary, if binary.ends_with(" ") { "" } else { " " }, app_id, wrapper_arg, extra_args, overlay_arg);
             if command_template.contains("%ROM%") {
                 command_template.replace("%ROM%", &launch_cmd)
             } else {
@@ -103,12 +113,50 @@ impl Launcher {
         // 3. Final Command Wrapping for Sandbox Escape
         let final_cmd_string = if is_flatpak {
             let trimmed = cmd_string.trim();
-            let is_host_targeted = trimmed.starts_with("/usr/") || trimmed.starts_with("/bin/") || trimmed.starts_with("/sbin/") || trimmed.starts_with("/opt/") || trimmed.starts_with("xdg-open") || trimmed.starts_with("flatpak run");
             
-            if is_host_targeted && !trimmed.starts_with("flatpak-spawn") {
-                format!("flatpak-spawn --host {}", trimmed)
-            } else {
+            // If already escaped, don't double escape
+            if trimmed.starts_with("flatpak-spawn") {
                 trimmed.to_string()
+            } else {
+                // Find the actual command by skipping leading environment variables (KEY=VALUE)
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                let mut actual_cmd = None;
+                for part in &parts {
+                    if !part.contains('=') {
+                        actual_cmd = Some(*part);
+                        break;
+                    }
+                }
+
+                let is_host_targeted = if let Some(cmd) = actual_cmd {
+                    // Strip quotes if any (e.g. "/usr/bin/foo")
+                    let clean_cmd = cmd.trim_matches('"').trim_matches('\'');
+                    
+                    clean_cmd.starts_with("/usr/") || 
+                    clean_cmd.starts_with("/bin/") || 
+                    clean_cmd.starts_with("/sbin/") || 
+                    clean_cmd.starts_with("/opt/") || 
+                    clean_cmd == "xdg-open" || 
+                    clean_cmd == "flatpak" ||
+                    clean_cmd == "umu-run" ||
+                    clean_cmd == "gamescope" ||
+                    clean_cmd == "mangohud"
+                } else {
+                    false
+                };
+                
+                if is_host_targeted {
+                    // If the command contains environment variables (KEY=VALUE), prepend 'env'
+                    // so flatpak-spawn --host can execute it correctly.
+                    let final_host_cmd = if trimmed.contains('=') && !trimmed.starts_with("env ") && !trimmed.starts_with("/usr/bin/env ") {
+                        format!("env {}", trimmed)
+                    } else {
+                        trimmed.to_string()
+                    };
+                    format!("flatpak-spawn --host {}", final_host_cmd)
+                } else {
+                    trimmed.to_string()
+                }
             }
         } else {
             cmd_string

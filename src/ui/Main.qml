@@ -2310,6 +2310,12 @@ ApplicationWindow {
                                                         }
                                                     }
                                                 }
+                                                TheophanyMenuItem {
+                                                    text: "Refresh Extras"
+                                                    iconSource: "qrc:/ui/assets/systems/exodos.png"
+                                                    visible: gamePlatformName === "eXoDOS" && rootViewStack.sharedSelectedIndices.length === 1
+                                                    onTriggered: gameModel.refreshExoDosResources(gameId)
+                                                }
                                             }
                                             TheophanyMenuItem {
                                                 text: "Video Explorer"

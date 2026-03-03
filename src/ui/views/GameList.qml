@@ -710,6 +710,12 @@ FocusScope {
                                         }
                                     }
                                 }
+                                TheophanyMenuItem {
+                                    text: "Refresh Extras"
+                                    iconSource: "qrc:/ui/assets/systems/exodos.png"
+                                    visible: gamePlatformName === "eXoDOS" && rootRoot.selectedIndices.length === 1
+                                    onTriggered: gameModel.refreshExoDosResources(gameId)
+                                }
                             }
                             TheophanyMenuItem {
                                 text: "Video Explorer"

@@ -279,6 +279,7 @@ pub struct GameListModel {
 
     // Auto Scrape
     autoScrape: qt_method!(fn(&mut self, rom_id: String)),
+    refreshExoDosResources: qt_method!(fn(&mut self, rom_id: String)),
 
     // Navigation
     findNextLetter: qt_method!(fn(&mut self, current_index: i32) -> i32),
@@ -2893,22 +2894,35 @@ impl GameListModel {
                                          meta.is_installed = true;
                                          let _ = db.get_connection().execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id_thread]);
 
-                                         // Check for a manual PDF only on first install
+                                         // Rescan for resources (Extras, Magazines, etc.)
+                                         if let Some(game_dir) = std::path::Path::new(&rom_path_thread).parent() {
+                                             let resources = crate::core::exodos::ExoDosManager::scan_resources(game_dir, &rom_id_thread);
+                                             for resource in resources {
+                                                 if let Ok(false) = db.resource_exists(&rom_id_thread, &resource.url) {
+                                                     let _ = db.insert_resource(&resource);
+                                                 }
+                                             }
+                                         }
+
+                                         // Also check for a manual PDF in the global Manuals folder on first install
                                          if is_first_install {
                                              let exodos_path = crate::bridge::settings::AppSettings::get_exodos_path();
                                              if !exodos_path.is_empty() {
                                                  if let Some(stem) = std::path::Path::new(&rom_path_thread).file_stem().and_then(|s| s.to_str()) {
                                                      let pdf = std::path::Path::new(&exodos_path).join("Manuals").join("MS-DOS").join(format!("{}.pdf", stem));
                                                      if pdf.exists() {
-                                                         log::info!("[ExoDOS] Found manual for {}: {:?}", rom_id_thread, pdf);
-                                                         let resource = crate::core::models::GameResource {
-                                                             id: uuid::Uuid::new_v4().to_string(),
-                                                             rom_id: rom_id_thread.clone(),
-                                                             type_: "manual".to_string(),
-                                                             url: pdf.to_string_lossy().to_string(),
-                                                             label: Some(stem.to_string()),
-                                                         };
-                                                         let _ = db.insert_resource(&resource);
+                                                         let url = pdf.to_string_lossy().to_string();
+                                                         if let Ok(false) = db.resource_exists(&rom_id_thread, &url) {
+                                                              log::info!("[ExoDOS] Found global manual for {}: {:?}", rom_id_thread, pdf);
+                                                              let resource = crate::core::models::GameResource {
+                                                                  id: uuid::Uuid::new_v4().to_string(),
+                                                                  rom_id: rom_id_thread.clone(),
+                                                                  type_: "manual".to_string(),
+                                                                  url,
+                                                                  label: Some(stem.to_string()),
+                                                              };
+                                                              let _ = db.insert_resource(&resource);
+                                                         }
                                                      }
                                                  }
                                              }
@@ -4485,6 +4499,59 @@ impl GameListModel {
     }
 
     #[allow(non_snake_case)]
+    fn refreshExoDosResources(&mut self, rom_id: String) {
+        log::info!("[ExoDos] Manual refresh requested for rom_id: {}", rom_id);
+        let db_path = self.db_path.borrow().clone();
+        if db_path.is_empty() { return; }
+
+        if let Ok(db) = DbManager::open(&db_path) {
+            if let Ok(Some((rom_path, _, _, _))) = db.get_launch_info(&rom_id) {
+                if rom_path.ends_with(".command") {
+                    if let Some(game_dir) = Path::new(&rom_path).parent() {
+                        let resources = crate::core::exodos::ExoDosManager::scan_resources(game_dir, &rom_id);
+                        let mut added = 0;
+                        for resource in resources {
+                            if let Ok(false) = db.resource_exists(&rom_id, &resource.url) {
+                                if let Ok(_) = db.insert_resource(&resource) {
+                                    added += 1;
+                                }
+                            }
+                        }
+
+                        // Also check global manuals folder
+                        let exodos_path = crate::bridge::settings::AppSettings::get_exodos_path();
+                        if !exodos_path.is_empty() {
+                            if let Some(stem) = Path::new(&rom_path).file_stem().and_then(|s| s.to_str()) {
+                                let pdf = Path::new(&exodos_path).join("Manuals").join("MS-DOS").join(format!("{}.pdf", stem));
+                                if pdf.exists() {
+                                    let url = pdf.to_string_lossy().to_string();
+                                    if let Ok(false) = db.resource_exists(&rom_id, &url) {
+                                        let resource = crate::core::models::GameResource {
+                                            id: uuid::Uuid::new_v4().to_string(),
+                                            rom_id: rom_id.clone(),
+                                            type_: "manual".to_string(),
+                                            url,
+                                            label: Some(stem.to_string()),
+                                        };
+                                        if let Ok(_) = db.insert_resource(&resource) {
+                                            added += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if added > 0 {
+                            log::info!("[ExoDos] Added {} new resources for {}", added, rom_id);
+                            self.update_row_by_id(&rom_id);
+                            self.calculateStats();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn autoScrape(&mut self, rom_id: String) {
         let client = self.get_scraper_client();
         let tx = match self.tx.borrow().as_ref() {

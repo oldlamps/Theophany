@@ -76,6 +76,14 @@ qrc!(my_resources,
         "assets/tray_icon.png" as "tray_icon.png",
         "assets/logo.png" as "assets/logo.png",
         "assets/RA.png" as "assets/RA.png",
+        "assets/systems/exodos.png" as "assets/systems/exodos.png",
+        "assets/systems/flatpak.png" as "assets/systems/flatpak.png",
+        "assets/systems/linux.png" as "assets/systems/linux.png",
+        "assets/systems/windows.png" as "assets/systems/windows.png",
+        "assets/systems/heroic.png" as "assets/systems/heroic.png",
+        "assets/systems/steam.png" as "assets/systems/steam.png",
+        "assets/systems/lutris.png" as "assets/systems/lutris.png",
+        "assets/systems/epic.png" as "assets/systems/epic.png",
     }
 );
 

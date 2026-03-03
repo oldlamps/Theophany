@@ -69,66 +69,7 @@ impl ExoDosManager {
 
                                     let game_folder_name = game_dir.file_name().unwrap_or_default().to_string_lossy().to_string();
                                     let rom_id = format!("exodos-{}", game_folder_name.replace(" ", "-").to_lowercase());
-                                    let mut resources = Vec::new();
-
-                                     let mut extras_path = game_dir.join("Extras");
-                                     if !extras_path.exists() {
-                                         extras_path = game_dir.join("extras");
-                                     }
-
-                                     // Alternate Launcher always exists for eXoDOS games — add it without scanning
-                                     resources.push(crate::core::models::GameResource {
-                                         id: Uuid::new_v4().to_string(),
-                                         rom_id: rom_id.clone(),
-                                         type_: "launcher".to_string(),
-                                         url: extras_path.join("Alternate Launcher.command").to_string_lossy().to_string(),
-                                         label: Some("Alternate Launcher".to_string()),
-                                     });
-
-                                     // Still scan Extras for other resources (manuals, maps, etc.)
-                                     if extras_path.exists() && extras_path.is_dir() {
-                                         if let Ok(extras_entries) = std::fs::read_dir(&extras_path) {
-                                             for extra_entry in extras_entries.flatten() {
-                                                 let extra_path = extra_entry.path();
-                                                 if extra_path.is_file() {
-                                                     let extra_filename = extra_path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                                                     // Skip Alternate Launcher variants — already added above
-                                                     if extra_filename.starts_with("Alternate Launcher") {
-                                                         continue;
-                                                     }
-                                                     log::debug!("Found extra resource: {}", extra_filename);
-                                                     resources.push(crate::core::models::GameResource {
-                                                         id: Uuid::new_v4().to_string(),
-                                                         rom_id: rom_id.clone(),
-                                                         type_: "generic".to_string(),
-                                                         url: extra_path.to_string_lossy().to_string(),
-                                                         label: Some(extra_path.file_stem().unwrap_or_default().to_string_lossy().to_string()),
-                                                     });
-                                                 }
-                                             }
-                                         }
-                                     }
-
-                                     // Scan Magazines folder for .command files
-                                     let magazines_path = game_dir.join("Magazines");
-                                     if magazines_path.exists() && magazines_path.is_dir() {
-                                         if let Ok(mag_entries) = std::fs::read_dir(&magazines_path) {
-                                             for mag_entry in mag_entries.flatten() {
-                                                 let mag_path = mag_entry.path();
-                                                 if mag_path.is_file() && mag_path.extension().and_then(|e| e.to_str()) == Some("command") {
-                                                     let label = mag_path.file_stem().unwrap_or_default().to_string_lossy().to_string();
-                                                     log::debug!("Found magazine: {}", label);
-                                                     resources.push(crate::core::models::GameResource {
-                                                         id: Uuid::new_v4().to_string(),
-                                                         rom_id: rom_id.clone(),
-                                                         type_: "magazine".to_string(),
-                                                         url: mag_path.to_string_lossy().to_string(),
-                                                         label: Some(label),
-                                                     });
-                                                 }
-                                             }
-                                         }
-                                     }
+                                    let resources = Self::scan_resources(&game_dir, &rom_id);
 
                                     roms.push(Rom {
                                         id: rom_id,
@@ -234,6 +175,71 @@ impl ExoDosManager {
         }
 
         roms
+    }
+
+    pub fn scan_resources(game_dir: &Path, rom_id: &str) -> Vec<crate::core::models::GameResource> {
+        let mut resources = Vec::new();
+
+        let mut extras_path = game_dir.join("Extras");
+        if !extras_path.exists() {
+            extras_path = game_dir.join("extras");
+        }
+
+        // Alternate Launcher always exists for eXoDOS games — add it without scanning
+        resources.push(crate::core::models::GameResource {
+            id: Uuid::new_v4().to_string(),
+            rom_id: rom_id.to_string(),
+            type_: "launcher".to_string(),
+            url: extras_path.join("Alternate Launcher.command").to_string_lossy().to_string(),
+            label: Some("Alternate Launcher".to_string()),
+        });
+
+        // Still scan Extras for other resources (manuals, maps, etc.)
+        if extras_path.exists() && extras_path.is_dir() {
+            if let Ok(extras_entries) = std::fs::read_dir(&extras_path) {
+                for extra_entry in extras_entries.flatten() {
+                    let extra_path = extra_entry.path();
+                    if extra_path.is_file() {
+                        let extra_filename = extra_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        // Skip Alternate Launcher variants — already added above
+                        if extra_filename.starts_with("Alternate Launcher") {
+                            continue;
+                        }
+                        log::debug!("Found extra resource: {}", extra_filename);
+                        resources.push(crate::core::models::GameResource {
+                            id: Uuid::new_v4().to_string(),
+                            rom_id: rom_id.to_string(),
+                            type_: "generic".to_string(),
+                            url: extra_path.to_string_lossy().to_string(),
+                            label: Some(extra_path.file_stem().unwrap_or_default().to_string_lossy().to_string()),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Scan Magazines folder for .command files
+        let magazines_path = game_dir.join("Magazines");
+        if magazines_path.exists() && magazines_path.is_dir() {
+            if let Ok(mag_entries) = std::fs::read_dir(&magazines_path) {
+                for mag_entry in mag_entries.flatten() {
+                    let mag_path = mag_entry.path();
+                    if mag_path.is_file() && mag_path.extension().and_then(|e| e.to_str()) == Some("command") {
+                        let label = mag_path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                        log::debug!("Found magazine: {}", label);
+                        resources.push(crate::core::models::GameResource {
+                            id: Uuid::new_v4().to_string(),
+                            rom_id: rom_id.to_string(),
+                            type_: "magazine".to_string(),
+                            url: mag_path.to_string_lossy().to_string(),
+                            label: Some(label),
+                        });
+                    }
+                }
+            }
+        }
+
+        resources
     }
 
     /// Parses the LaunchBox XML file to extract game metadata

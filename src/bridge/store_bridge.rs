@@ -191,40 +191,16 @@ impl StoreBridge {
         let app_id_clone = app_id.clone();
         let platform_id_clone = platform_id.clone();
         let name_clone = name.clone();
-        let mut description_clone = description.clone();
+        let description_clone = description.clone();
         let screenshots_json_clone = screenshots_json.clone();
         let icon_url_clone = icon_url.clone();
         let developer_clone = developer.clone();
-        
-        // Strip HTML tags from description with better formatting handling
-        let desc_tagged = description_clone
-            .replace("<br>", "\n")
-            .replace("<br/>", "\n")
-            .replace("<br />", "\n")
-            .replace("</p>", "\n\n")
-            .replace("<li>", "\n• ");
-            
-        let mut stripped = String::new();
-        let mut inside_tag = false;
-        for c in desc_tagged.chars() {
-            if c == '<' { inside_tag = true; continue; }
-            if c == '>' { inside_tag = false; continue; }
-            if !inside_tag { stripped.push(c); }
-        }
-        
-        // Clean up whitespace: split by lines, trim each line, then rejoin
-        description_clone = stripped.lines()
-            .map(|l| l.trim())
-            .filter(|l| !l.is_empty())
-            .collect::<Vec<&str>>()
-            .join("\n");
-
         
         std::thread::spawn(move || {
             let _ = tx.send(StoreMsg::InstallProgress(app_id_clone.clone(), 0.1, "Starting install...".into()));
             
             // If description or screenshots are missing (e.g. installed from Grid instead of Details), fetch them
-            let (final_desc, final_screenshots) = if description_clone.is_empty() {
+            let (mut final_desc, final_screenshots) = if description_clone.is_empty() {
                 match StoreManager::get_app_details(&app_id_clone) {
                     Ok(details) => (details.description, details.screenshots),
                     Err(_) => (description_clone, serde_json::from_str(&screenshots_json_clone).unwrap_or_default())
@@ -232,6 +208,29 @@ impl StoreBridge {
             } else {
                 (description_clone, serde_json::from_str(&screenshots_json_clone).unwrap_or_default())
             };
+
+            // Strip HTML tags from description with better formatting handling
+            let desc_tagged = final_desc
+                .replace("<br>", "\n")
+                .replace("<br/>", "\n")
+                .replace("<br />", "\n")
+                .replace("</p>", "\n\n")
+                .replace("<li>", "\n• ");
+                
+            let mut stripped = String::new();
+            let mut inside_tag = false;
+            for c in desc_tagged.chars() {
+                if c == '<' { inside_tag = true; continue; }
+                if c == '>' { inside_tag = false; continue; }
+                if !inside_tag { stripped.push(c); }
+            }
+            
+            // Clean up whitespace: split by lines, trim each line, then rejoin
+            final_desc = stripped.lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<&str>>()
+                .join("\n");
 
             match StoreManager::install_flatpak_with_details(&app_id_clone, &final_desc, &final_screenshots, &icon_url_clone) {
                 Ok(_) => {
