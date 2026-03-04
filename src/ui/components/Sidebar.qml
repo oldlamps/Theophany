@@ -263,7 +263,7 @@ Rectangle {
                     spacing: 8
 
                     Text {
-                        text: sectionRoot.collapsed ? "▶" : "▼"
+                        text: sectionRoot.collapsed ? "▶\ufe0e" : "▼\ufe0e"
                         color: Theme.secondaryText
                         font.pixelSize: 8
                         Layout.alignment: Qt.AlignVCenter

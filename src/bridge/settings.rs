@@ -193,7 +193,7 @@ impl Default for SettingsData {
     }
 }
 
-fn default_theme() -> String { "Default".to_string() }
+fn default_theme() -> String { "System".to_string() }
 fn default_ollama_url() -> String { "http://localhost:11434".to_string() }
 fn default_ollama_model() -> String { "llama3".to_string() }
 fn default_proton_runner_val() -> String { "GE-Proton".to_string() }
@@ -475,7 +475,11 @@ impl AppSettings {
                     self.defaultView = data.default_view;
                     self.showFilterBar = data.show_filter_bar;
                     self.defaultRegion = QString::from(data.default_region);
-                    let t = if data.theme_name.is_empty() { "Default".to_string() } else { data.theme_name };
+                    let t = match data.theme_name.as_str() {
+                        "Default" => "Theophany Midnight".to_string(),
+                        "" => "System".to_string(),
+                        _ => data.theme_name,
+                    };
                     self.themeName = QString::from(t);
                     self.retroAchievementsUser = QString::from(data.retro_achievements_user);
                     self.retroAchievementsToken = QString::from(data.retro_achievements_token);

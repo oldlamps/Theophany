@@ -37,7 +37,7 @@ Dialog {
     property int currentViewMode: 0
     property bool currentShowFilterBar: false
     property string currentDefaultRegion: ""
-    property string currentTheme: "Default"
+    property string currentTheme: "System"
     property string currentRaUser: ""
     property string currentRaToken: ""
     property bool currentRaEnabled: false
@@ -681,7 +681,7 @@ Dialog {
                                 Label { text: "Visual Theme"; color: Theme.secondaryText; font.bold: true }
                                 TheophanyComboBox {
                                     id: themeBox
-                                    model: ["System", "Default", "Nord", "Dracula", "Catppuccin", "Tokyo Night", "Gruvbox Dark", "One Dark Pro", "Latte", "Frost", "Pearl", "That 70's Theme", "That 70's Theme Light", "That 80's Theme", "That 80's Theme Light", "That 90's Theme", "That 90's Theme Light"]
+                                    model: ["System", "Theophany Midnight", "Nord", "Dracula", "Catppuccin", "Tokyo Night", "Gruvbox Dark", "One Dark Pro", "Latte", "Frost", "Pearl", "That 70's Theme", "That 70's Theme Light", "That 80's Theme", "That 80's Theme Light", "That 90's Theme", "That 90's Theme Light"]
                                     Layout.fillWidth: true
                                     onActivated: {
                                         // Apply theme immediately for live preview
@@ -800,7 +800,7 @@ Dialog {
                                      RowLayout {
                                          spacing: 15
                                          TheophanySwitch { id: saveHeroicLocallySwitch; checked: root.currentSaveHeroicAssetsLocally }
-                                         Label { text: "Save Heroic/Epic/GOG art assets locally (instead of symlinks)"; color: Theme.text }
+                                         Label { text: "Save Heroic art assets locally (instead of symlinks)"; color: Theme.text }
                                      }
                                  }
 

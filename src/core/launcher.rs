@@ -1,4 +1,6 @@
 use std::process::Command;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 pub struct Launcher;
 
@@ -164,6 +166,12 @@ impl Launcher {
 
         let mut cmd = Command::new("sh");
         cmd.arg("-c").arg(&final_cmd_string);
+        cmd.stdin(std::process::Stdio::null());
+
+        #[cfg(unix)]
+        {
+            cmd.process_group(0);
+        }
 
         // Only set working directory if it's likely accessible (not spawning on host)
         if !final_cmd_string.starts_with("flatpak-spawn") {

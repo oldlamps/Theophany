@@ -4,7 +4,7 @@ import QtQuick
 Item {
     id: theme
 
-    property string currentTheme: "Default"
+    property string currentTheme: "System"
 
     // Theme Properties
     property color background: "#1e1e24"
@@ -21,7 +21,7 @@ Item {
 
     // Theme Palettes
     readonly property var themes: {
-        "Default": {
+        "Theophany Midnight": {
             background: "#1e1e24",
             secondaryBackground: "#2b2b36",
             sidebar: "#15151a",

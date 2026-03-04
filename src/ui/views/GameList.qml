@@ -417,6 +417,27 @@ FocusScope {
                                 horizontalAlignment: Text.AlignHCenter
                             }
                         }
+
+                        // Running indicator badge
+                        Rectangle {
+                            visible: (typeof gameIsRunning !== "undefined") && gameIsRunning
+                            anchors.bottom: parent.bottom
+                            anchors.left: parent.left
+                            anchors.bottomMargin: 2
+                            anchors.leftMargin: 0
+                            width: 16; height: 16
+                            radius: 8
+                            color: Theme.accent
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "▶\ufe0e"
+                                color: "white"
+                                font.pixelSize: 8
+                                verticalAlignment: Text.AlignVCenter
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                        }
                     }
 
                     // Title

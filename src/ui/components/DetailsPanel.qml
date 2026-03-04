@@ -30,6 +30,8 @@ Rectangle {
     property bool hasEosOverlayState: false
     property bool currentEosOverlayEnabled: false
     
+    property bool isGameRunning: root.gameModel ? root.gameModel.isGameRunning(root.gameId) : false
+    
     // Watch for setting changes to auto-switch if currently viewing a game with video
     Connections {
         target: appSettings
@@ -166,6 +168,10 @@ Rectangle {
             }
         }
 
+        function onRunningGamesChanged() {
+            root.isGameRunning = root.gameModel.isGameRunning(root.gameId)
+        }
+
         function onGameDataChanged(romId) {
 
             if (String(root.gameId) === String(romId)) {
@@ -198,6 +204,7 @@ Rectangle {
         root.hasEosOverlayState = false
         root.currentEosOverlayEnabled = false
         root.resourcesExpanded = false
+        root.isGameRunning = root.gameModel ? root.gameModel.isGameRunning(root.gameId) : false
     }
 
     onGameFilenameChanged: {
@@ -1301,7 +1308,7 @@ Rectangle {
                     }
                     
                     Text {
-                        text: "❯"
+                        text: "❯\ufe0e"
                         color: Theme.accent
                         font.pixelSize: 16
                         opacity: cardMouse.containsMouse ? 1 : 0.4
@@ -1435,19 +1442,26 @@ Rectangle {
             // Play/Install Button
 
             TheophanyButton {
-                text: root.gameIsInstalled ? "PLAY" : "INSTALL"
-                iconEmoji: root.gameIsInstalled ? "▶" : "☁"
-                primary: true
+                text: root.isGameRunning ? "STOP" : (root.gameIsInstalled ? "PLAY" : "INSTALL")
+                iconEmoji: root.isGameRunning ? "⏹\ufe0e" : (root.gameIsInstalled ? "▶\ufe0e" : "☁\ufe0e")
+                primary: !root.isGameRunning
                 Layout.fillWidth: true
                 Layout.preferredHeight: 45
                 focusPolicy: Qt.NoFocus
                 loading: root.isLaunching
                 enabled: !root.isLaunching && !(window.isStoreInstalling && (root.gameId.indexOf(window.storeInstallAppId) !== -1 || window.storeInstallAppId === root.gameFilename || window.storeInstallAppId === root.fullRomPath.replace("flatpak://", "")))
-                tooltipText: root.isLaunching ? "Launching Game..." : (root.gameIsInstalled ? ("Launch " + root.gameTitle) : ("Install " + root.gameTitle))
+                tooltipText: root.isLaunching ? "Launching Game..." : (root.isGameRunning ? ("Stop " + root.gameTitle) : (root.gameIsInstalled ? ("Launch " + root.gameTitle) : ("Install " + root.gameTitle)))
                 
                 onClicked: {
-                    root.triggerLaunchFeedback()
-                    root.playRequested(root.gameId)
+                    if (root.isGameRunning) {
+                        root.gameModel.stopGame(root.gameId)
+                    } else if (root.gameIsInstalled) {
+                        root.triggerLaunchFeedback()
+                        root.playRequested(root.gameId)
+                    } else {
+                        // Handled by Main.qml usually, but we call playRequested which Main handles
+                        root.playRequested(root.gameId)
+                    }
                 }
 
                 TheophanyButton {
@@ -1456,7 +1470,7 @@ Rectangle {
                     width: 30; height: parent.height
                     visible: root.emulatorProfiles.length > 0 || root.fullRomPath.startsWith("epic://") || (root.gameResources && root.gameResources.some(r => r.type === "launcher"))
                     background: null
-                    text: "▼"
+                    text: "▼\ufe0e"
                     onClicked: {
                         if (root.fullRomPath.startsWith("epic://")) {
                             epicExtraMenu.popup()
@@ -1555,7 +1569,7 @@ Rectangle {
 
             Button {
                 id: editButton
-                text: "✎"
+                text: "✎\ufe0e"
                 Layout.preferredWidth: 45
                 Layout.preferredHeight: 45
                 focusPolicy: Qt.NoFocus
@@ -1565,7 +1579,7 @@ Rectangle {
                     border.color: parent.hovered ? Theme.accent : "transparent"
                 }
                 contentItem: Text { 
-                    text: "✎"
+                    text: "✎\ufe0e"
                     color: Theme.text
                     horizontalAlignment: Text.AlignHCenter 
                     verticalAlignment: Text.AlignVCenter 
@@ -1582,7 +1596,7 @@ Rectangle {
             
             Button {
                 id: favoriteButton
-                text: "★"
+                text: "★\ufe0e"
                 Layout.preferredWidth: 45
                 Layout.preferredHeight: 45
                 focusPolicy: Qt.NoFocus
@@ -1602,7 +1616,7 @@ Rectangle {
                     }
                 }
                 contentItem: Text { 
-                    text: "★"
+                    text: "★\ufe0e"
                     color: root.gameIsFavorite ? Theme.buttonText : Theme.secondaryText
                     font.pixelSize: 20
                     horizontalAlignment: Text.AlignHCenter 
@@ -1804,7 +1818,7 @@ Rectangle {
                 TheophanyButton {
                     Layout.fillWidth: true
                     text: window.storeInstallPaused ? "Resume" : "Pause"
-                    iconEmoji: window.storeInstallPaused ? "▶" : "⏸"
+                    iconEmoji: window.storeInstallPaused ? "▶\ufe0e" : "⏸\ufe0e"
                     onClicked: {
                         if (window.storeInstallPaused) {
                             storeBridge.resume_legendary_install(window.storeInstallAppId)
@@ -1819,7 +1833,7 @@ Rectangle {
                 TheophanyButton {
                     Layout.fillWidth: true
                     text: "Cancel"
-                    iconEmoji: "✕"
+                    iconEmoji: "✕\ufe0e"
                     onClicked: {
                         storeBridge.cancel_legendary_install(window.storeInstallAppId)
                         window.isStoreInstalling = false

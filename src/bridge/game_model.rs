@@ -24,6 +24,7 @@ use crate::core::paths;
 use rusqlite::ToSql;
 use tokio::sync::Notify;
 use crate::core::store::StoreManager;
+use std::collections::HashMap;
 
 
 use crate::core::runtime::get_runtime;
@@ -115,6 +116,9 @@ enum AsyncResponse {
     // Cloud Saves
     CloudSaveSyncFinished(String, bool, String), // rom_id, success, message
 
+    // Process Tracking
+    GameStopped(String, i64), // rom_id, duration
+
     // EOS Overlay
     EosOverlayEnabled(String, bool),
 }
@@ -142,6 +146,9 @@ pub struct GameListModel {
     current_recent_only: RefCell<bool>,
     current_installed_only: RefCell<bool>,
     current_tag_filters: RefCell<Vec<String>>,
+    
+    // Process Tracking
+    running_games: RefCell<HashMap<String, i32>>, // ROM ID -> PGID
     
     pub sortMethod: qt_property!(QString; NOTIFY sortMethodChanged),
     pub sortMethodChanged: qt_signal!(),
@@ -250,6 +257,11 @@ pub struct GameListModel {
     isEosOverlayEnabled: qt_method!(fn(&mut self, rom_id: String) -> bool),
     checkEosOverlayEnabled: qt_method!(fn(&mut self, rom_id: String)),
     eosOverlayEnabledResult: qt_signal!(rom_id: String, enabled: bool),
+
+    // Process Tracking
+    isGameRunning: qt_method!(fn(&self, rom_id: String) -> bool),
+    stopGame: qt_method!(fn(&mut self, rom_id: String)),
+    runningGamesChanged: qt_signal!(),
 
     // Scraping
     searchGameImages: qt_method!(fn(&mut self, query: String)),
@@ -386,6 +398,7 @@ impl QAbstractListModel for GameListModel {
                 }
             })), // gameIsInstalled role
             277 => QVariant::from(rom.cloud_saves_supported.unwrap_or(false)), // gameCloudSavesSupported role
+            278 => QVariant::from(self.running_games.borrow().contains_key(&rom.id)), // gameIsRunning role
             _ => QVariant::default(),
         }
     }
@@ -414,6 +427,7 @@ impl QAbstractListModel for GameListModel {
         roles.insert(275, QByteArray::from("gameBackground"));
         roles.insert(276, QByteArray::from("gameIsInstalled"));
         roles.insert(277, QByteArray::from("gameCloudSavesSupported"));
+        roles.insert(278, QByteArray::from("gameIsRunning"));
         roles
     }
 }
@@ -2817,6 +2831,9 @@ impl GameListModel {
                      Ok(mut child) => {
                          log::debug!("Launched successfully.");
                          
+                         let pgid = child.id() as i32;
+                         log::info!("[Launcher] Game {} started with PGID {}", rom_id_clone, pgid);
+                         
                          // Immediate metadata update for last_played
                          if let Ok(db) = DbManager::open(&path_str) {
                              if let Ok(Some(mut meta)) = db.get_metadata(&rom_id_clone) {
@@ -2865,6 +2882,9 @@ impl GameListModel {
                                return;
                            }
 
+                         self.running_games.borrow_mut().insert(rom_id_clone.clone(), pgid);
+                         self.runningGamesChanged();
+
 
                          
                          // Spawn a thread to wait for the process and track time
@@ -2886,10 +2906,32 @@ impl GameListModel {
                          } else { None };
                          
                          let rom_path_thread = rom_path.clone();
+                         let tx_thread = self.tx.borrow().clone();
+                         
                          std::thread::spawn(move || {                             let start_time = std::time::SystemTime::now();
                              
-                             // Wait for process to exit
-                             let _ = child.wait();
+                             // 1. Wait for the primary child to exit (reaps the process)
+                             let exit_status = child.wait();
+                             log::debug!("[Launcher] Primary child for {} exited with {:?}", rom_id_thread, exit_status);
+
+                             // 2. Use process group polling to wait for grandchildren (umu-run, wine, etc.)
+                             #[cfg(unix)]
+                             {
+                                 log::debug!("[Launcher] Polling PGID {} for grandchildren...", pgid);
+                                 loop {
+                                     // Use system kill command to check group status without libc
+                                     let status = std::process::Command::new("kill")
+                                         .arg("-0")
+                                         .arg(format!("-{}", pgid))
+                                         .status();
+                                     
+                                     if status.map(|s| !s.success()).unwrap_or(true) {
+                                         log::debug!("[Launcher] PGID {} group cleared", pgid);
+                                         break;
+                                     }
+                                     std::thread::sleep(std::time::Duration::from_millis(1000));
+                                 }
+                             }
 
                              // ── Cloud Save: Push after game exits ─────────────
                               if let (Some(app_name), Some(sp)) = (&cloud_app_name, &cloud_save_path_for_push) {
@@ -2903,6 +2945,10 @@ impl GameListModel {
 
                              let end_time = std::time::SystemTime::now();
                              let duration = end_time.duration_since(start_time).unwrap_or_default().as_secs() as i64;
+
+                             if let Some(ref t) = tx_thread {
+                                 let _ = t.send(AsyncResponse::GameStopped(rom_id_thread.clone(), duration));
+                             }
 
                              log::debug!("Game exited. Duration: {} seconds", duration);
                              
@@ -4479,6 +4525,12 @@ impl GameListModel {
                 AsyncResponse::CloudSaveSyncFinished(rom_id, success, message) => {
                     self.cloudSaveSyncFinished(rom_id.into(), success, message.into());
                 }
+                AsyncResponse::GameStopped(rom_id, duration) => {
+                    log::info!("[Launcher] Game {} stopped after {}s", rom_id, duration);
+                    self.running_games.borrow_mut().remove(&rom_id);
+                    self.playtimeUpdated(rom_id.into());
+                    self.runningGamesChanged();
+                }
                 AsyncResponse::EosOverlayEnabled(rom_id, enabled) => {
                     self.eosOverlayEnabledResult(rom_id.into(), enabled);
                 }
@@ -5137,6 +5189,31 @@ impl GameListModel {
                     let _ = tx_clone.send(AsyncResponse::EosOverlayEnabled(r_id, enabled));
                 });
             }
+        }
+    }
+
+    #[allow(non_snake_case)]
+    fn isGameRunning(&self, rom_id: String) -> bool {
+        self.running_games.borrow().contains_key(&rom_id)
+    }
+
+    #[allow(non_snake_case)]
+    fn stopGame(&mut self, rom_id: String) {
+        let pgid_opt = self.running_games.borrow().get(&rom_id).cloned();
+        if let Some(pgid) = pgid_opt {
+            log::info!("[Launcher] Stopping game {} with PGID {} (SIGKILL)", rom_id, pgid);
+            #[cfg(unix)]
+            {
+                // Definitively stop the process group using system kill command
+                let _ = std::process::Command::new("kill")
+                    .arg("-9")
+                    .arg(format!("-{}", pgid))
+                    .status();
+            }
+            
+            // Proactively remove from map and trigger UI update for instant feedback.
+            self.running_games.borrow_mut().remove(&rom_id);
+            self.runningGamesChanged();
         }
     }
 }

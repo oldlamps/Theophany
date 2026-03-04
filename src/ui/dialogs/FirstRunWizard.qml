@@ -174,7 +174,7 @@ Dialog {
                             spacing: 15
 
                             Repeater {
-                                model: ["System", "Default", "Nord", "Latte", "Frost", "Pearl", "Tokyo Night", "Catppuccin", "Dracula", "One Dark Pro", "Gruvbox Dark", "That 70's Theme", "That 70's Theme Light", "That 80's Theme", "That 80's Theme Light", "That 90's Theme", "That 90's Theme Light"]
+                                model: ["System", "Theophany Midnight", "Nord", "Latte", "Frost", "Pearl", "Tokyo Night", "Catppuccin", "Dracula", "One Dark Pro", "Gruvbox Dark", "That 70's Theme", "That 70's Theme Light", "That 80's Theme", "That 80's Theme Light", "That 90's Theme", "That 90's Theme Light"]
                                 
                                 delegate: Rectangle {
                                     width: 140

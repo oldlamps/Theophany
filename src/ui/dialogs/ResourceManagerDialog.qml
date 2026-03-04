@@ -113,7 +113,7 @@ Dialog {
                                 if (u.includes("wikipedia.org")) return "🌐"
                                 if (u.includes("mobygames.com")) return "🎮"
                                 if (u.includes("steam")) return "🎮"
-                                if (u.includes("youtube.com") || u.includes("youtu.be")) return "▶️"
+                                if (u.includes("youtube.com") || u.includes("youtu.be")) return "▶\ufe0e"
                                 if (u.includes(".pdf")) return "📄"
                                 
                                 // Fallback to type
@@ -294,10 +294,7 @@ Dialog {
     Platform.FileDialog {
         id: fileDialog
         onAccepted: {
-            // Remove file:// prefix if present for cleaner display, backend handles it?
-            // Models logic says "file://" for local, but raw path is okay too if we prepend later.
-            // Let's store full URI "file:///..." if it comes that way, or just path.
-            // Platform.FileDialog returns file:/// usually.
+           
             urlField.text = file.toString()
         }
     }

@@ -1094,7 +1094,7 @@ Dialog {
                                                 Layout.fillWidth: true
                                                 Text { text: "ADVANCED UMU SETTINGS"; color: Theme.secondaryText; font.pixelSize: 10; font.bold: true; Layout.fillWidth: true }
                                                 Text { 
-                                                    text: advancedCollapsed ? "▶" : "▼"
+                                                    text: advancedCollapsed ? "▶\ufe0e" : "▼\ufe0e"
                                                     color: Theme.secondaryText
                                                     font.pixelSize: 10
                                                     MouseArea {

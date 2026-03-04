@@ -2103,6 +2103,34 @@ ApplicationWindow {
                                         }
                                     }
 
+                                    // Running Indicator Badge
+                                    Rectangle {
+                                        anchors.top: parent.top
+                                        anchors.left: parent.left
+                                        anchors.margins: 8
+                                        width: 24
+                                        height: 24
+                                        radius: 12
+                                        color: Theme.accent
+                                        visible: (typeof gameIsRunning !== "undefined") && gameIsRunning
+                                        z: 5
+                                        
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "▶\ufe0e"
+                                            color: "white"
+                                            font.pixelSize: 12
+                                        }
+                                        
+                                        layer.enabled: true
+                                        layer.effect: Glow {
+                                            color: Theme.accent
+                                            radius: 4
+                                            samples: 9
+                                            spread: 0.3
+                                        }
+                                    }
+
                                     Text {
                                         anchors.centerIn: parent
                                         text: "NO IMG"
@@ -2493,7 +2521,7 @@ ApplicationWindow {
                                 color: playMa.containsMouse ? Theme.accent : Theme.border
                                 visible: (lpMa.containsMouse || playMa.containsMouse) && window.statLastPlayedId !== ""
                                 anchors.verticalCenter: parent.verticalCenter
-                                Text { anchors.centerIn: parent; text: "▶"; color: Theme.text; font.pixelSize: 8 }
+                                Text { anchors.centerIn: parent; text: "▶\ufe0e"; color: Theme.text; font.pixelSize: 8 }
                                 MouseArea {
                                     id: playMa
                                     anchors.fill: parent
@@ -2774,6 +2802,12 @@ ApplicationWindow {
     }
 
     function openVideoDownload(gameId, title, platform, platformType, platformFolder) {
+        var customPath = appSettings.useCustomYtdlp ? appSettings.customYtdlpPath : ""
+        var result = JSON.parse(rootAppInfo.checkYtdlp(customPath))
+        if (!result.found) {
+            ytdlpMissingDialog.open()
+            return
+        }
         videoDownloadDialog.show(gameId, title, platform, platformType, platformFolder)
     }
 
@@ -2889,6 +2923,84 @@ ApplicationWindow {
 
     QuitConfirmDialog {
         id: quitConfirmDialog
+    }
+
+    Dialog {
+        id: ytdlpMissingDialog
+        width: 400
+        height: 250
+        modal: true
+        header: null
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+
+        background: Rectangle {
+            color: Theme.secondaryBackground
+            border.color: Theme.border
+            border.width: 1
+            radius: 12
+            
+            layer.enabled: true
+            layer.effect: DropShadow {
+                transparentBorder: true
+                color: "#40000000"
+                radius: 20
+                samples: 41
+            }
+        }
+
+        contentItem: ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 20
+            spacing: 20
+
+            Text {
+                text: "yt-dlp Required"
+                color: Theme.text
+                font.pixelSize: 20
+                font.bold: true
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            Rectangle { 
+                Layout.fillWidth: true; height: 1; color: Theme.border; opacity: 0.5 
+            }
+
+            Label { 
+                text: "The Video Explorer requires <b>yt-dlp</b> to search and stream videos. It appears to be missing or unconfigured."
+                color: Theme.secondaryText
+                font.pixelSize: 14
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                textFormat: Text.RichText
+                Layout.fillWidth: true
+            }
+
+            Item { Layout.fillHeight: true }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 15
+                Layout.alignment: Qt.AlignHCenter
+
+                TheophanyButton {
+                    text: "Cancel"
+                    Layout.preferredWidth: 100
+                    onClicked: ytdlpMissingDialog.close()
+                }
+                
+                TheophanyButton {
+                    text: "Settings"
+                    primary: true
+                    Layout.preferredWidth: 100
+                    onClicked: {
+                        ytdlpMissingDialog.close()
+                        settingsDialog.openTab("System")
+                        settingsDialog.open()
+                    }
+                }
+            }
+        }
     }
 
     SettingsDialog {

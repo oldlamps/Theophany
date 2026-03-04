@@ -1401,7 +1401,7 @@ Dialog {
                                                 anchors.fill: parent
                                                 Text { text: "ADVANCED SETTINGS"; color: Theme.secondaryText; font.pixelSize: 11; font.bold: true; Layout.fillWidth: true }
                                                 Text { 
-                                                    text: advancedCollapsed ? "▶" : "▼"
+                                                    text: advancedCollapsed ? "▶\ufe0e" : "▼\ufe0e"
                                                     color: Theme.secondaryText
                                                     font.pixelSize: 12
                                                 }

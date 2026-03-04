@@ -166,7 +166,7 @@ Dialog {
                             
                             Label {
                                 anchors.centerIn: parent
-                                text: "✕"
+                                text: "✕\ufe0e"
                                 color: closeHover.hovered ? Theme.text : Theme.secondaryText
                                 font.pixelSize: 14
                             }
@@ -381,7 +381,7 @@ Dialog {
 
                                                             Label {
                                                                 anchors.centerIn: parent
-                                                                text: "▶"
+                                                                text: "▶\ufe0e"
                                                                 color: "white"
                                                                 font.pixelSize: 20
                                                                 opacity: rowHover.hovered ? 1.0 : 0.6
