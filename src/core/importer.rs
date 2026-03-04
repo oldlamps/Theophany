@@ -273,11 +273,11 @@ impl BulkImporter {
             let platform_type_lower = platform.platform_type.as_deref().map(|t| t.to_lowercase()).unwrap_or_default();
             let platform_name_lower = platform.name.to_lowercase();
             
-            if platform_type_lower == "epic" || platform_name_lower.contains("epic") {
+            if platform_type_lower == "epic" || platform_name_lower.contains("epic") || platform_type_lower == "pc (windows)" {
                 let mut settings_to_apply = platform.pc_config_json.clone();
                 
-                // Fallback: If the collection is empty, check for global defaults
-                if settings_to_apply.is_none() || settings_to_apply.as_ref().map_or(true, |s| s.is_empty()) {
+                // Fallback: If the collection is empty, check for global defaults (EPIC ONLY)
+                if (platform_type_lower == "epic" || platform_name_lower.contains("epic")) && (settings_to_apply.is_none() || settings_to_apply.as_ref().map_or(true, |s| s.is_empty())) {
                     let config_path = crate::core::paths::get_config_dir().join("settings.json");
                     if let Ok(content) = std::fs::read_to_string(&config_path) {
                         if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {

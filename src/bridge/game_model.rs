@@ -101,7 +101,7 @@ enum AsyncResponse {
     ImportFinished(String, Vec<String>), // platform_id, list_of_rom_ids
     AutoScrapeFinished(String, String), // rom_id, JSON
     AutoScrapeFailed(String, String), // rom_id, Message
-    RefreshFinished(Vec<Rom>, u64, i32), // Data, Request ID, Total Library Count
+    RefreshFinished(Vec<Rom>, u64, i32, i32, String, String, String), // Data, Request ID, Lib Count, Total Games, Time Str, Last Played Game, Last Played ID
     
     // Bulk Scraper
     BulkProgress(f32, String), // Progress, Status Message
@@ -508,15 +508,26 @@ impl GameListModel {
             let mut total_library_rec = 0;
 
             if let Ok(db) = DbManager::open(&db_path) {
+                // Background Sync for Heroic Playtime if needed
+                if let Some(pid) = &platform_id_filter {
+                    if let Ok(Some(platform)) = db.get_platform(pid) {
+                        if platform.platform_type.as_deref().unwrap_or("").to_lowercase() == "heroic" {
+                            log::info!("[GameListModel] Background Heroic sync for platform: {}", pid);
+                            let _ = StoreManager::sync_heroic_playtime_bulk(&db);
+                        }
+                    }
+                }
+                
                 let conn = db.get_connection();
-                let mut query = String::from("SELECT r.id, r.platform_id, r.path, r.filename, m.title, m.region, p.name, p.platform_type, COALESCE(r.boxart_path, a.local_path), r.date_added, m.play_count, m.total_play_time, m.last_played, p.icon, m.is_favorite, m.genre, m.developer, m.publisher, m.rating, m.tags, m.release_date, COALESCE(r.icon_path, a_icon.local_path), COALESCE(r.background_path, a_bg.local_path, a_ss.local_path), m.is_installed
+                let mut query = String::from("SELECT r.id, r.platform_id, r.path, r.filename, m.title, m.region, p.name, p.platform_type, 
+                                              COALESCE(r.boxart_path, (SELECT local_path FROM assets WHERE rom_id = r.id AND type = 'Box - Front' LIMIT 1)), 
+                                              r.date_added, m.play_count, m.total_play_time, m.last_played, p.icon, m.is_favorite, m.genre, m.developer, m.publisher, m.rating, m.tags, m.release_date, 
+                                              COALESCE(r.icon_path, (SELECT local_path FROM assets WHERE rom_id = r.id AND type = 'Icon' LIMIT 1)), 
+                                              COALESCE(r.background_path, (SELECT local_path FROM assets WHERE rom_id = r.id AND type = 'Background' LIMIT 1), (SELECT local_path FROM assets WHERE rom_id = r.id AND type = 'Screenshot' LIMIT 1)), 
+                                              m.is_installed
                                               FROM roms r 
                                               LEFT JOIN metadata m ON r.id = m.rom_id 
-                                              JOIN platforms p ON r.platform_id = p.id 
-                                              LEFT JOIN assets a ON r.id = a.rom_id AND a.type = 'Box - Front'
-                                              LEFT JOIN assets a_icon ON r.id = a_icon.rom_id AND a_icon.type = 'Icon'
-                                              LEFT JOIN assets a_bg ON r.id = a_bg.rom_id AND a_bg.type = 'Background'
-                                              LEFT JOIN assets a_ss ON r.id = a_ss.rom_id AND a_ss.type = 'Screenshot'");
+                                              JOIN platforms p ON r.platform_id = p.id");
 
                 if let Some(pid) = &playlist_filter {
                     if !pid.is_empty() {
@@ -722,8 +733,45 @@ impl GameListModel {
                 if let Ok(count) = db.get_connection().query_row("SELECT COUNT(*) FROM roms", [], |row| row.get(0)) {
                     total_library_rec = count;
                 }
+
+                // Calculate Stats in background thread
+                let total_games = new_roms.len() as i32;
+                let mut total_time_seconds: i64 = 0;
+                let mut last_played_game = String::from("None");
+                let mut last_played_id = String::from("");
+                let mut last_played_time: i64 = 0;
+                
+                for rom in new_roms.iter() {
+                    if let Some(time) = rom.total_play_time {
+                        total_time_seconds += time;
+                    }
+                    if let Some(lp) = rom.last_played {
+                        if lp > last_played_time {
+                            last_played_time = lp;
+                            last_played_game = rom.title.as_ref().unwrap_or(&rom.filename).clone();
+                            last_played_id = rom.id.clone();
+                        }
+                    }
+                }
+                
+                let hours = total_time_seconds / 3600;
+                let minutes = (total_time_seconds % 3600) / 60;
+                let time_str = if hours > 0 {
+                    format!("{}h {}m", hours, minutes)
+                } else {
+                    format!("{}m", minutes)
+                };
+
+                let _ = tx.send(AsyncResponse::RefreshFinished(
+                    new_roms, 
+                    my_id, 
+                    total_library_rec,
+                    total_games,
+                    time_str,
+                    last_played_game,
+                    last_played_id
+                ));
             }
-            let _ = tx.send(AsyncResponse::RefreshFinished(new_roms, my_id, total_library_rec));
         });
     }
 
@@ -1060,21 +1108,6 @@ impl GameListModel {
         *self.current_installed_only.borrow_mut() = installed_only;
         *self.current_platform_type_filter.borrow_mut() = None;
         *self.current_playlist_filter.borrow_mut() = None;
-
-        if let Some(id) = p_filter {
-            let db_path = self.db_path.borrow().clone();
-            if !db_path.is_empty() {
-                if let Ok(db) = DbManager::open(&db_path) {
-                    if let Ok(Some(platform)) = db.get_platform(&id) {
-                        let p_type = platform.platform_type.as_deref().unwrap_or("unknown");
-                        log::debug!("[GameListModel] Platform type for {} is: {}", id, p_type);
-                        if p_type.to_lowercase() == "heroic" {
-                            self.refreshHeroicPlaytime();
-                        }
-                    }
-                }
-            }
-        }
 
         self.refresh();
     }
@@ -4424,13 +4457,16 @@ impl GameListModel {
                     
                     self.refresh();
                 },
-                AsyncResponse::RefreshFinished(new_roms, rid, total_count) => {
+                AsyncResponse::RefreshFinished(new_roms, rid, total_count, total_games, time_str, lp_game, lp_id) => {
                     if rid >= *self.last_refresh_id.borrow() {
                         self.begin_reset_model();
                         *self.roms.borrow_mut() = new_roms;
                         *self.total_library_count.borrow_mut() = total_count;
                         self.end_reset_model();
-                        self.calculateStats();
+                        
+                        // Emit stats signal directly from background calculation
+                        self.statsUpdated(total_games, time_str.into(), lp_game.into(), lp_id.into(), total_count);
+
                         self.platformTypesChanged();
                         self.filterOptionsChanged();
                         self.loadingFinished();

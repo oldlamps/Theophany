@@ -164,6 +164,15 @@ impl DbManager {
                 FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
             );
 
+            CREATE INDEX IF NOT EXISTS idx_roms_platform_id ON roms(platform_id);
+            CREATE INDEX IF NOT EXISTS idx_roms_date_added ON roms(date_added);
+            CREATE INDEX IF NOT EXISTS idx_metadata_is_favorite ON metadata(is_favorite);
+            CREATE INDEX IF NOT EXISTS idx_metadata_last_played ON metadata(last_played);
+            CREATE INDEX IF NOT EXISTS idx_metadata_total_play_time ON metadata(total_play_time);
+            CREATE INDEX IF NOT EXISTS idx_metadata_genre ON metadata(genre);
+            CREATE INDEX IF NOT EXISTS idx_metadata_region ON metadata(region);
+            CREATE INDEX IF NOT EXISTS idx_playlist_entries_rom_id ON playlist_entries(rom_id);
+
             COMMIT;",
         )?;
 
