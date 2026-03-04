@@ -436,11 +436,11 @@ Dialog {
                         
                         var platformId = filteredPlatforms.get(idx).id
                         var platformName = filteredPlatforms.get(idx).name
-                        console.log("[ExoDosImport] Selected Platform: " + platformName + " (ID: " + platformId + ")")
+
                         
                         if (platformId === "virtual_dos") {
                                 var newId = "platform-" + Math.random().toString(36).substr(2, 9)
-                                console.log("[ExoDosImport] Creating new eXoDOS platform with ID: " + newId)
+
                                 sidebar.platformModel.updateSystem(
                                     newId, "eXoDOS", "", "", "", "DOS", "assets/systems/exodos.png", ""
                                 )
@@ -478,7 +478,7 @@ Dialog {
                         
                         if (selectedRoms.length > 0) {
                             var json = JSON.stringify(selectedRoms)
-                            console.log("[ExoDosImport] Sending JSON: " + json)
+
                             progressDialog.progress = 0.0
                             progressDialog.status = "Preparing to import " + selectedRoms.length + " games..."
                             progressDialog.open()

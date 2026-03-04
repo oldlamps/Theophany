@@ -32,7 +32,7 @@ impl ExoDosManager {
         let mut roms = Vec::new();
         let dos_path = base_path.join("eXo/eXoDOS/!dos");
         
-        log::info!("Scanning eXoDOS directory: {:?}", dos_path);
+        log::debug!("Scanning eXoDOS directory: {:?}", dos_path);
 
         if !dos_path.exists() {
             log::warn!("eXoDOS path not found: {:?}", dos_path);

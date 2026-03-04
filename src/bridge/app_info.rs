@@ -116,7 +116,7 @@ impl AppInfo {
             let dest_path = tools_dir.join("legendary");
             let url = "https://github.com/oldlamps/legendary/releases/latest/download/legendary";
 
-            log::info!("[AppInfo] Downloading Legendary from: {}", url);
+            log::debug!("[AppInfo] Downloading Legendary from: {}", url);
             
             let client = reqwest::blocking::Client::builder()
                 .user_agent("Theophany")
@@ -155,7 +155,7 @@ impl AppInfo {
                             }
                         }
 
-                        log::info!("[AppInfo] Legendary downloaded successfully to {:?}", dest_path);
+                        log::debug!("[AppInfo] Legendary downloaded successfully to {:?}", dest_path);
                         let _ = tx.send(AsyncResponse::LegendaryDownloadStatus(true, "Download complete".to_string()));
                     } else {
                         let _ = tx.send(AsyncResponse::LegendaryDownloadStatus(false, format!("Server returned error: {}", response.status())));
@@ -190,7 +190,7 @@ impl AppInfo {
             // 1. Download yt-dlp
             let ytdlp_url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp";
             let ytdlp_path = tools_dir.join("yt-dlp");
-            log::info!("[AppInfo] Downloading yt-dlp from: {}", ytdlp_url);
+            log::debug!("[AppInfo] Downloading yt-dlp from: {}", ytdlp_url);
             let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, "Downloading yt-dlp...".to_string()));
 
             match client.get(ytdlp_url).send() {
@@ -232,7 +232,7 @@ impl AppInfo {
             // Note: We use yt.solver.lib.js and save it as yt-dlp-ejs.js
             let ejs_url = "https://github.com/yt-dlp/ejs/releases/latest/download/yt.solver.lib.js";
             let ejs_path = tools_dir.join("yt-dlp-ejs.js");
-            log::info!("[AppInfo] Downloading ejs component from: {}", ejs_url);
+            log::debug!("[AppInfo] Downloading ejs component from: {}", ejs_url);
             let _ = tx.send(AsyncResponse::YtdlpDownloadStatus(false, "Downloading ejs helper...".to_string()));
 
             match client.get(ejs_url).send() {
@@ -451,16 +451,16 @@ impl AppInfo {
 
         let latest_url = "https://api.github.com/repos/oldlamps/theophany/releases/latest";
         
-        log::info!("[AppInfo] Checking for updates at: {}", latest_url);
-        log::info!("[AppInfo] Current version: {}", current_version);
+        log::debug!("[AppInfo] Checking for updates at: {}", latest_url);
+        log::debug!("[AppInfo] Current version: {}", current_version);
 
         match client.get(latest_url).send() {
             Ok(response) => {
-                log::info!("[AppInfo] GitHub Response Status: {}", response.status());
+                log::debug!("[AppInfo] GitHub Response Status: {}", response.status());
                 if let Ok(json) = response.json::<serde_json::Value>() {
                     if let Some(tag_name) = json["tag_name"].as_str() {
                         let latest_version = tag_name.trim_start_matches('v');
-                        log::info!("[AppInfo] Latest release version found: {}", latest_version);
+                        log::debug!("[AppInfo] Latest release version found: {}", latest_version);
                         
                         if is_version_greater(latest_version, current_version) {
                             log::info!("[AppInfo] New update available! {} > {}", latest_version, current_version);
@@ -468,7 +468,7 @@ impl AppInfo {
                             let url = json["html_url"].as_str().unwrap_or("").to_string();
                             self.updateAvailable(latest_version.to_string(), notes, url);
                         } else {
-                            log::info!("[AppInfo] App is up to date ({} <= {})", latest_version, current_version);
+                            log::debug!("[AppInfo] App is up to date ({} <= {})", latest_version, current_version);
                         }
                     } else {
                         log::warn!("[AppInfo] No tag_name found in GitHub response");

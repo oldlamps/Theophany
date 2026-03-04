@@ -438,7 +438,7 @@ impl AssetTask {
                     let _ = fs::remove_file(&dest_path);
                 }
                 
-                log::info!("[AssetTask] Downloading {} to {:?}", self.asset_type, dest_path);
+                log::debug!("[AssetTask] Downloading {} to {:?}", self.asset_type, dest_path);
                 // Use async reqwest for parallel downloads
                 let client = reqwest::Client::new();
                 if let Ok(resp) = client.get(&self.src).send().await {

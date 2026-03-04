@@ -512,7 +512,7 @@ impl GameListModel {
                 if let Some(pid) = &platform_id_filter {
                     if let Ok(Some(platform)) = db.get_platform(pid) {
                         if platform.platform_type.as_deref().unwrap_or("").to_lowercase() == "heroic" {
-                            log::info!("[GameListModel] Background Heroic sync for platform: {}", pid);
+                            log::debug!("[GameListModel] Background Heroic sync for platform: {}", pid);
                             let _ = StoreManager::sync_heroic_playtime_bulk(&db);
                         }
                     }
@@ -847,7 +847,7 @@ impl GameListModel {
 
     #[allow(non_snake_case)]
     fn refreshHeroicPlaytime(&mut self) {
-        log::info!("[GameListModel] Refreshing all Heroic playtime data...");
+        log::debug!("[GameListModel] Refreshing all Heroic playtime data...");
         let db_path = self.db_path.borrow().clone();
         if db_path.is_empty() { return; }
 
@@ -1099,7 +1099,6 @@ impl GameListModel {
 
     #[allow(non_snake_case)]
     fn batchSetFilters(&mut self, platform_id: String, favorites: bool, sort: String, recent_only: bool, installed_only: bool) {
-        log::info!("[GameListModel] batchSetFilters called for platform: {}. InstalledOnly: {}", platform_id, installed_only);
         let p_filter = if platform_id.is_empty() { None } else { Some(platform_id) };
         *self.current_platform_filter.borrow_mut() = p_filter.clone();
         *self.current_favorites_only.borrow_mut() = favorites;
@@ -1462,7 +1461,7 @@ impl GameListModel {
                 let final_id_for_icon = final_platform_id.clone();
                 let icon_str = icon.clone();
                 if icon_str.starts_with("http") {
-                    log::info!("[Import] Triggering system icon download: {}", icon_str);
+                    log::debug!("[Import] Triggering system icon download: {}", icon_str);
                     let db_path_icon = db_path.clone();
                     let slug = name.to_lowercase().replace(" ", "-");
                     let client = ScraperClient::new();
@@ -1495,7 +1494,7 @@ impl GameListModel {
                                              if let Some(mut p) = p {
                                                  p.icon = Some(rel_path);
                                                  let _ = db.insert_platform(&p);
-                                                 log::info!("[Import] System icon assigned: {}", filename);
+                                                 log::debug!("[Import] System icon assigned: {}", filename);
                                              }
                                          }
                                      }
@@ -2177,7 +2176,7 @@ impl GameListModel {
                     log::error!("Failed to insert asset record: {}", e);
                 }
             } else {
-                log::error!("DEBUG: Could not find ROM path info for {}", rom_id);
+                log::error!("Could not find ROM path info for {}", rom_id);
                 if let Err(e) = db.insert_asset(&rom_id, &asset_type, &src_path.to_string_lossy()) {
                      log::error!("Failed to insert asset record (fallback): {}", e);
                 }
@@ -2192,7 +2191,7 @@ impl GameListModel {
         if let Ok(db) = DbManager::open(&db_path) {
             match crate::core::asset_scanner::scan_game_assets(&db, &rom_id) {
                 Ok(_) => {
-                    log::info!("refreshGameAssets: Successfully rescanned assets for {}", rom_id);
+                    log::debug!("refreshGameAssets: Successfully rescanned assets for {}", rom_id);
                     self.update_row_by_id(&rom_id);
                 },
                 Err(e) => {
@@ -2418,7 +2417,7 @@ impl GameListModel {
 
     #[allow(non_snake_case)]
     fn rescanSystem(&mut self, platform_id: String) {
-        log::info!("Rescanning System: ID={}", platform_id);
+        log::debug!("Rescanning System: ID={}", platform_id);
         let db_path = self.db_path.borrow().clone();
         if db_path.is_empty() { return; }
 
@@ -2428,7 +2427,7 @@ impl GameListModel {
                 let platform_type = platform.platform_type.clone().unwrap_or_default().to_lowercase();
                 
                 if platform_type == "steam" || platform_type == "heroic" || platform_type == "lutris" {
-                    log::info!("[Rescan] Specialized rescan for store platform: {}", platform_type);
+                    log::debug!("[Rescan] Specialized rescan for store platform: {}", platform_type);
                     
                     let scanned_roms = match platform_type.as_str() {
                         "steam" => {
@@ -2481,12 +2480,12 @@ impl GameListModel {
                         .collect();
 
                     if !to_import.is_empty() {
-                        log::info!("[Rescan] Found {} new games to import for {}", to_import.len(), platform_type);
+                        log::debug!("[Rescan] Found {} new games to import for {}", to_import.len(), platform_type);
                         use crate::core::importer::BulkImporter;
                         let save_locally = crate::bridge::settings::AppSettings::should_save_heroic_assets_locally();
                         let _ = BulkImporter::import_roms(&db, to_import, &platform_id, save_locally, |_, _| {});
                     } else {
-                        log::info!("[Rescan] No new games found for {}", platform_type);
+                        log::debug!("[Rescan] No new games found for {}", platform_type);
                     }
                     
                     self.refresh();
@@ -2554,7 +2553,7 @@ impl GameListModel {
                         }
                     }
                 }
-                log::info!("Rescan complete: {} new games found.", new_count);
+                log::debug!("Rescan complete: {} new games found.", new_count);
             }
         }
         self.refresh();
@@ -2562,7 +2561,7 @@ impl GameListModel {
 
     #[allow(non_snake_case)]
     fn launchGame(&mut self, rom_id: String) {
-        log::info!("Requesting launch for ROM: {}", rom_id);
+        log::debug!("Requesting launch for ROM: {}", rom_id);
         let path_str = self.db_path.borrow().clone();
         
         // We need to clone specific data to move into the thread
@@ -2798,9 +2797,9 @@ impl GameListModel {
                              LegendaryWrapper::resolve_cloud_save_path(app_name, prefix).ok()?
                          });
                      if let Some(sp) = save_path_resolved {
-                         log::info!("[cloud-save] Pulling saves before launch for {}", app_name);
+                         log::debug!("[cloud-save] Pulling saves before launch for {}", app_name);
                          match LegendaryWrapper::sync_saves(app_name, &sp, SyncDirection::Pull, false) {
-                             Ok(res) => log::info!("[cloud-save] Pull complete: {:?}", res),
+                             Ok(res) => log::debug!("[cloud-save] Pull complete: {:?}", res),
                              Err(e) => log::warn!("[cloud-save] Pull failed (launching anyway): {}", e),
                          }
                      }
@@ -2816,7 +2815,7 @@ impl GameListModel {
                  // Launch process
                  match Launcher::launch(&command_template, &rom_path, working_dir.as_deref(), env_vars_opt, wrapper_opt, eos_overlay_enabled) {
                      Ok(mut child) => {
-                         log::info!("Launched successfully.");
+                         log::debug!("Launched successfully.");
                          
                          // Immediate metadata update for last_played
                          if let Ok(db) = DbManager::open(&path_str) {
@@ -2895,9 +2894,9 @@ impl GameListModel {
                              // ── Cloud Save: Push after game exits ─────────────
                               if let (Some(app_name), Some(sp)) = (&cloud_app_name, &cloud_save_path_for_push) {
                                   use crate::core::legendary::{LegendaryWrapper, SyncDirection};
-                                   log::info!("[cloud-save] Pushing saves after exit for {}", app_name);
+                                   log::debug!("[cloud-save] Pushing saves after exit for {}", app_name);
                                    match LegendaryWrapper::sync_saves(app_name, sp, SyncDirection::Push, false) {
-                                       Ok(res) => log::info!("[cloud-save] Push complete for {}: {:?}", app_name, res),
+                                       Ok(res) => log::debug!("[cloud-save] Push complete for {}: {:?}", app_name, res),
                                        Err(e) => log::warn!("[cloud-save] Push failed: {}", e),
                                    }
                               }
@@ -2905,7 +2904,7 @@ impl GameListModel {
                              let end_time = std::time::SystemTime::now();
                              let duration = end_time.duration_since(start_time).unwrap_or_default().as_secs() as i64;
 
-                             log::info!("Game exited. Duration: {} seconds", duration);
+                             log::debug!("Game exited. Duration: {} seconds", duration);
                              
                              // Update DB
                              if let Ok(db) = DbManager::open(&db_path_thread) {
@@ -2967,7 +2966,7 @@ impl GameListModel {
                                      if let Err(e) = db.insert_metadata(&meta) {
                                          log::error!("Failed to update playtime metadata: {}", e);
                                      } else {
-                                         log::info!("Playtime updated for {}.", rom_id_thread);
+                                         log::debug!("Playtime updated for {}.", rom_id_thread);
                                      }
                                  } else {
                                      // Create new metadata if missing (unlikely if game exists)
@@ -3019,7 +3018,7 @@ impl GameListModel {
 
     #[allow(non_snake_case)]
     fn launchResource(&mut self, rom_id: String, url: String) {
-        log::info!("Requesting launch for resource: {} (ROM: {})", url, rom_id);
+        log::debug!("Requesting launch for resource: {} (ROM: {})", url, rom_id);
         
         let path_str = self.db_path.borrow().clone();
         if path_str.is_empty() { return; }
@@ -3043,7 +3042,7 @@ impl GameListModel {
                         let end_time = std::time::SystemTime::now();
                         let duration = end_time.duration_since(start_time).unwrap_or_default().as_secs() as i64;
 
-                        log::info!("Alternate launcher exited for {}. Duration: {} seconds", rom_id_thread, duration);
+                        log::debug!("Alternate launcher exited for {}. Duration: {} seconds", rom_id_thread, duration);
 
                         if let Ok(db) = DbManager::open(&db_path_thread) {
                             if let Ok(Some(mut meta)) = db.get_metadata(&rom_id_thread) {
@@ -3116,7 +3115,7 @@ impl GameListModel {
                 rusqlite::params![rom_id],
             );
             match result {
-                Ok(rows) => log::info!("[uninstallSteamGame] Marked uninstalled in DB ({} rows)", rows),
+                Ok(rows) => log::debug!("[uninstallSteamGame] Marked uninstalled in DB ({} rows)", rows),
                 Err(e) => log::error!("[uninstallSteamGame] DB update failed: {}", e),
             }
         }
@@ -3306,7 +3305,7 @@ impl GameListModel {
                             }
                         }
 
-                        log::info!("[cloud-save] Sync result for {}: {:?} -> Message: {}", rom_id_clone, res, msg);
+                        log::debug!("[cloud-save] Sync result for {}: {:?} -> Message: {}", rom_id_clone, res, msg);
 
                         let _ = tx.send(AsyncResponse::CloudSaveSyncFinished(
                             rom_id_clone,
@@ -3496,7 +3495,7 @@ impl GameListModel {
             };
             let steam_enabled = steam_enabled && !steam_id.is_empty() && !steam_key.is_empty();
             
-            log::info!("[BulkScrape] Worker Start. Meta: {}, RA: {}, Steam: {}, Priority: {}", 
+            log::debug!("[BulkScrape] Worker Start. Meta: {}, RA: {}, Steam: {}, Priority: {}", 
                 metadata_enabled, ra_enabled, steam_enabled, if prefer_ra { "RA" } else { "Meta" });
             
             let provider = ScraperManager::get_provider(&provider_name, client.clone(), o_url, o_model, g_key, oa_key, l_prov);
@@ -3531,7 +3530,7 @@ impl GameListModel {
                 let do_metadata = async {
                     if !metadata_enabled { return; }
                     
-                    log::info!("[BulkScrape] Running Metadata for {}", job.title);
+                    log::debug!("[BulkScrape] Running Metadata for {}", job.title);
                     let _ = tx.send(AsyncResponse::BulkProgress(
                 index as f32 / total_jobs, 
                         format!("Scraping Metadata: {}", job.title)
@@ -3606,7 +3605,7 @@ impl GameListModel {
                                 };
 
                                 let meta_result = if use_cache {
-                                    log::info!("[BulkScrape] Using cached metadata for {}", job.title);
+                                    log::debug!("[BulkScrape] Using cached metadata for {}", job.title);
                                     Ok(res.metadata.unwrap())
                                 } else {
                                     provider.fetch_details(&res.id).await
@@ -3804,7 +3803,7 @@ impl GameListModel {
                 let do_ra = async {
                     if !ra_enabled { return; }
                     
-                    log::info!("[BulkScrape] Running RA for {}", job.title);
+                    log::debug!("[BulkScrape] Running RA for {}", job.title);
                     let _ = tx.send(AsyncResponse::BulkProgress(
                         index as f32 / total_jobs, 
                         format!("Checking Achievements: {}", job.title)
@@ -3836,7 +3835,7 @@ impl GameListModel {
                 let do_steam = async {
                     if !steam_enabled || !job.id.starts_with("steam-") { return; }
                     
-                    log::info!("[BulkScrape] Running Steam achievements for {}", job.title);
+                    log::debug!("[BulkScrape] Running Steam achievements for {}", job.title);
                     let _ = tx.send(AsyncResponse::BulkProgress(
                         index as f32 / total_jobs, 
                         format!("Checking Steam Achievements: {}", job.title)
@@ -4059,9 +4058,9 @@ impl GameListModel {
     #[allow(non_snake_case)]
     pub fn searchOnline(&mut self, query: String, platform: String, provider: String, ollama_url: String, ollama_model: String, gemini_key: String, openai_key: String, llm_provider: String) {
         if provider == "Ollama + Web Search" || provider == "LLM API" {
-            log::info!("[Rust] searchOnline: '{}' ({}) via {} [Ollama: {} model: {}]", query, platform, provider, ollama_url, ollama_model);
+            log::debug!("[Rust] searchOnline: '{}' ({}) via {} [Ollama: {} model: {}]", query, platform, provider, ollama_url, ollama_model);
         } else {
-            log::info!("[Rust] searchOnline: '{}' ({}) via {}", query, platform, provider);
+            log::debug!("[Rust] searchOnline: '{}' ({}) via {}", query, platform, provider);
         }
         let client = self.get_scraper_client();
         let tx = match self.tx.borrow().as_ref() {
@@ -4181,7 +4180,7 @@ impl GameListModel {
             match scraper.fetch_details(&source_id).await {
                 Ok(metadata) => {
                     let json = serde_json::to_string(&metadata).unwrap_or_default();
-                    log::info!("[GameModel] fetchOnlineMetadata success.");
+                    log::debug!("[GameModel] fetchOnlineMetadata success.");
                     let _ = tx.send(AsyncResponse::FetchFinished(json));
                 },
                 Err(e) => {
@@ -4718,7 +4717,7 @@ impl GameListModel {
                             ) {
                                 matched_id = res.id;
                                 cached_metadata = res.metadata;
-                                log::info!("[AutoScrape] MATCH FOUND: {}", matched_id);
+                                log::debug!("[AutoScrape] MATCH FOUND: {}", matched_id);
                                 break;
                             } else {
 

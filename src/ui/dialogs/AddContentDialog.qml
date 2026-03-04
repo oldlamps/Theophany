@@ -397,13 +397,15 @@ Dialog {
                                     onCurrentIndexChanged: {
                                         if (currentIndex >= 0 && platformModel) {
                                             var modelIdx = platformModel.index(currentIndex, 0)
-                                            extField.text = platformModel.data(modelIdx, 258)
+                                            var val = platformModel.data(modelIdx, 258)
+                                            extField.text = (val !== undefined) ? val : ""
                                         }
                                     }
                                     Component.onCompleted: {
                                         if (currentIndex >= 0 && platformModel) {
                                             var modelIdx = platformModel.index(currentIndex, 0)
-                                            extField.text = platformModel.data(modelIdx, 258)
+                                            var val = platformModel.data(modelIdx, 258)
+                                            extField.text = (val !== undefined) ? val : ""
                                         }
                                     }
                                 }

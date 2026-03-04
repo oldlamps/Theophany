@@ -71,7 +71,7 @@ Dialog {
         target: storeBridge
         
         function onLegendaryAppInfoReceived(json) {
-            console.log("LegendaryAppInfoReceived output length: " + json.length);
+
             try {
                 // The output might have log lines before the JSON, so let's try to extract just the JSON part
                 var jsonStr = json;
@@ -81,7 +81,7 @@ Dialog {
                 var info = JSON.parse(jsonStr);
                 
                 if (info.error) {
-                    console.log("legendary error:", info.error);
+
                     installSizeStr = "Error fetching info";
                     gameTitleStr = root.pendingAppId;
                     loading = false;
@@ -121,8 +121,7 @@ Dialog {
                 }
                 loading = false;
             } catch (e) {
-                console.log("EpicInstallDialog JSON parse error:", e);
-                console.log("Raw output was:", jsonStr);
+
                 installSizeStr = "Parse Error";
                 loading = false;
             }

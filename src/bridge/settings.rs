@@ -45,7 +45,7 @@ struct SettingsData {
     ai_description_prompt: String,
     #[serde(default)]
     pub column_widths: String,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub default_ignore_on_delete: bool,
     #[serde(default = "default_hotkeys")]
     pub hotkeys: HashMap<String, String>,
@@ -73,7 +73,7 @@ struct SettingsData {
     pub use_custom_ytdlp: bool,
     #[serde(default)]
     pub custom_ytdlp_path: String,
-    #[serde(default)]
+    #[serde(default = "default_proton_runner_val")]
     pub default_proton_runner: String,
     #[serde(default = "default_prefix")]
     pub default_proton_prefix: String,
@@ -149,7 +149,7 @@ impl Default for SettingsData {
             ignore_the_in_sort: true,
             ai_description_prompt: default_description_prompt(),
             column_widths: String::new(),
-            default_ignore_on_delete: true,
+            default_ignore_on_delete: false,
             hotkeys: default_hotkeys(),
             active_metadata_scraper: default_metadata_scraper(),
             active_image_scraper: default_image_scraper(),
@@ -163,7 +163,7 @@ impl Default for SettingsData {
             confirm_on_quit: true,
             use_custom_ytdlp: false,
             custom_ytdlp_path: String::new(),
-            default_proton_runner: String::new(),
+            default_proton_runner: default_proton_runner_val(),
             default_proton_prefix: default_prefix(),
             default_proton_wrapper: String::new(),
             default_proton_use_gamescope: false,
@@ -196,6 +196,7 @@ impl Default for SettingsData {
 fn default_theme() -> String { "Default".to_string() }
 fn default_ollama_url() -> String { "http://localhost:11434".to_string() }
 fn default_ollama_model() -> String { "llama3".to_string() }
+fn default_proton_runner_val() -> String { "GE-Proton".to_string() }
 
 fn default_grid_scale() -> f32 { 1.0 }
 fn default_metadata_scraper() -> String { "IGDB".to_string() }

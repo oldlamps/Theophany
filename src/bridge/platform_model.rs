@@ -183,7 +183,6 @@ impl PlatformListModel {
         };
 
         std::thread::spawn(move || {
-            log::info!("[PlatformListModel] Starting deletion for platform: {}", id);
             let _ = tx.send(AsyncResponse::DeleteProgress(
                 id.clone(),
                 0.0,

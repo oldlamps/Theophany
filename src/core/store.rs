@@ -947,7 +947,7 @@ impl StoreManager {
 
             for p in candidates {
                 if p.exists() {
-                    log::info!("[SteamAsset] Found boxart for {}: {:?}", id, p);
+                    log::debug!("[SteamAsset] Found boxart for {}: {:?}", id, p);
                     return Some(p.to_string_lossy().to_string());
                 }
             }
@@ -968,7 +968,7 @@ impl StoreManager {
 
             for p in candidates {
                 if p.exists() {
-                    log::info!("[SteamAsset] Found background for {}: {:?}", id, p);
+                    log::debug!("[SteamAsset] Found background for {}: {:?}", id, p);
                     return Some(p.to_string_lossy().to_string());
                 }
             }

@@ -71,7 +71,7 @@ Dialog {
             }
         }
         function onCloudSaveSyncFinished(romId, success, message) {
-            console.log("Cloud save sync finished: " + romId + " success: " + success + " message: " + message)
+
             var sId = romId.toString()
             var targetId = root.gameId.toString()
             if (sId === targetId || sId.indexOf(targetId) >= 0 || targetId.indexOf(sId) >= 0) {
@@ -101,7 +101,7 @@ Dialog {
                      }
                 }
             } catch (e) {
-                console.log("Error parsing legendary info: " + e)
+
             }
             root.loadingEpicInfo = false
         }

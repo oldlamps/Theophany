@@ -185,7 +185,7 @@ impl StoreBridge {
     }
 
     fn install_app(&self, app_id: String, platform_id: String, name: String, _summary: String, icon_url: String, description: String, screenshots_json: String, developer: String) {
-        log::info!("Starting Flatpak install for: {} ({})", name, app_id);
+        log::debug!("Starting Flatpak install for: {} ({})", name, app_id);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         let app_id_clone = app_id.clone();
@@ -234,7 +234,7 @@ impl StoreBridge {
 
             match StoreManager::install_flatpak_with_details(&app_id_clone, &final_desc, &final_screenshots, &icon_url_clone) {
                 Ok(_) => {
-                    log::info!("[FlatpakStore] Install successful, creating library entry...");
+                    log::debug!("[FlatpakStore] Install successful, creating library entry...");
                     
                     // Attempt to cache icon logic (library facing)
                     let mut final_icon_path = None;
@@ -287,7 +287,7 @@ impl StoreBridge {
                         let _ = db.insert_metadata(&meta);
                         
                         // Auto-scan for assets immediately so they show up
-                        log::info!("Scanning assets for new install: {}", app_id_clone);
+                        log::debug!("Scanning assets for new install: {}", app_id_clone);
                         let _ = crate::core::asset_scanner::scan_game_assets(&db, &rom.id);
                     }
 
@@ -302,7 +302,7 @@ impl StoreBridge {
     }
 
     fn search_store(&self, query: String) {
-        log::info!("Searching Flathub for: {}", query);
+        log::debug!("Searching Flathub for: {}", query);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         std::thread::spawn(move || {
@@ -328,7 +328,7 @@ impl StoreBridge {
     }
 
     fn browse_store(&self, category: String) {
-        log::info!("Browsing Flathub storefront for category: {}", category);
+        log::debug!("Browsing Flathub storefront for category: {}", category);
         self.ensure_channels();
         
         // check cache first (skip for Featured as we want fresh daily content or short TTL)
@@ -386,7 +386,7 @@ impl StoreBridge {
 
 
     fn refresh_local_apps(&self) {
-        log::info!("Scanning local apps...");
+        log::debug!("Scanning local apps...");
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         std::thread::spawn(move || {
@@ -397,7 +397,7 @@ impl StoreBridge {
     }
 
     fn refresh_steam_library(&self) {
-        log::info!("Scanning Steam library...");
+        log::debug!("Scanning Steam library...");
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         std::thread::spawn(move || {
@@ -441,7 +441,7 @@ impl StoreBridge {
     fn refresh_remote_steam_library(&self, steam_id: QString, api_key: QString) {
         let sid = steam_id.to_string();
         let key = api_key.to_string();
-        log::info!("Fetching remote Steam library for: {}", sid);
+        log::debug!("Fetching remote Steam library for: {}", sid);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         
@@ -460,7 +460,7 @@ impl StoreBridge {
     }
 
     fn refresh_heroic_library(&self) {
-        log::info!("Scanning Heroic library...");
+        log::debug!("Scanning Heroic library...");
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         std::thread::spawn(move || {
@@ -471,7 +471,7 @@ impl StoreBridge {
     }
 
     fn refresh_lutris_library(&self) {
-        log::info!("Scanning Lutris library...");
+        log::debug!("Scanning Lutris library...");
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         std::thread::spawn(move || {
@@ -482,7 +482,7 @@ impl StoreBridge {
     }
 
     fn refresh_legendary_library(&self) {
-        log::info!("Scanning Legendary library...");
+        log::debug!("Scanning Legendary library...");
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         std::thread::spawn(move || {
@@ -493,7 +493,7 @@ impl StoreBridge {
     }
 
     fn refresh_exodos_library(&self, path: String) {
-        log::info!("Scanning eXoDOS library at: {}", path);
+        log::debug!("Scanning eXoDOS library at: {}", path);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         std::thread::spawn(move || {
@@ -508,13 +508,13 @@ impl StoreBridge {
     }
 
     fn get_legendary_auth_url(&self) {
-        log::info!("[StoreBridge] get_legendary_auth_url() was called from QML!");
+        log::debug!("[StoreBridge] get_legendary_auth_url() was called from QML!");
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         std::thread::spawn(move || {
             match crate::core::legendary::LegendaryWrapper::get_auth_url() {
                 Ok(url) => {
-                    log::info!("[StoreBridge] LegendaryWrapper successfully returned URL to Bridge. Sending to tx.");
+                    log::debug!("[StoreBridge] LegendaryWrapper successfully returned URL to Bridge. Sending to tx.");
                     let _ = tx.send(StoreMsg::LegendaryAuthUrlReceived(url));
                 },
                 Err(e) => {
@@ -558,7 +558,7 @@ impl StoreBridge {
     }
 
     fn install_legendary_game(&self, app_name: String, path: String, with_dlcs: bool) {
-        log::info!("[LegendaryBridge] Starting install for: {} at {:?} with_dlcs={}", app_name, path, with_dlcs);
+        log::debug!("[LegendaryBridge] Starting install for: {} at {:?} with_dlcs={}", app_name, path, with_dlcs);
         self.ensure_channels();
         let _tx = self.tx.borrow().as_ref().unwrap().clone();
         let app_name_clone = app_name.clone();
@@ -687,7 +687,7 @@ impl StoreBridge {
     }
 
     fn get_legendary_app_info(&self, app_name: String) {
-        log::info!("[StoreBridge] get_legendary_app_info called for: {}", app_name);
+        log::debug!("[StoreBridge] get_legendary_app_info called for: {}", app_name);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         
@@ -707,7 +707,7 @@ impl StoreBridge {
     }
 
     fn save_epic_config(&self, rom_id: String, runner: String, prefix: String) {
-        log::info!("[StoreBridge] Saving Epic config for {}: runner={}, prefix={}", rom_id, runner, prefix);
+        log::debug!("[StoreBridge] Saving Epic config for {}: runner={}, prefix={}", rom_id, runner, prefix);
         let db_path = crate::core::paths::get_data_dir().join("games.db");
         if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
             let conn = db.get_connection();
@@ -730,7 +730,7 @@ impl StoreBridge {
     }
 
     fn get_epic_config(&self, rom_id: String) -> String {
-        log::info!("[StoreBridge] Fetching Epic config for {}", rom_id);
+        log::debug!("[StoreBridge] Fetching Epic config for {}", rom_id);
         let db_path = crate::core::paths::get_data_dir().join("games.db");
         if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
             let conn = db.get_connection();
@@ -753,7 +753,7 @@ impl StoreBridge {
     }
 
     fn import_legendary_game(&self, app_name: String, path: String) {
-        log::info!("[LegendaryBridge] Starting import for: {} at {:?}", app_name, path);
+        log::debug!("[LegendaryBridge] Starting import for: {} at {:?}", app_name, path);
         self.ensure_channels();
         let app_name_clone = app_name.clone();
         let import_path = path.clone();
@@ -879,7 +879,7 @@ impl StoreBridge {
         });
     }
     fn uninstall_legendary_game(&self, app_name: String) {
-        log::info!("[LegendaryBridge] Starting uninstall for: {}", app_name);
+        log::debug!("[LegendaryBridge] Starting uninstall for: {}", app_name);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         let app_name_clone = app_name.clone();
@@ -898,7 +898,7 @@ impl StoreBridge {
     }
 
     fn import_local_app(&self, rom_json: String, platform_id: String) {
-        log::info!("[LocalImport] Received request for platform: {}", platform_id);
+        log::debug!("[LocalImport] Received request for platform: {}", platform_id);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         std::thread::spawn(move || {
@@ -910,7 +910,7 @@ impl StoreBridge {
                             let mut final_rom = rom.clone();
                             final_rom.platform_id = platform_id.clone();
                             
-                            log::info!("[LocalImport] Inserting ROM: {:?}", final_rom.title);
+                            log::debug!("[LocalImport] Inserting ROM: {:?}", final_rom.title);
                             if let Ok(_) = db.insert_rom(&final_rom) {
                                 let mut meta = crate::core::models::GameMetadata::default();
                                 meta.rom_id = final_rom.id.clone();
@@ -986,7 +986,7 @@ impl StoreBridge {
                                     }
                                 }
 
-                                log::info!("[LocalImport] Successfully imported: {:?}", final_rom.title);
+                                log::debug!("[LocalImport] Successfully imported: {:?}", final_rom.title);
                                 let _ = tx.send(StoreMsg::InstallFinished(final_rom.title.unwrap_or_default(), true, "Imported successfully".into()));
                             } else {
                                 log::error!("[LocalImport] Failed to insert ROM into database");
@@ -1006,7 +1006,7 @@ impl StoreBridge {
     }
 
     fn import_steam_games_bulk(&self, roms_json_array: String, platform_id: String) {
-        log::info!("[SteamBulkImport] Requested import for {} bytes of JSON", roms_json_array.len());
+        log::debug!("[SteamBulkImport] Requested import for {} bytes of JSON", roms_json_array.len());
             
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
@@ -1015,7 +1015,7 @@ impl StoreBridge {
         std::thread::spawn(move || {
             match serde_json::from_str::<Vec<crate::core::models::Rom>>(&roms_json_array) {
                 Ok(roms) => {
-                    log::info!("[SteamBulkImport] Decoded {} ROMs from JSON", roms.len());
+                    log::debug!("[SteamBulkImport] Decoded {} ROMs from JSON", roms.len());
                     let db_path = crate::core::paths::get_data_dir().join("games.db");
                     match crate::core::db::DbManager::open(&db_path) {
                         Ok(db) => {
@@ -1028,7 +1028,7 @@ impl StoreBridge {
 
                             match result {
                                 Ok(count) => {
-                                    log::info!("[SteamBulkImport] Successfully imported {}/{} games", count, total);
+                                    log::debug!("[SteamBulkImport] Successfully imported {}/{} games", count, total);
                                     let msg = format!("Imported {} of {} games", count, total);
                                     let _ = tx.send(StoreMsg::InstallFinished("Selected Steam Games".into(), true, msg.into()));
                                 },
@@ -1057,7 +1057,7 @@ impl StoreBridge {
     }
 
     fn get_app_details(&self, app_id: String) {
-        log::info!("Fetching details for app: {}", app_id);
+        log::debug!("Fetching details for app: {}", app_id);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         std::thread::spawn(move || {
@@ -1075,7 +1075,7 @@ impl StoreBridge {
     }
 
     fn analyze_folder(&self, path: String) {
-        log::info!("Analyzing folder: {}", path);
+        log::debug!("Analyzing folder: {}", path);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         
@@ -1220,10 +1220,10 @@ impl StoreBridge {
     }
 
     fn import_exodos_games(&self, roms_json: String, platform_id: String, exodos_base_path: String) {
-        log::info!("Importing eXoDOS games for platform: {}", platform_id);
+        log::debug!("Importing eXoDOS games for platform: {}", platform_id);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
-        log::info!("Importing eXoDOS games for platform: {}. JSON length: {}", platform_id, roms_json.len());
+        log::debug!("Importing eXoDOS games for platform: {}. JSON length: {}", platform_id, roms_json.len());
         let roms: Vec<crate::core::models::Rom> = match serde_json::from_str(&roms_json) {
             Ok(r) => r,
             Err(e) => {
@@ -1307,7 +1307,7 @@ impl StoreBridge {
                         }
                     }
                     match db.get_connection().execute("COMMIT", []) {
-                        Ok(_) => log::info!("[StoreBridge] Successfully committed eXoDOS import transaction"),
+                        Ok(_) => log::debug!("[StoreBridge] Successfully committed eXoDOS import transaction"),
                         Err(e) => log::error!("[StoreBridge] Failed to commit eXoDOS import transaction: {}", e),
                     }
                 }
