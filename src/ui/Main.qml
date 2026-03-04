@@ -3606,14 +3606,6 @@ ApplicationWindow {
                     primary: true
                     onClicked: {
                          sidebar.platformModel.deleteSystem(window.deleteCollectionId, deleteCollectionDialog.deleteAssets)
-                         // Signal deletion if current view was this platform
-                         if (sidebar.activeViewType === "platform" && sidebar.activeId === window.deleteCollectionId) {
-                              sidebar.activeViewType = "all"
-                              window.currentPlatformId = ""
-                              window.currentViewTitle = "All Games"
-                              window.currentPlatformIcon = "🎮"
-                              gameModel.refresh()
-                         }
                          addSystemDialog.selectedIndex = -1
                          sidebar.systemDeleted()
                          deleteCollectionDialog.accept()

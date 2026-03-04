@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
+import Qt5Compat.GraphicalEffects
 import Theophany.Bridge 1.0
 import "../style"
 
@@ -27,6 +28,7 @@ Rectangle {
     property string activeViewType: "all" // all, favorites, recent, platform, playlist
     property string activeId: ""
     property int allGamesCount: 0
+    property var deletingIds: ({})
 
     property var appSettings: null
     property var appSettingsRef: null
@@ -201,6 +203,24 @@ Rectangle {
     PlatformListModel {
         id: platformModel
         Component.onCompleted: init(appInfo.getDataPath() + "/games.db")
+
+        onDeleteProgress: (pid, progress, status) => {
+            var d = JSON.parse(JSON.stringify(root.deletingIds))
+            d[pid] = true
+            root.deletingIds = d
+        }
+
+        onDeleteFinished: (pid, success, message) => {
+            var d = root.deletingIds
+            delete d[pid]
+            root.deletingIds = Object.assign({}, d)
+
+            if (root.activeViewType === "platform" && root.activeId == pid) {
+                 root.activeViewType = "all"
+                 root.activeId = ""
+                 root.platformSelected("", "All Games", "🎮")
+            }
+        }
     }
 
     // Helper Component for Collapsable Sections
@@ -311,6 +331,7 @@ Rectangle {
         property string iconSource: ""
         property bool isActive: false
         property bool isCollapsed: false
+        property bool isProcessing: false
         signal clicked()
 
         onIsActiveChanged: {
@@ -337,16 +358,50 @@ Rectangle {
                 Layout.preferredHeight: 36
                 Layout.alignment: Qt.AlignHCenter
 
+                BusyIndicator {
+                    id: indicator
+                    anchors.centerIn: parent
+                    visible: sidebarItemRoot.isProcessing
+                    width: 24; height: 24
+                    running: visible
+                    
+                    contentItem: Item {
+                        id: contentItem
+                        width: 24; height: 24
+                        
+                        ConicalGradient {
+                            anchors.fill: parent
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: "transparent" }
+                                GradientStop { position: 1.0; color: sidebarItemRoot.isActive ? Theme.text : Theme.accent }
+                            }
+                            
+                            source: Rectangle {
+                                width: 24; height: 24
+                                radius: 12
+                                color: "transparent"
+                                border.width: 3
+                                border.color: "white"
+                            }
+                        }
+                        
+                        RotationAnimator {
+                            target: contentItem
+                            from: 0; to: 360; duration: 1000; loops: Animation.Infinite; running: sidebarItemRoot.isProcessing
+                        }
+                    }
+                }
+
                 Text { 
                     anchors.centerIn: parent
-                    visible: icon !== ""
+                    visible: icon !== "" && !sidebarItemRoot.isProcessing
                     text: icon
                     color: isActive ? Theme.text : Theme.secondaryText
                     font.pixelSize: 16
                 }
                 Image {
                     anchors.centerIn: parent
-                    visible: iconSource !== ""
+                    visible: iconSource !== "" && !sidebarItemRoot.isProcessing
                     source: iconSource
                     width: 20
                     height: 20
@@ -365,9 +420,10 @@ Rectangle {
                 font.pixelSize: 14
                 Layout.fillWidth: true
                 elide: Text.ElideRight
+                opacity: sidebarItemRoot.isProcessing ? 0.5 : 1.0
             }
             Text {
-                visible: !sidebarItemRoot.isCollapsed && sidebarItemRoot.count !== ""
+                visible: !sidebarItemRoot.isCollapsed && sidebarItemRoot.count !== "" && !sidebarItemRoot.isProcessing
                 text: sidebarItemRoot.count
                 color: isActive ? Theme.text : (Theme.secondaryText)
                 opacity: 0.7
@@ -587,6 +643,7 @@ Rectangle {
                             delegate: SidebarItem {
                                 text: platformName
                                 isCollapsed: root.collapsed
+                                isProcessing: !!root.deletingIds[platformId]
                                 iconSource: {
                                     if (!platformIcon) return ""
                                     if (platformIcon.startsWith("http") || platformIcon.startsWith("file://") || platformIcon.startsWith("qrc:/") || platformIcon.startsWith("/")) {

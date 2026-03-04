@@ -1049,8 +1049,22 @@ impl StoreManager {
         let home = std::env::var("HOME").unwrap_or_default();
         let home_p = PathBuf::from(home);
 
-        let heroic_config_dir = home_p.join(".config/heroic");
-        if !heroic_config_dir.exists() {
+        let heroic_config_paths = vec![
+            home_p.join(".config/heroic"),
+            home_p.join(".var/app/com.heroicgameslauncher.hgl/config/heroic"),
+        ];
+
+        let mut heroic_config_dir = PathBuf::new();
+        let mut found = false;
+        for p in heroic_config_paths {
+            if p.exists() {
+                heroic_config_dir = p;
+                found = true;
+                break;
+            }
+        }
+
+        if !found {
             return apps;
         }
 

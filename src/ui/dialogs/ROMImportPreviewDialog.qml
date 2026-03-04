@@ -155,17 +155,17 @@ Dialog {
                             spacing: 10
 
                             Item { width: 30 } // Checkbox
-                            Text { text: "Title"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 300 }
-                            Text { text: "Filename"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 300 }
-                            Text { text: "Region"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 120 } // Left aligned by default
-                            Text { text: "Genre"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 150 }
-                            Text { text: "Developer"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 150 }
-                            Text { text: "Publisher"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 150 }
-                            Text { text: "Year"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 80 }
+                            Text { text: "Title"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 250; Layout.fillWidth: true }
+                            Text { text: "Filename"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 250 }
+                            Text { text: "Region"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 100 }
+                            Text { text: "Genre"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 140 }
+                            Text { text: "Developer"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 140 }
+                            Text { text: "Publisher"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 140 }
+                            Text { text: "Year"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 70 }
                             Text { text: "Rating"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 60 }
-                            Text { text: "Tags"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 200 }
-                            Text { text: "System"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 150 }
-                            Text { text: "Emulator"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 150 } // End
+                            Text { text: "Tags"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 180 }
+                            Text { text: "System"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 120 }
+                            Text { text: "Emulator"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 120 }
                         }
                     }
 
@@ -218,88 +218,89 @@ Dialog {
                                         }
                                     }
                                 }
-
+                                
                                 TheophanyTextField {
                                     text: model.title
-                                    Layout.preferredWidth: 300
+                                    Layout.preferredWidth: 250
+                                    Layout.fillWidth: true
                                     onTextChanged: if (activeFocus) romListModel.setProperty(index, "title", text)
                                 }
-
+                                
                                 Text { 
                                     text: model.filename
                                     color: Theme.secondaryText
-                                    Layout.preferredWidth: 300
+                                    Layout.preferredWidth: 250
                                     elide: Text.ElideMiddle
                                 }
-
+                                
                                 TheophanySuggestField {
                                     id: regionField
                                     text: model.region
-                                    Layout.preferredWidth: 120
+                                    Layout.preferredWidth: 100
                                     fullModel: root.allRegions
                                     onTextChanged: if (activeFocus) romListModel.setProperty(index, "region", text)
                                 }
-
+                                
                                 TheophanySuggestField {
                                     text: model.genre || ""
-                                    Layout.preferredWidth: 150
+                                    Layout.preferredWidth: 140
                                     placeholderText: "Genre"
                                     fullModel: root.allGenres
                                     isCommaSeparated: true
                                     onTextChanged: if (activeFocus) romListModel.setProperty(index, "genre", text)
                                 }
-
+                                
                                 TheophanySuggestField {
                                     text: model.developer || ""
-                                    Layout.preferredWidth: 150
+                                    Layout.preferredWidth: 140
                                     placeholderText: "Developer"
                                     fullModel: root.allDevelopers
                                     onTextChanged: if (activeFocus) romListModel.setProperty(index, "developer", text)
                                 }
-
+                                
                                 TheophanySuggestField {
                                     text: model.publisher || ""
-                                    Layout.preferredWidth: 150
+                                    Layout.preferredWidth: 140
                                     placeholderText: "Publisher"
                                     fullModel: root.allPublishers
                                     onTextChanged: if (activeFocus) romListModel.setProperty(index, "publisher", text)
                                 }
-
+                                
                                 TheophanySuggestField {
                                     text: model.year || ""
-                                    Layout.preferredWidth: 80
+                                    Layout.preferredWidth: 70
                                     placeholderText: "YYYY"
                                     fullModel: root.allYears
                                     onTextChanged: if (activeFocus) romListModel.setProperty(index, "year", text)
                                 }
-
+                                
                                 TheophanyTextField {
                                     text: model.rating || ""
                                     Layout.preferredWidth: 60
                                     placeholderText: "0.0"
                                     onTextChanged: if (activeFocus) romListModel.setProperty(index, "rating", text)
                                 }
-
+                                
                                 TheophanySuggestField {
                                     text: model.tags || ""
-                                    Layout.preferredWidth: 200
+                                    Layout.preferredWidth: 180
                                     placeholderText: "Tag1, Tag2..."
                                     fullModel: root.allTags
                                     isCommaSeparated: true
                                     onTextChanged: if (activeFocus) romListModel.setProperty(index, "tags", text)
                                 }
-
+                                
                                 Text { 
                                     text: model.system
                                     color: Theme.secondaryText
-                                    Layout.preferredWidth: 150
+                                    Layout.preferredWidth: 120
                                     elide: Text.ElideRight
                                 }
-
+                                
                                 Text { 
                                     text: model.emulator
                                     color: Theme.secondaryText
-                                    Layout.preferredWidth: 150
+                                    Layout.preferredWidth: 120
                                     elide: Text.ElideRight
                                 }
                             }

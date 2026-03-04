@@ -270,14 +270,25 @@ Dialog {
 
                             Rectangle {
                                 width: 36; height: 36
-                                color: Theme.accent
+                                color: Theme.secondaryBackground
                                 radius: 4
-                                opacity: 0.2
+                                clip: true
+                                
                                 Text {
                                     anchors.centerIn: parent
                                     text: "L"
                                     color: Theme.text
                                     font.bold: true
+                                    visible: !iconImg.visible
+                                }
+
+                                Image {
+                                    id: iconImg
+                                    anchors.fill: parent
+                                    source: model.icon_path ? "file://" + model.icon_path : ""
+                                    fillMode: Image.PreserveAspectFit
+                                    asynchronous: true
+                                    visible: status === Image.Ready
                                 }
                             }
 
@@ -290,12 +301,24 @@ Dialog {
                                     font.bold: true
                                     font.pixelSize: 14
                                     elide: Text.ElideRight
+                                    Layout.fillWidth: true
                                 }
-                                Text {
-                                    text: "Lutris | ID: " + model.path.split('/').pop()
-                                    color: Theme.secondaryText
-                                    font.pixelSize: 11
-                                    elide: Text.ElideRight
+                                RowLayout {
+                                    spacing: 8
+                                    Text {
+                                        text: "Lutris"
+                                        color: Theme.accent
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        opacity: 0.8
+                                    }
+                                    Text {
+                                        text: "ID: " + model.gameId
+                                        color: Theme.secondaryText
+                                        font.pixelSize: 11
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
                                 }
                             }
                         }
@@ -372,6 +395,7 @@ Dialog {
                         
                         if (selectedRoms.length > 0) {
                             storeBridge.import_steam_games_bulk(JSON.stringify(selectedRoms), platformId)
+                            root.close()
                         }
                     }
                 }
