@@ -24,7 +24,6 @@ use crate::core::paths;
 use rusqlite::ToSql;
 use tokio::sync::Notify;
 use crate::core::store::StoreManager;
-use std::collections::HashMap;
 
 
 use crate::core::runtime::get_runtime;
@@ -148,7 +147,7 @@ pub struct GameListModel {
     current_tag_filters: RefCell<Vec<String>>,
     
     // Process Tracking
-    running_games: RefCell<HashMap<String, i32>>, // ROM ID -> PGID
+    running_games: RefCell<std::collections::HashMap<String, std::sync::Arc<std::sync::atomic::AtomicI32>>>, // ROM ID -> PGID (atomic for background updates)
     
     pub sortMethod: qt_property!(QString; NOTIFY sortMethodChanged),
     pub sortMethodChanged: qt_signal!(),
@@ -2418,7 +2417,7 @@ impl GameListModel {
             if let Ok((exe, args)) = profile {
                 let cmd = format!("{} {}", exe, args);
                 let wd = std::path::Path::new(&rom_path).parent().map(|p| p.to_string_lossy().to_string());
-                let _ = crate::core::launcher::Launcher::launch(&cmd, &rom_path, wd.as_deref(), None, None, false);
+                let _ = crate::core::launcher::Launcher::launch(&cmd, &rom_path, wd.as_deref(), None, None, false, false);
                 
                 let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
                 let _ = conn.execute(
@@ -2826,14 +2825,80 @@ impl GameListModel {
                      eos_overlay_enabled = crate::core::legendary::LegendaryWrapper::is_eos_overlay_enabled(prefix.as_deref());
                  }
 
-                 // Launch process
-                 match Launcher::launch(&command_template, &rom_path, working_dir.as_deref(), env_vars_opt, wrapper_opt, eos_overlay_enabled) {
-                     Ok(mut child) => {
-                         log::debug!("Launched successfully.");
+                  // Only track games that aren't Steam, Heroic, or Lutris
+                  let should_track = !rom_path.starts_with("steam://") && 
+                                   !rom_path.starts_with("heroic://") && 
+                                   !rom_path.starts_with("lutris:");
+                  
+                  // Launch process
+                  match Launcher::launch(&command_template, &rom_path, working_dir.as_deref(), env_vars_opt, wrapper_opt, eos_overlay_enabled, should_track) {
+                      Ok(mut child) => {
+                          log::debug!("Launched successfully. Tracking enabled: {}", should_track);
+                          
+                          let pgid = child.id() as i32;
+                          let pgid_atomic = std::sync::Arc::new(std::sync::atomic::AtomicI32::new(pgid));
+                          
+                          if should_track {
+                              self.running_games.borrow_mut().insert(rom_id_clone.clone(), Arc::clone(&pgid_atomic));
+                              self.runningGamesChanged();
+                              
+                              let pgid_for_drainer = std::sync::Arc::clone(&pgid_atomic);
+
                          
-                         let pgid = child.id() as i32;
-                         log::info!("[Launcher] Game {} started with PGID {}", rom_id_clone, pgid);
-                         
+                         // Always pipe stdout/stderr for tracked platforms to scan for markers
+                         let stdout = child.stdout.take();
+                         let stderr = child.stderr.take();
+                         std::thread::spawn(move || {
+                             if let Some(mut out) = stdout {
+                                 use std::io::Read;
+                                 let mut buffer = [0u8; 1024];
+                                 let mut acc = Vec::new();
+                                 let marker = b"THEOPHANY_PGID:";
+                                 let mut found_marker = false;
+                                 
+                                 while let Ok(n) = out.read(&mut buffer) {
+                                     if n == 0 { break; }
+                                     for &b in &buffer[..n] {
+                                         acc.push(b);
+                                         
+                                         // Check for marker in current accumulator
+                                         if !found_marker && acc.len() >= marker.len() {
+                                             if let Some(pos) = acc.windows(marker.len()).position(|w| w == marker) {
+                                                 // Marker found! Now look for the end of the line to get the ID
+                                                 let rest = &acc[pos + marker.len()..];
+                                                 if let Some(newline_pos) = rest.iter().position(|&x| x == b'\n' || x == b'\r') {
+                                                     if let Ok(s) = std::str::from_utf8(&rest[..newline_pos]) {
+                                                         if let Ok(p) = s.trim().parse::<i32>() {
+                                                             log::info!("[Launcher] Captured THEOPHANY_PGID: {}", p);
+                                                             pgid_for_drainer.store(p, std::sync::atomic::Ordering::SeqCst);
+                                                             found_marker = true;
+                                                         }
+                                                     }
+                                                 }
+                                             }
+                                         }
+
+                                         if b == b'\n' || b == b'\r' {
+                                             if let Ok(line) = std::str::from_utf8(&acc) {
+                                                 // Don't log our own tracking marker as game output
+                                                 if !line.contains("THEOPHANY_PGID:") {
+                                                     log::debug!("[Game Output] {}", line.trim_end());
+                                                 }
+                                             }
+                                             acc.clear();
+                                         }
+                                         
+                                         if acc.len() > 8192 { acc.clear(); }
+                                     }
+                                 }
+                             }
+                             if let Some(mut err) = stderr {
+                                 let _ = std::io::copy(&mut err, &mut std::io::sink());
+                             }
+                         });
+                          } // End if should_track for stdout/stderr piping
+
+                         log::info!("[Launcher] Game {} started with initial PID {}", rom_id_clone, pgid);
                          // Immediate metadata update for last_played
                          if let Ok(db) = DbManager::open(&path_str) {
                              if let Ok(Some(mut meta)) = db.get_metadata(&rom_id_clone) {
@@ -2856,8 +2921,8 @@ impl GameListModel {
                           // Steam URIs launch via a background service, so tracking the child process
                           // usually just tracks the persistent client. We skip timing for these.
                           // Flatpaks are tracked directly.
-                          if rom_path.starts_with("steam://") || rom_path.starts_with("heroic://") || rom_path.starts_with("lutris:") {
-                              log::info!("Steam game detected. Skipping timing thread but updating usage stats immediately.");
+                          if !should_track {
+                              log::info!("Non-tracked game detected. Skipping timing thread but updating usage stats immediately.");
                               if let Ok(db) = DbManager::open(&path_str) {
                                   if let Ok(Some(mut meta)) = db.get_metadata(&rom_id_clone) {
                                       meta.play_count += 1;
@@ -2882,10 +2947,6 @@ impl GameListModel {
                                return;
                            }
 
-                         self.running_games.borrow_mut().insert(rom_id_clone.clone(), pgid);
-                         self.runningGamesChanged();
-
-
                          
                          // Spawn a thread to wait for the process and track time
                          let db_path_thread = path_str.clone();
@@ -2908,30 +2969,47 @@ impl GameListModel {
                          let rom_path_thread = rom_path.clone();
                          let tx_thread = self.tx.borrow().clone();
                          
-                         std::thread::spawn(move || {                             let start_time = std::time::SystemTime::now();
+                         let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
+                         
+                         let pgid_for_polling = std::sync::Arc::clone(&pgid_atomic);
+                         std::thread::spawn(move || {
+                             let start_time = std::time::SystemTime::now();
                              
                              // 1. Wait for the primary child to exit (reaps the process)
                              let exit_status = child.wait();
                              log::debug!("[Launcher] Primary child for {} exited with {:?}", rom_id_thread, exit_status);
 
                              // 2. Use process group polling to wait for grandchildren (umu-run, wine, etc.)
-                             #[cfg(unix)]
-                             {
-                                 log::debug!("[Launcher] Polling PGID {} for grandchildren...", pgid);
-                                 loop {
-                                     // Use system kill command to check group status without libc
-                                     let status = std::process::Command::new("kill")
-                                         .arg("-0")
-                                         .arg(format!("-{}", pgid))
-                                         .status();
-                                     
-                                     if status.map(|s| !s.success()).unwrap_or(true) {
-                                         log::debug!("[Launcher] PGID {} group cleared", pgid);
-                                         break;
-                                     }
-                                     std::thread::sleep(std::time::Duration::from_millis(1000));
-                                 }
-                             }
+                              if should_track {
+                                  log::debug!("[Launcher] Polling for grandchildren (is_flatpak: {})...", is_flatpak);
+                                  loop {
+                                      // Get the most current PGID (might have been updated by marker)
+                                      let current_pgid = pgid_for_polling.load(std::sync::atomic::Ordering::SeqCst);
+
+                                      // Use system kill command to check group status without libc
+                                      let status = if is_flatpak {
+                                          std::process::Command::new("flatpak-spawn")
+                                              .arg("--host")
+                                              .arg("kill")
+                                              .arg("-0")
+                                              .arg(format!("-{}", current_pgid))
+                                              .stderr(std::process::Stdio::null())
+                                              .status()
+                                      } else {
+                                          std::process::Command::new("kill")
+                                              .arg("-0")
+                                              .arg(format!("-{}", current_pgid))
+                                              .stderr(std::process::Stdio::null())
+                                              .status()
+                                      };
+                                      
+                                      if status.map(|s| !s.success()).unwrap_or(true) {
+                                          log::debug!("[Launcher] PGID {} group cleared", current_pgid);
+                                          break;
+                                      }
+                                      std::thread::sleep(std::time::Duration::from_millis(1000));
+                                  }
+                              }
 
                              // ── Cloud Save: Push after game exits ─────────────
                               if let (Some(app_name), Some(sp)) = (&cloud_app_name, &cloud_save_path_for_push) {
@@ -3078,7 +3156,7 @@ impl GameListModel {
             use crate::core::launcher::Launcher;
             let tx = self.tx.borrow().as_ref().map(|s| s.clone());
 
-            match Launcher::launch("%ROM%", &url, None, None, None, false) {
+            match Launcher::launch("%ROM%", &url, None, None, None, false, false) {
                 Ok(mut child) => {
                     let rom_id_thread = rom_id.clone();
                     let db_path_thread = path_str.clone();
@@ -3116,7 +3194,7 @@ impl GameListModel {
         } else if is_script {
             // Other .command/.sh resources (magazines, extras): launch the same way but no playtime tracking
             use crate::core::launcher::Launcher;
-            match Launcher::launch("%ROM%", &url, None, None, None, false) {
+            match Launcher::launch("%ROM%", &url, None, None, None, false, false) {
                 Ok(mut child) => {
                     std::thread::spawn(move || { let _ = child.wait(); });
                 },
@@ -5199,16 +5277,80 @@ impl GameListModel {
 
     #[allow(non_snake_case)]
     fn stopGame(&mut self, rom_id: String) {
-        let pgid_opt = self.running_games.borrow().get(&rom_id).cloned();
-        if let Some(pgid) = pgid_opt {
-            log::info!("[Launcher] Stopping game {} with PGID {} (SIGKILL)", rom_id, pgid);
+        let pgid_atomic = self.running_games.borrow().get(&rom_id).cloned();
+        if let Some(atomic) = pgid_atomic {
+            let pgid = atomic.load(std::sync::atomic::Ordering::SeqCst);
+            let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
+            log::info!("[Launcher] Stopping game {} with PGID {} (is_flatpak: {})", rom_id, pgid, is_flatpak);
+            
             #[cfg(unix)]
             {
-                // Definitively stop the process group using system kill command
-                let _ = std::process::Command::new("kill")
-                    .arg("-9")
-                    .arg(format!("-{}", pgid))
-                    .status();
+                // Multi-stage termination
+                let mut killed = false;
+
+                // 1. Try Group Signal (kills all children/grandchildren)
+                if !killed && pgid > 0 {
+                    let res = if is_flatpak {
+                        std::process::Command::new("flatpak-spawn")
+                            .arg("--host")
+                            .arg("kill")
+                            .arg("-9")
+                            .arg(format!("-{}", pgid))
+                            .stderr(std::process::Stdio::null())
+                            .status()
+                    } else {
+                        std::process::Command::new("kill")
+                            .arg("-9")
+                            .arg(format!("-{}", pgid))
+                            .stderr(std::process::Stdio::null())
+                            .status()
+                    };
+                    if res.map(|s| s.success()).unwrap_or(false) {
+                        log::info!("[Launcher] Stopped process group -{}", pgid);
+                        killed = true;
+                    }
+                }
+
+                // 2. Try individual PID (fallback if group was reaped but process lives)
+                if !killed && pgid > 0 {
+                    let res = if is_flatpak {
+                        std::process::Command::new("flatpak-spawn").arg("--host").arg("kill").arg("-9").arg(pgid.to_string()).stderr(std::process::Stdio::null()).status()
+                    } else {
+                        std::process::Command::new("kill").arg("-9").arg(pgid.to_string()).stderr(std::process::Stdio::null()).status()
+                    };
+                    if res.map(|s| s.success()).unwrap_or(false) {
+                        log::info!("[Launcher] Stopped individual PID {}", pgid);
+                        killed = true;
+                    }
+                }
+
+                // 3. Try pkill -g ( targets anything in the group even if leader is gone)
+                if !killed && pgid > 0 {
+                    let cmd = if is_flatpak {
+                        format!("flatpak-spawn --host pkill -9 -g {}", pgid)
+                    } else {
+                        format!("pkill -9 -g {}", pgid)
+                    };
+                    let _ = std::process::Command::new("sh").arg("-c").arg(&cmd).stderr(std::process::Stdio::null()).status();
+                }
+
+                // 4. Aggressive Search-and-Kill (pkill -f)
+                // We strip standard prefixes like 'legendary-' to find the actual ID in the command line
+                let search_id = if rom_id.starts_with("legendary-") {
+                    &rom_id[10..]
+                } else if rom_id.starts_with("steam-") {
+                    &rom_id[6..]
+                } else {
+                    &rom_id
+                };
+
+                log::warn!("[Launcher] Using aggressive search-and-kill for ID portion: {}", search_id);
+                let search_cmd = if is_flatpak {
+                    format!("flatpak-spawn --host pkill -9 -f \"{}\"", search_id)
+                } else {
+                    format!("pkill -9 -f \"{}\"", search_id)
+                };
+                let _ = std::process::Command::new("sh").arg("-c").arg(&search_cmd).stderr(std::process::Stdio::null()).status();
             }
             
             // Proactively remove from map and trigger UI update for instant feedback.
