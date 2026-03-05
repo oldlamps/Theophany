@@ -1139,6 +1139,7 @@ impl StoreBridge {
                 "lnk" | "exe" => "PC (Windows)",
                 "desktop" => "PC (Linux)",
                 "zip" | "7z" => "Arcade", // Often arcade games are zipped
+                "zar" => "Xbox360",
                 _ => "",
             }.to_string();
 

@@ -5334,7 +5334,7 @@ impl GameListModel {
                     let _ = std::process::Command::new("sh").arg("-c").arg(&cmd).stderr(std::process::Stdio::null()).status();
                 }
 
-                // 4. Aggressive Search-and-Kill (pkill -f)
+                // 4. Aggressive Search-and-Kill (pkill -f on stripped ID)
                 // We strip standard prefixes like 'legendary-' to find the actual ID in the command line
                 let search_id = if rom_id.starts_with("legendary-") {
                     &rom_id[10..]
@@ -5351,6 +5351,44 @@ impl GameListModel {
                     format!("pkill -9 -f \"{}\"", search_id)
                 };
                 let _ = std::process::Command::new("sh").arg("-c").arg(&search_cmd).stderr(std::process::Stdio::null()).status();
+
+                // 5. Flatpak-Specific Kill (flatpak kill <AppID>)
+                // v6.5: Direct termination for sandboxed apps, avoiding signaling issues.
+                let rom_path_opt = self.roms.borrow().iter().find(|r| r.id == rom_id).map(|r| r.path.clone());
+                if let Some(path) = rom_path_opt {
+                    if path.starts_with("flatpak://") {
+                        let app_id = &path[10..];
+                        log::warn!("[Launcher] Using direct flatpak kill for: {}", app_id);
+                        let kill_cmd = if is_flatpak {
+                            format!("flatpak-spawn --host flatpak kill \"{}\"", app_id)
+                        } else {
+                            format!("flatpak kill \"{}\"", app_id)
+                        };
+                        let _ = std::process::Command::new("sh").arg("-c").arg(&kill_cmd).stderr(std::process::Stdio::null()).status();
+                    } else if !path.is_empty() && !path.contains("://") {
+                        // 6. Basename-based Search-and-Kill (pkill -i -f [basename])
+                        // The "Nuclear Option" for Wine/Proton detached processes.
+                        let path_obj = std::path::Path::new(&path);
+                        if let Some(basename) = path_obj.file_name().and_then(|n| n.to_str()) {
+                            log::warn!("[Launcher] Using aggressive case-insensitive search for Basename: {}", basename);
+                            let basename_cmd = if is_flatpak {
+                                format!("flatpak-spawn --host pkill -9 -i -f \"{}\"", basename)
+                            } else {
+                                format!("pkill -9 -i -f \"{}\"", basename)
+                            };
+                            let _ = std::process::Command::new("sh").arg("-c").arg(&basename_cmd).stderr(std::process::Stdio::null()).status();
+                        }
+                         
+                        // 7. Path-based Search-and-Kill (pkill -f [path])
+                        log::warn!("[Launcher] Using aggressive search-and-kill for Path: {}", path);
+                        let path_cmd = if is_flatpak {
+                            format!("flatpak-spawn --host pkill -9 -f \"{}\"", path)
+                        } else {
+                            format!("pkill -9 -f \"{}\"", path)
+                        };
+                        let _ = std::process::Command::new("sh").arg("-c").arg(&path_cmd).stderr(std::process::Stdio::null()).status();
+                    }
+                }
             }
             
             // Proactively remove from map and trigger UI update for instant feedback.

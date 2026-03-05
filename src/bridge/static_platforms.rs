@@ -75,5 +75,6 @@ pub fn get_default_platforms() -> Vec<PlatformInfo> {
         PlatformInfo { id: 106, name: "PlayStation 4".to_string(), slug: "PS4".to_string(), icon_url: "https://static.retroachievements.org/assets/images/system/ps4.png".to_string(), is_active: false },
         PlatformInfo { id: 107, name: "Nintendo 3DS".to_string(), slug: "3DS".to_string(), icon_url: "https://static.retroachievements.org/assets/images/system/3ds.png".to_string(), is_active: false },
         PlatformInfo { id: 108, name: "Epic Games".to_string(), slug: "epic".to_string(), icon_url: "assets/systems/epic.png".to_string(), is_active: false },
+        PlatformInfo { id: 109, name: "Xbox 360".to_string(), slug: "Xbox360".to_string(), icon_url: "https://static.retroachievements.org/assets/images/system/xbox360.png".to_string(), is_active: false },
     ]
 }

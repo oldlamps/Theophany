@@ -223,7 +223,7 @@ Dialog {
                                     text: model.title
                                     Layout.preferredWidth: 250
                                     Layout.fillWidth: true
-                                    onTextChanged: if (activeFocus) romListModel.setProperty(index, "title", text)
+                                    onTextChanged: romListModel.setProperty(index, "title", text)
                                 }
                                 
                                 Text { 
@@ -238,7 +238,7 @@ Dialog {
                                     text: model.region
                                     Layout.preferredWidth: 100
                                     fullModel: root.allRegions
-                                    onTextChanged: if (activeFocus) romListModel.setProperty(index, "region", text)
+                                    onTextChanged: romListModel.setProperty(index, "region", text)
                                 }
                                 
                                 TheophanySuggestField {
@@ -247,7 +247,7 @@ Dialog {
                                     placeholderText: "Genre"
                                     fullModel: root.allGenres
                                     isCommaSeparated: true
-                                    onTextChanged: if (activeFocus) romListModel.setProperty(index, "genre", text)
+                                    onTextChanged: romListModel.setProperty(index, "genre", text)
                                 }
                                 
                                 TheophanySuggestField {
@@ -255,7 +255,7 @@ Dialog {
                                     Layout.preferredWidth: 140
                                     placeholderText: "Developer"
                                     fullModel: root.allDevelopers
-                                    onTextChanged: if (activeFocus) romListModel.setProperty(index, "developer", text)
+                                    onTextChanged: romListModel.setProperty(index, "developer", text)
                                 }
                                 
                                 TheophanySuggestField {
@@ -263,7 +263,7 @@ Dialog {
                                     Layout.preferredWidth: 140
                                     placeholderText: "Publisher"
                                     fullModel: root.allPublishers
-                                    onTextChanged: if (activeFocus) romListModel.setProperty(index, "publisher", text)
+                                    onTextChanged: romListModel.setProperty(index, "publisher", text)
                                 }
                                 
                                 TheophanySuggestField {
@@ -271,14 +271,14 @@ Dialog {
                                     Layout.preferredWidth: 70
                                     placeholderText: "YYYY"
                                     fullModel: root.allYears
-                                    onTextChanged: if (activeFocus) romListModel.setProperty(index, "year", text)
+                                    onTextChanged: romListModel.setProperty(index, "year", text)
                                 }
                                 
                                 TheophanyTextField {
                                     text: model.rating || ""
                                     Layout.preferredWidth: 60
                                     placeholderText: "0.0"
-                                    onTextChanged: if (activeFocus) romListModel.setProperty(index, "rating", text)
+                                    onTextChanged: romListModel.setProperty(index, "rating", text)
                                 }
                                 
                                 TheophanySuggestField {
@@ -287,7 +287,7 @@ Dialog {
                                     placeholderText: "Tag1, Tag2..."
                                     fullModel: root.allTags
                                     isCommaSeparated: true
-                                    onTextChanged: if (activeFocus) romListModel.setProperty(index, "tags", text)
+                                    onTextChanged: romListModel.setProperty(index, "tags", text)
                                 }
                                 
                                 Text { 

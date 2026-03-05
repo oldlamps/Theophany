@@ -330,6 +330,7 @@ impl LegendaryWrapper {
         None
     }
 
+
     /// Cleans a Legendary output line to be more UI-friendly.
     pub fn clean_status_line(line: &str) -> String {
         let mut cleaned = line.to_string();
@@ -372,44 +373,6 @@ impl LegendaryWrapper {
         None
     }
 
-    /// Parses the detailed status from legendary output line.
-    pub fn parse_detailed_status(line: &str) -> Option<String> {
-        let mut parts = Vec::new();
-        
-        // Clean the line first to remove junk
-        let clean = Self::clean_status_line(line);
-        if clean.contains("MiB/s") || clean.contains("GiB") || clean.contains("MiB") || clean.contains("ETA:") {
-            return Some(clean);
-        }
-
-        let mut current_start_paren = None;
-        let mut current_start_square = None;
-        
-        for (i, c) in line.char_indices() {
-            match c {
-                '(' => current_start_paren = Some(i + 1),
-                ')' => if let Some(start) = current_start_paren {
-                    parts.push(line[start..i].to_string());
-                    current_start_paren = None;
-                },
-                '[' => current_start_square = Some(i + 1),
-                ']' => if let Some(start) = current_start_square {
-                    let part = &line[start..i];
-                    if part != "cli" && part != "DLManager" {
-                        parts.push(part.to_string());
-                    }
-                    current_start_square = None;
-                },
-                _ => {}
-            }
-        }
-        
-        if parts.is_empty() {
-            None
-        } else {
-            Some(parts.join(", "))
-        }
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Cloud Save Helpers

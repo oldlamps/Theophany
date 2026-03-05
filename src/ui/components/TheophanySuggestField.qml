@@ -89,6 +89,7 @@ Item {
     }
 
     function applySelection(selectedValue) {
+        textField.forceActiveFocus()
         if (root.isCommaSeparated) {
             var parts = textField.text.split(',')
             parts[parts.length - 1] = " " + selectedValue
@@ -97,7 +98,6 @@ Item {
             textField.text = selectedValue
         }
         popup.close()
-        textField.forceActiveFocus()
     }
 
     Popup {
