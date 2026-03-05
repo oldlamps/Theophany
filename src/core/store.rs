@@ -99,9 +99,6 @@ impl StoreManager {
         let mut screenshots = Vec::new();
         if let Some(ss_array) = resp["screenshots"].as_array() {
             for item in ss_array {
-                // Determine if it has nested sizes or direct src
-                // Response structure: screenshots: [{ sizes: [{src, ...}], default: true }]
-                // We want the largest one usually, or just the first reasonable one.
                 if let Some(sizes) = item["sizes"].as_array() {
                     // Grab the first one usually being high res, or find "orig"
                     if let Some(best) = sizes.first() {
@@ -178,9 +175,6 @@ impl StoreManager {
             }
         }
 
-        // 2. Fetch a large batch of Games to derive lists
-        // We fetch default batch (approx 250 items) which is enough for our needs.
-        // Note: 'per_page' parameter causes 400 Bad Request on this endpoint, do not use it.
         let mut games_pool: Vec<FlatpakApp> = Vec::new();
         let url = "https://flathub.org/api/v2/collection/category/Game?sort=trending";
         if let Ok(resp) = client.get(url).send() {
@@ -266,12 +260,6 @@ impl StoreManager {
         
         // 1. Run the installation
         Self::install_flatpak(app_id)?;
-
-        // 2. Download media in the background (or synchronously here since it's an async task on the bridge)
-        // Note: For now we do it synchronously as this runs in a thread on the bridge.
-        
-        // Convert to our internal structure format if needed or just use strings
-        // Target paths: ~/.local/share/theophany/Images/PC (Linux)/{AppId}/...
         
         // Box Front (Use first screenshot or icon if no screenshots)
         if !icon_url.is_empty() {
@@ -288,15 +276,7 @@ impl StoreManager {
             let _ = Self::download_media(app_id, &ss.src, "Screenshot");
         }
 
-        // 3. Save Description (This will be handled by the library scanner mostly, 
-        // but we can try to inject it into a prospective metadata file if we had one.
-        // For now, since Theophany scans .desktop files, we might need a way to persist this
-        // description so it's picked up. 
-        // The current architecture relies on `scan_local_apps` parsing .desktop files.
-        // We might need a sidecar metadata file or insert into DB directly if we knew the ID.
-        // Since we don't know the future DB ID yet, we can perhaps save a cached metadata file
-        // that the scanner looks for.
-        //
+
         // Strategy: Save a sidecar JSON in the same media folder which is unique to the app.
         // ~/.local/share/theophany/Images/PC (Linux)/{AppId}/metadata.json
         let metadata_dir = crate::core::paths::get_data_dir()
@@ -419,16 +399,33 @@ impl StoreManager {
     /// Scans for local .desktop files that are categorized as Games.
     pub fn scan_local_apps() -> Vec<Rom> {
         let mut apps = Vec::new();
-        let mut search_paths = vec![
-            PathBuf::from("/usr/share/applications"),
-            PathBuf::from("/usr/local/share/applications"),
-            PathBuf::from("/var/lib/flatpak/exports/share/applications"),
-        ];
+        let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
+        
+        let mut search_paths = Vec::new();
+
+        // System paths
+        if is_flatpak {
+            // In Flatpak, we need to look at /run/host for system-wide applications
+            // assuming we have --filesystem=/usr/share/applications:ro
+            search_paths.push(PathBuf::from("/run/host/usr/share/applications"));
+            search_paths.push(PathBuf::from("/run/host/usr/local/share/applications"));
+            search_paths.push(PathBuf::from("/run/host/var/lib/flatpak/exports/share/applications"));
+        } else {
+            search_paths.push(PathBuf::from("/usr/share/applications"));
+            search_paths.push(PathBuf::from("/usr/local/share/applications"));
+            search_paths.push(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
+        }
 
         if let Ok(home) = std::env::var("HOME") {
             let home_path = PathBuf::from(home);
-            search_paths.push(home_path.join(".local/share/applications"));
-            search_paths.push(home_path.join(".local/share/flatpak/exports/share/applications"));
+            if is_flatpak {
+              
+                search_paths.push(home_path.join(".local/share/applications"));
+                search_paths.push(home_path.join(".local/share/flatpak/exports/share/applications"));
+            } else {
+                search_paths.push(home_path.join(".local/share/applications"));
+                search_paths.push(home_path.join(".local/share/flatpak/exports/share/applications"));
+            }
         }
 
         for path in search_paths {

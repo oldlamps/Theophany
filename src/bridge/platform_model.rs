@@ -459,7 +459,6 @@ impl PlatformListModel {
                 .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_')
                 .collect::<String>()
                 .trim()
-                .replace(" ", "_")
                 .to_lowercase();
             
             let safe_name = if safe_name.is_empty() { "unknown".to_string() } else { safe_name };

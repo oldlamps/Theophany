@@ -38,7 +38,8 @@ Dialog {
                     "title": item.title || "Unknown",
                     "path": item.path || "",
                     "filename": item.filename || "",
-                    "icon_path": item.icon_path || ""
+                    "icon_path": item.icon_path || "",
+                    "is_installed": item.isInstalled || item.is_installed || false
                 }
                 localModel.append(sanitized)
             }
@@ -198,7 +199,11 @@ Dialog {
                                 Image {
                                     id: iconImg
                                     anchors.fill: parent
-                                    source: icon_path ? "file://" + storeBridge.find_icon_path(icon_path) : ""
+                                    source: {
+                                        if (!icon_path) return ""
+                                        var p = storeBridge.find_icon_path(icon_path)
+                                        return p ? "file://" + p : ""
+                                    }
                                     fillMode: Image.PreserveAspectFit
                                     asynchronous: true
                                 }
@@ -249,7 +254,8 @@ Dialog {
                                         filename: filename,
                                         file_size: 0,
                                         title: title,
-                                        icon_path: icon_path || ""
+                                        icon_path: icon_path || "",
+                                        is_installed: is_installed
                                     }
                                     storeBridge.import_local_app(JSON.stringify(rom), platformId)
                                 }

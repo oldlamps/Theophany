@@ -916,6 +916,7 @@ impl StoreBridge {
                                 meta.rom_id = final_rom.id.clone();
                                 meta.title = final_rom.title.clone();
                                 meta.tags = final_rom.tags.clone();
+                                meta.is_installed = final_rom.is_installed.unwrap_or(true);
 
                                 // Get platform folder for sidecar
                                 if let Ok(Some(platform)) = db.get_platform(&platform_id) {

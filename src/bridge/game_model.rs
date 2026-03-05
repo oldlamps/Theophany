@@ -1098,7 +1098,12 @@ impl GameListModel {
             
             // Try to find matching static platform
             if let Some(info) = static_platforms.iter().find(|p| p.name == p_type || p.slug == p_type) {
-                icon = info.icon_url.clone();
+                let local_path = format!("assets/systems/{}.png", info.slug.to_lowercase());
+                if crate::core::paths::get_assets_dir().join(local_path.replace("assets/", "")).exists() {
+                    icon = local_path;
+                } else {
+                    icon = info.icon_url.clone();
+                }
             }
             
             let mut map = QVariantMap::default();

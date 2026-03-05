@@ -766,7 +766,7 @@ Dialog {
                                             tooltipText: "Search for System Icon"
                                             onClicked: {
                                                 iconSearchDialog.initialQuery = (nameField.text || "System") 
-                                                iconSearchDialog.activeSystemName = nameField.text || "system"
+                                                iconSearchDialog.activeSystemName = platformCombo.currentValue || "system"
                                                 iconSearchDialog.open()
                                             }
                                         }
