@@ -1,8 +1,13 @@
 use std::path::PathBuf;
 
 pub fn get_data_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let path = PathBuf::from(home).join(".local").join("share").join("theophany");
+    // Respect XDG_DATA_HOME if set (Flatpak sets this to the sandboxed data dir).
+    // Falls back to the XDG default of ~/.local/share for native installs.
+    let base = std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        format!("{}/.local/share", home)
+    });
+    let path = PathBuf::from(base).join("theophany");
     if !path.exists() {
         let _ = std::fs::create_dir_all(&path);
     }
@@ -53,8 +58,13 @@ pub fn get_metadata_dir() -> PathBuf {
 }
 
 pub fn get_config_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let path = PathBuf::from(home).join(".config").join("theophany");
+    // Respect XDG_CONFIG_HOME if set. In Flatpak this is the sandboxed config dir;
+    // in native builds it falls back to the XDG default ~/.config.
+    let base = std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        format!("{}/.config", home)
+    });
+    let path = PathBuf::from(base).join("theophany");
     if !path.exists() {
         let _ = std::fs::create_dir_all(&path);
     }

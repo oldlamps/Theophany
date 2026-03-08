@@ -62,9 +62,6 @@ impl FileNameParser {
         // 2. Clean up title by removing ALL tags (at start, middle or end)
         let mut clean_title = tag_re.replace_all(&working_filename, "").to_string();
         
-        // 3. Post-processing cleanup
-        // Remove common prefixes if they are still there (unlikely if they were in brackets/parens)
-        // Clean characters like _, -, . and multiple spaces
         clean_title = clean_title.replace("_", " ")
                      .replace("-", " ")
                      .replace(".", " ");

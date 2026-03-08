@@ -7,13 +7,6 @@ pub struct Scanner;
 
 impl Scanner {
     /// Recursively scans a directory for files matching the given extensions.
-    ///
-    /// # Arguments
-    /// * `platform_id` - The ID of the platform these ROMs belong to.
-    /// * `scan_path` - The root directory to scan.
-    /// * `extensions` - A list of allowed file extensions (e.g., ["iso", "cso"]).
-    ///
-    /// Returns a vector of potential `Rom` objects.
     pub fn scan_directory(
         platform_id: &str,
         scan_path: &Path,
@@ -39,8 +32,6 @@ impl Scanner {
                             .unwrap_or_default()
                             .to_string();
 
-                        // For performance, we might want to delay hashing until import time or run it async.
-                        // For now, we'll set it to None and let the importer handle it.
                         let file_size = entry.metadata().map(|m| m.len()).unwrap_or(0) as i64;
                         // let hash = Hasher::calculate_sha1(path).ok(); 
 

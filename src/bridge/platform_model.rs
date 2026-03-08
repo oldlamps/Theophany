@@ -303,7 +303,35 @@ impl PlatformListModel {
 
             let type_opt = if normalized_type.is_empty() { None } else { Some(normalized_type.as_str()) };
             let icon_opt = if icon.is_empty() { None } else { Some(icon.as_str()) };
-            let pc_opt = if pc_config.is_empty() { None } else { Some(pc_config.as_str()) };
+            let mut final_pc_config = pc_config;
+            
+            // If this is a PC (Windows) platform and no config was provided, pull global defaults
+            if (normalized_type == "PC (Windows)" || normalized_type == "Windows") && final_pc_config.is_empty() {
+                let (runner, prefix, wrapper, gs, mh, gs_args, gs_w, gs_h, gs_out_w, gs_out_h, gs_rf, gs_sc, gs_up, gs_fs) = crate::bridge::settings::AppSettings::get_pc_defaults();
+                
+                let defaults = serde_json::json!({
+                    "umu_proton_version": runner,
+                    "wine_prefix": prefix,
+                    "wrapper": wrapper,
+                    "use_gamescope": gs,
+                    "use_mangohud": mh,
+                    "gamescope_args": gs_args,
+                    "gs_state": {
+                        "w": gs_w,
+                        "h": gs_h,
+                        "W": gs_out_w,
+                        "H": gs_out_h,
+                        "r": gs_rf,
+                        "S": gs_sc,
+                        "U": gs_up,
+                        "f": gs_fs
+                    }
+                });
+                final_pc_config = serde_json::to_string(&defaults).unwrap_or_default();
+                log::info!("[PlatformModel] Inherited global PC defaults for new platform: {}", name);
+            }
+
+            let pc_opt = if final_pc_config.is_empty() { None } else { Some(final_pc_config.as_str()) };
 
             let platform = Platform {
                 id: id.clone(),

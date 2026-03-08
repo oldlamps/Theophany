@@ -13,8 +13,10 @@ import "style"
 ApplicationWindow {
     id: window
     visible: true
-    width: 1280
-    height: 720
+    width: 1920
+    height: 1080
+    minimumWidth: 1024
+    minimumHeight: 768
     title: "Theophany"
     color: Theme.background
     
@@ -2720,7 +2722,7 @@ ApplicationWindow {
         Resizer {
             id: detailsResizer
             visible: detailsPanel.visible && !window.collapsedMode // Only show if panel is visible and not in mobile/collapsed mode
-            targetWidth: appSettings.detailsWidth > 0 ? appSettings.detailsWidth : Math.max(250, window.width * 0.3)
+            targetWidth: appSettings.detailsWidth > 0 ? appSettings.detailsWidth : Math.max(250, window.width * 0.25)
             minWidth: 250
             maxWidth: window.width * 0.5
             isRightSide: false
@@ -2737,7 +2739,7 @@ ApplicationWindow {
         DetailsPanel {
             id: detailsPanel
             gameModel: gameModel
-            Layout.preferredWidth: appSettings.detailsWidth > 0 ? appSettings.detailsWidth : Math.max(250, window.width * 0.3)
+            Layout.preferredWidth: appSettings.detailsWidth > 0 ? appSettings.detailsWidth : Math.max(250, window.width * 0.25)
             Layout.fillHeight: true
             visible: window.statTotalGames > 0
             onPlayRequested: (id) => {

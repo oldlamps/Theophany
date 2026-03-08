@@ -62,6 +62,27 @@ pub struct LegendaryWrapper;
 impl LegendaryWrapper {
     /// Discovers the path to the legendary binary.
     pub fn find_binary() -> Option<PathBuf> {
+        let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
+
+        if is_flatpak {
+            // In Flatpak, only use binaries accessible within the sandbox.
+            // 1. Prefer the bundled binary at /app/bin/legendary.
+            let fp_binary = PathBuf::from("/app/bin/legendary");
+            if fp_binary.exists() {
+                return Some(fp_binary);
+            }
+            // 2. Fall back to the tools dir, which resolves to the sandbox's own
+            //    data directory (~/.var/app/<id>/data/theophany/tools/) via $HOME.
+            let tools_binary = crate::core::paths::get_tools_dir().join("legendary");
+            if tools_binary.exists() {
+                return Some(tools_binary);
+            }
+            // Never use host PATH or custom user-configured paths in Flatpak.
+            log::error!("[Legendary] Running inside Flatpak but no legendary binary found in /app/bin or tools dir.");
+            return None;
+        }
+
+        // Native build: check settings, tools dir, then PATH.
         // 1. Check Settings
         let path = crate::core::paths::get_config_dir().join("settings.json");
         if let Ok(content) = std::fs::read_to_string(&path) {
@@ -96,6 +117,9 @@ impl LegendaryWrapper {
         let mut cmd = Command::new(binary);
         cmd.arg(subcommand);
         
+        // Always set LEGENDARY_CONFIG_PATH so legendary finds the correct config dir.
+        // get_config_dir() already respects XDG_CONFIG_HOME, so in Flatpak this resolves
+        // to the sandboxed config path; in native builds it uses ~/.config/theophany.
         let legendary_config = crate::core::paths::get_config_dir().join("legendary");
         cmd.env("LEGENDARY_CONFIG_PATH", legendary_config.to_string_lossy().to_string());
         
@@ -423,12 +447,6 @@ impl LegendaryWrapper {
         Ok((folder, install_path))
     }
 
-    /// Resolves the full host-side Linux path for a game's cloud saves.
-    ///
-    /// - `app_name`:   legendary app name (e.g. `"d6407c9e6fd54cb492b8c6635480d792"`)
-    /// - `prefix`:     Wine/Proton prefix root (e.g. `"~/.local/share/Steam/steamapps/compatdata/…/pfx"`)
-    ///
-    /// Returns `Ok(None)` if the game doesn't support cloud saves.
     pub fn resolve_cloud_save_path(
         app_name: &str,
         prefix: &str,
@@ -507,12 +525,6 @@ impl LegendaryWrapper {
         Ok(Some(normalised))
     }
 
-    /// Synchronises cloud saves for a game, **blocking until legendary exits**.
-    ///
-    /// Streams stdout/stderr so progress lines are visible in the Theophany log.
-    /// Returns `Ok(())` on success, `Err` on failure.
-    ///
-    /// `save_path` is the **host-side Linux path** passed to `--save-path`.
     pub fn sync_saves(
         app_name: &str,
         save_path: &std::path::Path,
@@ -562,8 +574,6 @@ impl LegendaryWrapper {
         let mut child = cmd.spawn()?;
         let mut result = SyncResult::default();
 
-        // Stream output so the log is useful.
-        // We read stderr (legendary logs there) line by line for parsing.
         use std::io::{BufRead, BufReader};
         if let Some(stderr) = child.stderr.take() {
             let reader = BufReader::new(stderr);
@@ -704,10 +714,7 @@ impl LegendaryWrapper {
                             }
                         },
                         (Some(u), Some(t)) if t.to_lowercase().contains("logo") => {
-                            // We don't have a Rom.logo_path, but the importer can pick this up 
-                            // if we find a way to pass it. For now, let's at least ensure we have 
-                            // the most common images correctly mapped.
-                            // We'll use "Clear Logo" as the type for the assets table.
+
                              let _ = u; 
                         }
                         _ => {}

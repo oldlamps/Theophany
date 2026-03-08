@@ -119,11 +119,7 @@ impl OllamaClient {
         while let Some(item) = stream.next().await {
             match item {
                 Ok(bytes) => {
-                    let chunk_str = String::from_utf8_lossy(&bytes);
-                    // Parse JSON - Ollama sends multiple JSON objects in the stream, but sometimes they might be chunked weirdly in the bytes?
-                    // Usually each chunk is a valid JSON line or we need to handle buffering.
-                    // For simplicitly via bytes_stream(), often each chunk is one or more lines.
-                    // Let's iterate over lines if possible.
+                    let chunk_str = String::from_utf8_lossy(&bytes);                   
                     
                     for line in chunk_str.split('\n') {
                         if line.trim().is_empty() { continue; }

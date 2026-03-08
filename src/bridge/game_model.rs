@@ -147,7 +147,7 @@ pub struct GameListModel {
     current_tag_filters: RefCell<Vec<String>>,
     
     // Process Tracking
-    running_games: RefCell<std::collections::HashMap<String, std::sync::Arc<std::sync::atomic::AtomicI32>>>, // ROM ID -> PGID (atomic for background updates)
+    running_games: RefCell<std::collections::HashMap<String, (std::sync::Arc<std::sync::atomic::AtomicI32>, std::sync::Arc<std::sync::atomic::AtomicBool>)>>, // ROM ID -> (PGID, is_host)
     
     pub sortMethod: qt_property!(QString; NOTIFY sortMethodChanged),
     pub sortMethodChanged: qt_signal!(),
@@ -2656,9 +2656,10 @@ impl GameListModel {
                                   
                                   if let Some(v) = c.umu_proton_version.as_ref().filter(|s| !s.trim().is_empty()) { 
                                       env_prefix.push_str(&format!("PROTONPATH=\"{}\" ", v)); 
-                                      if rom_path.starts_with("epic://") && !wrapper_cmd.contains("umu-run") {
-                                          wrapper_cmd.push_str("umu-run ");
-                                      }
+                                  }
+                                  
+                                  if rom_path.starts_with("epic://") && !wrapper_cmd.contains("umu-run") {
+                                      wrapper_cmd.push_str("umu-run ");
                                   }
                                   if let Some(s) = c.umu_store.as_ref().filter(|s| !s.trim().is_empty()) { env_prefix.push_str(&format!("UMU_STORE=\"{}\" ", s)); }
                                   if let Some(p) = c.wine_prefix.as_ref().filter(|s| !s.trim().is_empty()) { env_prefix.push_str(&format!("WINEPREFIX=\"{}\" ", p)); }
@@ -2842,51 +2843,81 @@ impl GameListModel {
                           
                           let pgid = child.id() as i32;
                           let pgid_atomic = std::sync::Arc::new(std::sync::atomic::AtomicI32::new(pgid));
+                           let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
+                           let is_host_tracking = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(is_flatpak));
                           
                           if should_track {
-                              self.running_games.borrow_mut().insert(rom_id_clone.clone(), Arc::clone(&pgid_atomic));
+                              self.running_games.borrow_mut().insert(rom_id_clone.clone(), (std::sync::Arc::clone(&pgid_atomic), std::sync::Arc::clone(&is_host_tracking)));
                               self.runningGamesChanged();
                               
                               let pgid_for_drainer = std::sync::Arc::clone(&pgid_atomic);
 
                          
-                         // Always pipe stdout/stderr for tracked platforms to scan for markers
+                         // Always pipe stdout/stderr to scan for markers
                          let stdout = child.stdout.take();
                          let stderr = child.stderr.take();
+                         let is_host_tracking_for_drainer = std::sync::Arc::clone(&is_host_tracking);
+                         let marker_default = b"THEOPHANY_PGID:";
+                         let marker_host = b"THEOPHANY_HOST_PGID:";
+                         let marker_flatpak = b"THEOPHANY_FLATPAK_PGID:";
                          std::thread::spawn(move || {
                              if let Some(mut out) = stdout {
                                  use std::io::Read;
                                  let mut buffer = [0u8; 1024];
                                  let mut acc = Vec::new();
-                                 let marker = b"THEOPHANY_PGID:";
-                                 let mut found_marker = false;
                                  
                                  while let Ok(n) = out.read(&mut buffer) {
                                      if n == 0 { break; }
                                      for &b in &buffer[..n] {
                                          acc.push(b);
                                          
-                                         // Check for marker in current accumulator
-                                         if !found_marker && acc.len() >= marker.len() {
-                                             if let Some(pos) = acc.windows(marker.len()).position(|w| w == marker) {
+                                         // Check for markers in current accumulator
+                                         let mut marker_len = 0;
+                                             let mut is_host = false;
+                                             let mut pos_found = None;
+
+                                             if acc.len() >= marker_host.len() {
+                                                 if let Some(pos) = acc.windows(marker_host.len()).position(|w| w == marker_host) {
+                                                     marker_len = marker_host.len();
+                                                     is_host = true;
+                                                     pos_found = Some(pos);
+                                                 }
+                                             }
+                                             
+                                             if pos_found.is_none() && acc.len() >= marker_flatpak.len() {
+                                                 if let Some(pos) = acc.windows(marker_flatpak.len()).position(|w| w == marker_flatpak) {
+                                                     marker_len = marker_flatpak.len();
+                                                     is_host = false;
+                                                     pos_found = Some(pos);
+                                                 }
+                                             }
+
+                                             if pos_found.is_none() && acc.len() >= marker_default.len() {
+                                                 if let Some(pos) = acc.windows(marker_default.len()).position(|w| w == marker_default) {
+                                                     marker_len = marker_default.len();
+                                                     is_host = false; 
+                                                     pos_found = Some(pos);
+                                                 }
+                                             }
+
+                                             if let Some(pos) = pos_found {
                                                  // Marker found! Now look for the end of the line to get the ID
-                                                 let rest = &acc[pos + marker.len()..];
+                                                 let rest = &acc[pos + marker_len..];
                                                  if let Some(newline_pos) = rest.iter().position(|&x| x == b'\n' || x == b'\r') {
                                                      if let Ok(s) = std::str::from_utf8(&rest[..newline_pos]) {
                                                          if let Ok(p) = s.trim().parse::<i32>() {
-                                                             log::info!("[Launcher] Captured THEOPHANY_PGID: {}", p);
+                                                             log::info!("[Launcher] Captured {} {}: {}", if is_host { "HOST" } else { "FLATPAK" }, if is_host {"PID"} else {"PGID"}, p);
                                                              pgid_for_drainer.store(p, std::sync::atomic::Ordering::SeqCst);
-                                                             found_marker = true;
+                                                             is_host_tracking_for_drainer.store(is_host, std::sync::atomic::Ordering::SeqCst);
                                                          }
                                                      }
                                                  }
                                              }
-                                         }
 
                                          if b == b'\n' || b == b'\r' {
                                              if let Ok(line) = std::str::from_utf8(&acc) {
-                                                 // Don't log our own tracking marker as game output
-                                                 if !line.contains("THEOPHANY_PGID:") {
+                                                 // Don't log our own tracking markers as game output
+                                                 if !line.contains("THEOPHANY_") && !line.contains("_PGID:") {
                                                      log::debug!("[Game Output] {}", line.trim_end());
                                                  }
                                              }
@@ -2898,10 +2929,15 @@ impl GameListModel {
                                  }
                              }
                              if let Some(mut err) = stderr {
-                                 let _ = std::io::copy(&mut err, &mut std::io::sink());
+                                 use std::io::Read;
+                                 let mut err_buf = String::new();
+                                 let _ = err.read_to_string(&mut err_buf);
+                                 if !err_buf.trim().is_empty() {
+                                     log::warn!("[Game Stderr] {}", err_buf.trim_end());
+                                 }
                              }
                          });
-                          } // End if should_track for stdout/stderr piping
+                     }
 
                          log::info!("[Launcher] Game {} started with initial PID {}", rom_id_clone, pgid);
                          // Immediate metadata update for last_played
@@ -2928,6 +2964,12 @@ impl GameListModel {
                           // Flatpaks are tracked directly.
                           if !should_track {
                               log::info!("Non-tracked game detected. Skipping timing thread but updating usage stats immediately.");
+                              
+                              // Reaper thread to prevent zombies for untracked processes
+                              std::thread::spawn(move || {
+                                  let _ = child.wait();
+                              });
+
                               if let Ok(db) = DbManager::open(&path_str) {
                                   if let Ok(Some(mut meta)) = db.get_metadata(&rom_id_clone) {
                                       meta.play_count += 1;
@@ -2970,51 +3012,49 @@ impl GameListModel {
                                  LegendaryWrapper::resolve_cloud_save_path(app_name, prefix).ok()?
                              })
                          } else { None };
-                         
                          let rom_path_thread = rom_path.clone();
                          let tx_thread = self.tx.borrow().clone();
                          
-                         let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
-                         
-                         let pgid_for_polling = std::sync::Arc::clone(&pgid_atomic);
+                         let is_host_for_polling = self.running_games.borrow().get(&rom_id_clone).map(|(_, ih)| std::sync::Arc::clone(ih));
+
                          std::thread::spawn(move || {
                              let start_time = std::time::SystemTime::now();
                              
                              // 1. Wait for the primary child to exit (reaps the process)
-                             let exit_status = child.wait();
+                             let mut exit_status = child.wait();
                              log::debug!("[Launcher] Primary child for {} exited with {:?}", rom_id_thread, exit_status);
 
-                             // 2. Use process group polling to wait for grandchildren (umu-run, wine, etc.)
-                              if should_track {
-                                  log::debug!("[Launcher] Polling for grandchildren (is_flatpak: {})...", is_flatpak);
-                                  loop {
-                                      // Get the most current PGID (might have been updated by marker)
-                                      let current_pgid = pgid_for_polling.load(std::sync::atomic::Ordering::SeqCst);
+                             let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
+                             let pgid_for_polling = std::sync::Arc::clone(&pgid_atomic);
 
-                                      // Use system kill command to check group status without libc
-                                      let status = if is_flatpak {
-                                          std::process::Command::new("flatpak-spawn")
-                                              .arg("--host")
-                                              .arg("kill")
-                                              .arg("-0")
-                                              .arg(format!("-{}", current_pgid))
-                                              .stderr(std::process::Stdio::null())
-                                              .status()
-                                      } else {
-                                          std::process::Command::new("kill")
-                                              .arg("-0")
-                                              .arg(format!("-{}", current_pgid))
-                                              .stderr(std::process::Stdio::null())
-                                              .status()
-                                      };
-                                      
-                                      if status.map(|s| !s.success()).unwrap_or(true) {
-                                          log::debug!("[Launcher] PGID {} group cleared", current_pgid);
-                                          break;
-                                      }
-                                      std::thread::sleep(std::time::Duration::from_millis(1000));
-                                  }
-                              }
+                             if let Some(is_host_atomic) = is_host_for_polling {
+                                 loop {
+                                     let current_pgid = pgid_for_polling.load(std::sync::atomic::Ordering::SeqCst);
+                                     let is_host = is_host_atomic.load(std::sync::atomic::Ordering::SeqCst);
+
+                                     let status = if is_flatpak && is_host {
+                                         std::process::Command::new("flatpak-spawn")
+                                             .arg("--host")
+                                             .arg("kill")
+                                             .arg("-0")
+                                             .arg(current_pgid.to_string())
+                                             .stderr(std::process::Stdio::null())
+                                             .status()
+                                     } else {
+                                         std::process::Command::new("kill")
+                                             .arg("-0")
+                                             .arg(format!("-{}", current_pgid))
+                                             .stderr(std::process::Stdio::null())
+                                             .status()
+                                     };
+                                     
+                                     if status.map(|s| !s.success()).unwrap_or(true) {
+                                         log::debug!("[Launcher] {} namespace PID/PGID {} cleared", if is_host { "Host" } else { "Local" }, current_pgid);
+                                         break;
+                                     }
+                                     std::thread::sleep(std::time::Duration::from_millis(1000));
+                                 }
+                             }
 
                              // ── Cloud Save: Push after game exits ─────────────
                               if let (Some(app_name), Some(sp)) = (&cloud_app_name, &cloud_save_path_for_push) {
@@ -3212,11 +3252,23 @@ impl GameListModel {
                 let clean_url = if url.contains("://") { url } else { format!("file://{}", url) };
                 
                 #[cfg(target_os = "linux")]
-                { let _ = std::process::Command::new("xdg-open").arg(&clean_url).spawn(); }
+                { 
+                    if let Ok(mut child) = std::process::Command::new("xdg-open").arg(&clean_url).spawn() {
+                        std::thread::spawn(move || { let _ = child.wait(); });
+                    }
+                }
                 #[cfg(target_os = "windows")]
-                { let _ = std::process::Command::new("cmd").args(["/c", "start", &clean_url]).spawn(); }
+                { 
+                    if let Ok(mut child) = std::process::Command::new("cmd").args(["/c", "start", &clean_url]).spawn() {
+                        std::thread::spawn(move || { let _ = child.wait(); });
+                    }
+                }
                 #[cfg(target_os = "macos")]
-                { let _ = std::process::Command::new("open").arg(&clean_url).spawn(); }
+                { 
+                    if let Ok(mut child) = std::process::Command::new("open").arg(&clean_url).spawn() {
+                        std::thread::spawn(move || { let _ = child.wait(); });
+                    }
+                }
             });
         }
     }
@@ -3234,7 +3286,22 @@ impl GameListModel {
 
         // Open the Steam uninstall dialog
         log::info!("[uninstallSteamGame] Opening Steam uninstall URI: {}", steam_uri);
-        let _ = Command::new("xdg-open").arg(&steam_uri).spawn();
+        let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
+        let mut cmd = if is_flatpak {
+            let mut c = Command::new("flatpak-spawn");
+            c.arg("--host").arg("xdg-open").arg(&steam_uri);
+            c
+        } else {
+            let mut c = Command::new("xdg-open");
+            c.arg(&steam_uri);
+            c
+        };
+
+        if let Ok(mut child) = cmd.spawn() {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
 
         // Immediately mark as uninstalled in the DB
         let db_path = self.db_path.borrow().clone();
@@ -5282,11 +5349,12 @@ impl GameListModel {
 
     #[allow(non_snake_case)]
     fn stopGame(&mut self, rom_id: String) {
-        let pgid_atomic = self.running_games.borrow().get(&rom_id).cloned();
-        if let Some(atomic) = pgid_atomic {
-            let pgid = atomic.load(std::sync::atomic::Ordering::SeqCst);
+        let process_info = self.running_games.borrow().get(&rom_id).cloned();
+        if let Some((pgid_atomic, is_host_atomic)) = process_info {
+            let pgid = pgid_atomic.load(std::sync::atomic::Ordering::SeqCst);
+            let is_host = is_host_atomic.load(std::sync::atomic::Ordering::SeqCst);
             let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
-            log::info!("[Launcher] Stopping game {} with PGID {} (is_flatpak: {})", rom_id, pgid, is_flatpak);
+            log::info!("[Launcher] Stopping game {} with PGID {} (is_flatpak: {}, is_host: {})", rom_id, pgid, is_flatpak, is_host);
             
             #[cfg(unix)]
             {
@@ -5295,7 +5363,7 @@ impl GameListModel {
 
                 // 1. Try Group Signal (kills all children/grandchildren)
                 if !killed && pgid > 0 {
-                    let res = if is_flatpak {
+                    let res = if is_flatpak && is_host {
                         std::process::Command::new("flatpak-spawn")
                             .arg("--host")
                             .arg("kill")
@@ -5311,27 +5379,27 @@ impl GameListModel {
                             .status()
                     };
                     if res.map(|s| s.success()).unwrap_or(false) {
-                        log::info!("[Launcher] Stopped process group -{}", pgid);
+                        log::info!("[Launcher] Stopped {} process group -{}", if is_host {"host"} else {"local"}, pgid);
                         killed = true;
                     }
                 }
 
                 // 2. Try individual PID (fallback if group was reaped but process lives)
                 if !killed && pgid > 0 {
-                    let res = if is_flatpak {
+                    let res = if is_flatpak && is_host {
                         std::process::Command::new("flatpak-spawn").arg("--host").arg("kill").arg("-9").arg(pgid.to_string()).stderr(std::process::Stdio::null()).status()
                     } else {
                         std::process::Command::new("kill").arg("-9").arg(pgid.to_string()).stderr(std::process::Stdio::null()).status()
                     };
                     if res.map(|s| s.success()).unwrap_or(false) {
-                        log::info!("[Launcher] Stopped individual PID {}", pgid);
+                        log::info!("[Launcher] Stopped individual {} PID {}", if is_host {"host"} else {"local"}, pgid);
                         killed = true;
                     }
                 }
 
                 // 3. Try pkill -g ( targets anything in the group even if leader is gone)
                 if !killed && pgid > 0 {
-                    let cmd = if is_flatpak {
+                    let cmd = if is_flatpak && is_host {
                         format!("flatpak-spawn --host pkill -9 -g {}", pgid)
                     } else {
                         format!("pkill -9 -g {}", pgid)

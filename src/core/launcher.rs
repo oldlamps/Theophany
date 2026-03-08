@@ -5,7 +5,7 @@ use std::os::unix::process::CommandExt;
 pub struct Launcher;
 
 impl Launcher {
-    pub fn launch(command_template: &str, rom_path: &str, mut working_dir: Option<&str>, _env_vars: Option<&str>, wrapper: Option<&str>, eos_overlay: bool, track: bool) -> Result<std::process::Child, String> {
+    pub fn launch(command_template: &str, rom_path: &str, mut working_dir: Option<&str>, env_vars: Option<&str>, wrapper: Option<&str>, eos_overlay: bool, track: bool) -> Result<std::process::Child, String> {
         if command_template.trim().is_empty() {
             return Err("Command template is empty.".to_string());
         }
@@ -27,24 +27,94 @@ impl Launcher {
             format!("{} \"{}\"", xdg_cmd, rom_path)
         } else if rom_path.starts_with("epic://") {
             let app_id = rom_path.split('/').last().unwrap_or(rom_path);
-            let binary = crate::core::legendary::LegendaryWrapper::find_binary()
+            let binary_path = crate::core::legendary::LegendaryWrapper::find_binary();
+            let binary = binary_path
+                .as_ref()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| "legendary".to_string());
             
+
+
             let mut extra_args = String::new();
             let wrapper_arg = if let Some(w) = wrapper {
                 if !w.trim().is_empty() {
                     extra_args.push_str(" --no-wine");
-                    format!(" --wrapper \"{}\"", w.trim())
+                    if is_flatpak {
+                        let tools_dir = crate::core::paths::get_tools_dir();
+                        let wrapper_path = tools_dir.join("wrapper.sh");
+                        
+                        let mut env_exports = String::new();
+                        if let Some(e) = env_vars {
+                            let mut current_var = String::new();
+                            let mut in_quotes = false;
+                            
+                            for c in e.chars() {
+                                match c {
+                                    '"' => {
+                                        in_quotes = !in_quotes;
+                                        current_var.push(c);
+                                    }
+                                    ' ' if !in_quotes => {
+                                        if !current_var.is_empty() {
+                                            env_exports.push_str(&format!("export {}\n", current_var));
+                                            current_var.clear();
+                                        }
+                                    }
+                                    _ => {
+                                        current_var.push(c);
+                                    }
+                                }
+                            }
+                            if !current_var.is_empty() {
+                                env_exports.push_str(&format!("export {}\n", current_var));
+                            }
+                        }
+
+                        let script_content = format!(
+                            "#!/bin/sh\n\
+                            {}\n\
+                            printf \"THEOPHANY_HOST_PGID:%s\\n\" \"$(ps -o pgid= -p $$)\"\n\
+                            exec {} \"$@\"\n",
+                            env_exports,
+                            w.trim()
+                        );
+
+                        if let Err(e) = std::fs::write(&wrapper_path, &script_content) {
+                            log::error!("[Launcher] Failed to write Flatpak wrapper script: {}", e);
+                        } else {
+                            log::debug!("[Launcher] Generated wrapper script at {:?}:\n{}", wrapper_path, script_content);
+                        }
+                        
+                        // Make sure to chmod +x just in case
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if let Ok(mut perms) = std::fs::metadata(&wrapper_path).map(|m| m.permissions()) {
+                                perms.set_mode(0o755);
+                                let _ = std::fs::set_permissions(&wrapper_path, perms);
+                            }
+                        }
+
+                        format!(" --wrapper \"flatpak-spawn --host sh {}\"", wrapper_path.to_string_lossy())
+                    } else {
+                        let wrapper_env_prefix = match env_vars {
+                            Some(e) if !e.trim().is_empty() => format!("env {} ", e.trim().replace("\"", "\\\"")),
+                            _ => String::new(),
+                        };
+                        format!(" --wrapper \"{}{}\"", wrapper_env_prefix, w.trim())
+                    }
                 } else { String::new() }
             } else { String::new() };
                 
             let overlay_arg = if eos_overlay { " --eos-overlay" } else { "" };
-            let config_dir = crate::core::paths::get_config_dir().join("legendary");
             
-            // For Legendary, we always want environmental stability
-            format!("LEGENDARY_CONFIG_PATH=\"{}\" {} launch \"{}\"{}{}{}", 
-                config_dir.to_string_lossy(), binary, app_id, wrapper_arg, extra_args, overlay_arg)
+            let config_dir = crate::core::paths::get_config_dir().join("legendary");
+            let config_env = format!("LEGENDARY_CONFIG_PATH=\"{}\"", config_dir.to_string_lossy());
+            
+            // Use `env VAR=val binary ...` — the Flatpak runtime's sh doesn't support
+            // inline env assignments with exec, which would try to run the assignment as a path.
+            format!("env {} {} launch \"{}\"{}{}{}", 
+                config_env, binary, app_id, wrapper_arg, extra_args, overlay_arg)
         } else if rom_path.ends_with(".desktop") {
             Self::parse_desktop_exec(rom_path).unwrap_or_else(|| format!("xdg-open \"{}\"", rom_path))
         } else if rom_path.ends_with(".command") {
@@ -59,17 +129,25 @@ impl Launcher {
         }
 
         // 3. Final Command String with Optional Tracking
+        // For epic:// games, legendary runs inside the sandbox. The wrapper (e.g. umu-run)
+        // already handles host-escaping via flatpak-spawn --host internally.
+        // We should NOT wrap the whole command in flatpak-spawn --host again.
+        let is_epic = rom_path.starts_with("epic://");
         let final_cmd = if track {
-            // Simplified marker wrapping
             let escaped_cmd = cmd_string.replace("'", "'\\''");
-            if is_flatpak && !cmd_string.starts_with("flatpak-spawn") {
-                format!("flatpak-spawn --host sh -c 'printf \"THEOPHANY_PGID:%s\\n\" \"$(ps -o pgid= -p $$)\"; exec env {}'", escaped_cmd)
+            if is_flatpak && is_epic {
+                // Legendary runs inside sandbox; wrapper already escaped to host.
+                // Use a local PGID marker so we track the legendary process group.
+                format!("sh -c 'printf \"THEOPHANY_PGID:%s\\n\" \"$(ps -o pgid= -p $$)\"; exec {}'", escaped_cmd)
+            } else if is_flatpak && !cmd_string.starts_with("flatpak-spawn") {
+                // Other non-epic commands (e.g. native PC games) need host escape.
+                format!("flatpak-spawn --host sh -c 'printf \"THEOPHANY_HOST_PGID:%s\\n\" \"$(ps -o pgid= -p $$)\"; exec env {}'", escaped_cmd)
             } else {
                 format!("sh -c 'printf \"THEOPHANY_PGID:%s\\n\" \"$(ps -o pgid= -p $$)\"; exec env {}'", escaped_cmd)
             }
         } else {
-            // No tracking: just ensure host escape if needed
-            if is_flatpak && !cmd_string.starts_with("flatpak-spawn") {
+            // No tracking: just ensure host escape if needed (not for epic)
+            if is_flatpak && !is_epic && !cmd_string.starts_with("flatpak-spawn") {
                 format!("flatpak-spawn --host sh -c 'exec env {}'", cmd_string.replace("'", "'\\''"))
             } else {
                 cmd_string

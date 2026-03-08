@@ -152,7 +152,7 @@ impl ExoDosManager {
                     }
                     rom.description = xml_game.notes.clone();
                     
-                    let mut tag_list = Vec::new(); // Don't add ExoDOS tag per user request
+                    let mut tag_list = Vec::new();
                     if xml_game.favorite {
                        rom.is_favorite = Some(true);
                        tag_list.push("Favorite".to_string());
@@ -498,7 +498,6 @@ mod tests {
         
         assert_eq!(roms.len(), 1);
         let rom = &roms[0];
-        // Title should be pulled from XML ("The Amulet") instead of filename ("Amulet, The")
         assert_eq!(rom.title.as_ref().unwrap(), "The Amulet");
         // Notes should be pulled from XML
         assert_eq!(rom.description.as_ref().unwrap(), "Matched by stem!");

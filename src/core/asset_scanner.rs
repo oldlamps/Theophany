@@ -70,9 +70,7 @@ pub fn scan_game_assets(db: &DbManager, rom_id: &str) -> Result<(), Box<dyn std:
         }
     }
     
-    // 4. Update Database Transactionally
-    // We can't use db.execute_batch easily with params, so we do manual transaction control relative to our connection, 
-    // or just separate statements. Since DbManager exposes get_connection, we can do it.
+
     
     conn.execute("BEGIN IMMEDIATE", [])?;
     
@@ -84,12 +82,7 @@ pub fn scan_game_assets(db: &DbManager, rom_id: &str) -> Result<(), Box<dyn std:
     for (atype, path) in found_assets {
         insert_stmt.execute(params![rom_id, atype, path])?;
     }
-    
-    // Update Roms Cache
-    // We only update if we found something, or should we clear it if not found?
-    // "Smart" update: If we scanned and found nothing, maybe we should clear the cache? 
-    // Yes, explicit sync means "make DB match FS". So if FS is empty, DB should be empty.
-    
+       
     conn.execute("UPDATE roms SET boxart_path = ?1, icon_path = ?2, background_path = ?3 WHERE id = ?4", 
         params![boxart_path, icon_path, background_path, rom_id])?;
         
