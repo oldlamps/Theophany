@@ -409,7 +409,8 @@ Dialog {
                                 "publisher": item.publisher,
                                 "year": item.year,
                                 "rating": item.rating,
-                                "tags": item.tags
+                                "tags": item.tags,
+                                "file_size": item.file_size
                             })
                         }
                     }

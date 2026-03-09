@@ -538,7 +538,7 @@ impl GameListModel {
                                               r.date_added, m.play_count, m.total_play_time, m.last_played, p.icon, m.is_favorite, m.genre, m.developer, m.publisher, m.rating, m.tags, m.release_date, 
                                               COALESCE(r.icon_path, (SELECT local_path FROM assets WHERE rom_id = r.id AND type = 'Icon' LIMIT 1)), 
                                               COALESCE(r.background_path, (SELECT local_path FROM assets WHERE rom_id = r.id AND type = 'Background' LIMIT 1), (SELECT local_path FROM assets WHERE rom_id = r.id AND type = 'Screenshot' LIMIT 1)), 
-                                              m.is_installed
+                                              m.is_installed, r.file_size
                                               FROM roms r 
                                               LEFT JOIN metadata m ON r.id = m.rom_id 
                                               JOIN platforms p ON r.platform_id = p.id");
@@ -704,7 +704,7 @@ impl GameListModel {
                             platform_id: row.get(1)?,
                             path: row.get(2)?,
                             filename: row.get(3)?,
-                            file_size: 0,
+                            file_size: row.get::<_, i64>(24).unwrap_or(0),
                             hash_sha1: None,
                             title: row.get(4)?,
                             region: row.get(5)?,
@@ -1399,6 +1399,7 @@ impl GameListModel {
             map.insert("year".to_string(), serde_json::json!(metadata.release_date.unwrap_or_default())); // Send as string for UI textfield
             map.insert("rating".to_string(), serde_json::json!(metadata.rating.unwrap_or(0.0).to_string()));
             map.insert("tags".to_string(), serde_json::json!(metadata.tags.unwrap_or_default()));
+            map.insert("file_size".to_string(), serde_json::json!(rom.file_size));
 
             results.push(serde_json::Value::Object(map));
         }
@@ -1611,7 +1612,7 @@ impl GameListModel {
                         platform_id: final_platform_id.clone(),
                         path: path.to_string(),
                         filename: filename.to_string(),
-                        file_size: 0,
+                        file_size: rom_val.get("file_size").and_then(|v| v.as_i64()).unwrap_or(0),
                         hash_sha1: None,
                         title: r_title,
                         region: r_region,
@@ -4899,7 +4900,10 @@ impl GameListModel {
                 t = format!("the {}", &t[..t.len() - 5].trim());
             }
             // Replace trademark/etc symbols and hyphens with spaces to avoid word merging
-            t = t.replace("™", " ").replace("®", " ").replace("©", " ").replace("-", " ");
+            t = t.replace("™", " ")
+         .replace("®", " ")
+         .replace("©", " ")
+         .replace("-", " ");
             // Clean non-alphanumeric (except spaces)
             let re_clean = regex::Regex::new(r"[^a-z0-9 ]").unwrap();
             t = re_clean.replace_all(&t, " ").to_string();
@@ -5263,8 +5267,8 @@ impl GameListModel {
             let conn = db.get_connection();
             let query = "SELECT r.id, r.platform_id, r.path, r.filename, m.title, m.region, p.name, p.platform_type, 
                          COALESCE(r.boxart_path, a.local_path), r.date_added, m.play_count, m.total_play_time, m.last_played, 
-                         p.icon, m.is_favorite, m.genre, m.developer, m.publisher, m.rating, m.tags, m.release_date,                          COALESCE(r.icon_path, a_icon.local_path), COALESCE(r.background_path, a_bg.local_path, a_ss.local_path),
-                          m.is_installed, m.description
+                         p.icon, m.is_favorite, m.genre, m.developer, m.publisher, m.rating, m.tags, m.release_date, COALESCE(r.icon_path, a_icon.local_path), COALESCE(r.background_path, a_bg.local_path, a_ss.local_path),
+                           m.is_installed, m.description, r.file_size
                          FROM roms r 
                          LEFT JOIN metadata m ON r.id = m.rom_id 
                          JOIN platforms p ON r.platform_id = p.id 
@@ -5282,7 +5286,7 @@ impl GameListModel {
                         platform_id: row.get(1)?,
                         path: row.get(2)?,
                         filename: row.get(3)?,
-                        file_size: 0,
+                        file_size: row.get::<_, i64>(25).unwrap_or(0),
                         hash_sha1: None,
                         title: row.get(4)?,
                         region: row.get(5)?,

@@ -358,38 +358,11 @@ Rectangle {
                 Layout.preferredHeight: 36
                 Layout.alignment: Qt.AlignHCenter
 
-                BusyIndicator {
-                    id: indicator
+                TheophanySpinner {
                     anchors.centerIn: parent
-                    visible: sidebarItemRoot.isProcessing
-                    width: 24; height: 24
-                    running: visible
-                    
-                    contentItem: Item {
-                        id: contentItem
-                        width: 24; height: 24
-                        
-                        ConicalGradient {
-                            anchors.fill: parent
-                            gradient: Gradient {
-                                GradientStop { position: 0.0; color: "transparent" }
-                                GradientStop { position: 1.0; color: sidebarItemRoot.isActive ? Theme.text : Theme.accent }
-                            }
-                            
-                            source: Rectangle {
-                                width: 24; height: 24
-                                radius: 12
-                                color: "transparent"
-                                border.width: 3
-                                border.color: "white"
-                            }
-                        }
-                        
-                        RotationAnimator {
-                            target: contentItem
-                            from: 0; to: 360; duration: 1000; loops: Animation.Infinite; running: sidebarItemRoot.isProcessing
-                        }
-                    }
+                    running: sidebarItemRoot.isProcessing
+                    visible: running
+                    size: 24
                 }
 
                 Text { 

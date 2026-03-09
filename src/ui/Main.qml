@@ -2716,6 +2716,28 @@ ApplicationWindow {
                     }
                 }
             }
+
+            // Collection Loading Spinner Overlay
+            Rectangle {
+                id: collectionLoadingOverlay
+                anchors.fill: parent
+                color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b, 0.75)
+                visible: gameModel.loading
+                z: 200
+                
+                TheophanySpinner {
+                    anchors.centerIn: parent
+                    running: collectionLoadingOverlay.visible
+                    size: 80
+                    text: "Loading Collection..."
+                }
+                
+                // Block mouse events while loading
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: parent.visible
+                }
+            }
         }
 
         // RIGHT SIDEBAR (Details)

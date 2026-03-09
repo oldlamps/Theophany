@@ -362,10 +362,12 @@ Dialog {
                     visible: !root.loading && heroicModel.count === 0
                 }
 
-                BusyIndicator {
+                TheophanySpinner {
                     anchors.centerIn: parent
                     running: root.loading
                     visible: running
+                    size: 48
+                    text: "Refreshing..."
                 }
             }
             

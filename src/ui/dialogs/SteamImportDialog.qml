@@ -451,10 +451,12 @@ Dialog {
                     visible: !root.loading && !root.remoteLoading && steamModel.count === 0
                 }
 
-                BusyIndicator {
+                TheophanySpinner {
                     anchors.centerIn: parent
                     running: root.loading || root.remoteLoading
                     visible: running
+                    size: 48
+                    text: root.loading ? "Refreshing Local..." : "Fetching Remote..."
                 }
             }
             
