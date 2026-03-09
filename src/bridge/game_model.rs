@@ -248,6 +248,7 @@ pub struct GameListModel {
     rescanSystem: qt_method!(fn(&mut self, platform_id: String)),
     deleteGame: qt_method!(fn(&mut self, rom_id: String, ignore: bool, uninstall_flatpak: bool, delete_data: bool, delete_assets: bool)),
     getIgnoreList: qt_method!(fn(&mut self) -> String),
+    openFileLocation: qt_method!(fn(&mut self, path: String)),
     removeFromIgnoreList: qt_method!(fn(&mut self, platform_id: String, path: String)),
     bulkUpdateMetadata: qt_method!(fn(&mut self, rom_ids_json: String, json_data: String)),
     deleteGamesBulk: qt_method!(fn(&mut self, rom_ids_json: String, ignore: bool, delete_assets: bool)),
@@ -689,6 +690,10 @@ impl GameListModel {
                             query.push_str(" ORDER BY COALESCE(m.title, r.filename) COLLATE NOCASE ASC");
                         }
                     },
+                }
+
+                if recent_only {
+                    query.push_str(" LIMIT 50");
                 }
 
                 if let Ok(mut stmt) = conn.prepare(&query) {
@@ -4257,6 +4262,25 @@ impl GameListModel {
             }
         }
         self.refresh();
+    }
+
+    #[allow(non_snake_case)]
+    fn openFileLocation(&mut self, path: String) {
+        if path.is_empty() { return; }
+        
+        let p = std::path::Path::new(&path);
+        let folder = if p.is_dir() {
+            p
+        } else {
+            p.parent().unwrap_or(p)
+        };
+
+        log::debug!("Opening location: {:?}", folder);
+        
+        // Use xdg-open on Linux
+        let _ = std::process::Command::new("xdg-open")
+            .arg(folder)
+            .spawn();
     }
 
     #[allow(non_snake_case)]

@@ -548,7 +548,30 @@ Dialog {
                                             columnSpacing: 25
 
                                             Label { text: "Filename"; color: Theme.secondaryText; font.bold: true; font.pixelSize: 12; Layout.preferredWidth: 120 }
-                                            Label { text: root.currentData.rom_filename || "Unknown"; color: Theme.text; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                                            Label { 
+                                                text: root.currentData.rom_filename || "Unknown"
+                                                color: Theme.text
+                                                elide: Text.ElideMiddle
+                                                Layout.fillWidth: true
+                                                
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    hoverEnabled: true
+                                                    onClicked: {
+                                                        if (parent.text && parent.text !== "Unknown") {
+                                                            gameModel.openFileLocation(root.currentData.rom_path)
+                                                        }
+                                                    }
+                                                    onEntered: parent.color = Theme.accent
+                                                    onExited: parent.color = Theme.text
+                                                    
+                                                    TheophanyTooltip {
+                                                        visible: parent.containsMouse
+                                                        text: "Click to open file location"
+                                                    }
+                                                }
+                                            }
 
                                             Label { text: "Location"; color: Theme.secondaryText; font.bold: true; font.pixelSize: 12 }
                                             Label { 
@@ -559,9 +582,18 @@ Dialog {
                                                 MouseArea {
                                                     anchors.fill: parent
                                                     cursorShape: Qt.PointingHandCursor
+                                                    hoverEnabled: true
+                                                    onClicked: {
+                                                        if (parent.text && parent.text !== "Unknown") {
+                                                            gameModel.openFileLocation(parent.text)
+                                                        }
+                                                    }
+                                                    onEntered: parent.color = Theme.accent
+                                                    onExited: parent.color = Theme.text
+                                                    
                                                     TheophanyTooltip {
                                                         visible: parent.containsMouse
-                                                        text: parent.parent.text
+                                                        text: "Click to open file location"
                                                     }
                                                 }
                                             }
