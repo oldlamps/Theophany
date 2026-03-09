@@ -1435,88 +1435,28 @@ impl DbManager {
         })
     }
 
-    pub fn get_all_genres(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT DISTINCT genre FROM metadata WHERE genre IS NOT NULL AND genre != ''")?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        let mut set = std::collections::HashSet::new();
-        for row in rows {
-            let s = row?;
-            // Split by comma, semicolon, pipe, or full-width comma
-            for part in s.split(|c| c == ',' || c == ';' || c == '|' || c == '，') {
-                let mut trimmed = part.trim();
-                // Also trim trailing punctuation (just in case)
-                trimmed = trimmed.trim_matches(|c| c == '.' || c == ',');
-                
-                if !trimmed.is_empty() {
-                    set.insert(trimmed.to_string());
-                }
-            }
-        }
-        let mut list: Vec<String> = set.into_iter().collect();
-        list.sort();
-        Ok(list)
-    }
-
-    pub fn get_all_tags(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT DISTINCT tags FROM metadata WHERE tags IS NOT NULL AND tags != ''")?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        let mut set = std::collections::HashSet::new();
-        for row in rows {
-            let s = row?;
-             // Split by comma, semicolon, pipe, or full-width comma
-            for part in s.split(|c| c == ',' || c == ';' || c == '|' || c == '，') {
-                let mut trimmed = part.trim();
-                // Also trim trailing punctuation
-                trimmed = trimmed.trim_matches(|c| c == '.' || c == ',');
-                
-                if !trimmed.is_empty() {
-                    set.insert(trimmed.to_string());
-                }
-            }
-        }
-        let mut list: Vec<String> = set.into_iter().collect();
-        list.sort();
-        Ok(list)
-    }
-
-    pub fn get_all_developers(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT DISTINCT developer FROM metadata WHERE developer IS NOT NULL AND developer != ''")?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        let mut set = std::collections::HashSet::new();
-        for row in rows {
-            let s = row?;
-            for part in s.split(',') {
-                let trimmed = part.trim();
-                if !trimmed.is_empty() {
-                    set.insert(trimmed.to_string());
-                }
-            }
-        }
-        let mut list: Vec<String> = set.into_iter().collect();
-        list.sort();
-        Ok(list)
-    }
-
-    pub fn get_all_publishers(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT DISTINCT publisher FROM metadata WHERE publisher IS NOT NULL AND publisher != ''")?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        let mut set = std::collections::HashSet::new();
-        for row in rows {
-            let s = row?;
-            for part in s.split(',') {
-                let trimmed = part.trim();
-                if !trimmed.is_empty() {
-                    set.insert(trimmed.to_string());
-                }
-            }
-        }
-        let mut list: Vec<String> = set.into_iter().collect();
-        list.sort();
-        Ok(list)
-    }
-
     pub fn get_tags_filtered(&self, platform_id_filter: Option<&str>, platform_type_filter: Option<&str>, playlist_filter: Option<&str>, installed_only: bool, favorites_only: bool) -> Result<Vec<String>> {
-        let mut query = String::from("SELECT DISTINCT m.tags FROM metadata m 
+        self.get_metadata_filtered("tags", platform_id_filter, platform_type_filter, playlist_filter, installed_only, favorites_only)
+    }
+
+    pub fn get_genres_filtered(&self, platform_id_filter: Option<&str>, platform_type_filter: Option<&str>, playlist_filter: Option<&str>, installed_only: bool, favorites_only: bool) -> Result<Vec<String>> {
+        self.get_metadata_filtered("genre", platform_id_filter, platform_type_filter, playlist_filter, installed_only, favorites_only)
+    }
+
+    pub fn get_regions_filtered(&self, platform_id_filter: Option<&str>, platform_type_filter: Option<&str>, playlist_filter: Option<&str>, installed_only: bool, favorites_only: bool) -> Result<Vec<String>> {
+        self.get_metadata_filtered("region", platform_id_filter, platform_type_filter, playlist_filter, installed_only, favorites_only)
+    }
+
+    pub fn get_developers_filtered(&self, platform_id_filter: Option<&str>, platform_type_filter: Option<&str>, playlist_filter: Option<&str>, installed_only: bool, favorites_only: bool) -> Result<Vec<String>> {
+        self.get_metadata_filtered("developer", platform_id_filter, platform_type_filter, playlist_filter, installed_only, favorites_only)
+    }
+
+    pub fn get_publishers_filtered(&self, platform_id_filter: Option<&str>, platform_type_filter: Option<&str>, playlist_filter: Option<&str>, installed_only: bool, favorites_only: bool) -> Result<Vec<String>> {
+        self.get_metadata_filtered("publisher", platform_id_filter, platform_type_filter, playlist_filter, installed_only, favorites_only)
+    }
+
+    pub fn get_years_filtered(&self, platform_id_filter: Option<&str>, platform_type_filter: Option<&str>, playlist_filter: Option<&str>, installed_only: bool, favorites_only: bool) -> Result<Vec<String>> {
+        let mut query = String::from("SELECT DISTINCT CAST(m.release_date AS TEXT) FROM metadata m 
                                       JOIN roms r ON m.rom_id = r.id 
                                       JOIN platforms p ON r.platform_id = p.id");
         
@@ -1524,10 +1464,65 @@ impl DbManager {
             query.push_str(" JOIN playlist_entries pe ON r.id = pe.rom_id");
         }
 
-        query.push_str(" WHERE m.tags IS NOT NULL AND m.tags != ''");
+        query.push_str(" WHERE m.release_date IS NOT NULL AND m.release_date != ''");
 
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        self.apply_metadata_filters(&mut query, &mut params_vec, platform_id_filter, platform_type_filter, playlist_filter, installed_only, favorites_only);
 
+        let mut stmt = self.conn.prepare(&query)?;
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(rusqlite::params_from_iter(param_refs), |row| row.get::<_, String>(0))?;
+
+        let mut set = std::collections::HashSet::new();
+        for row in rows {
+            let s = row?;
+            if s.len() >= 4 {
+                let year = &s[0..4];
+                if year.chars().all(|c| c.is_digit(10)) {
+                    set.insert(year.to_string());
+                }
+            }
+        }
+        let mut list: Vec<String> = set.into_iter().collect();
+        list.sort_by(|a, b| b.cmp(a)); // Years descending
+        Ok(list)
+    }
+
+    fn get_metadata_filtered(&self, column: &str, platform_id_filter: Option<&str>, platform_type_filter: Option<&str>, playlist_filter: Option<&str>, installed_only: bool, favorites_only: bool) -> Result<Vec<String>> {
+        let mut query = format!("SELECT DISTINCT m.{} FROM metadata m 
+                                      JOIN roms r ON m.rom_id = r.id 
+                                      JOIN platforms p ON r.platform_id = p.id", column);
+        
+        if playlist_filter.is_some() {
+            query.push_str(" JOIN playlist_entries pe ON r.id = pe.rom_id");
+        }
+
+        query.push_str(&format!(" WHERE m.{} IS NOT NULL AND m.{} != ''", column, column));
+
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        self.apply_metadata_filters(&mut query, &mut params_vec, platform_id_filter, platform_type_filter, playlist_filter, installed_only, favorites_only);
+
+        let mut stmt = self.conn.prepare(&query)?;
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(rusqlite::params_from_iter(param_refs), |row| row.get::<_, String>(0))?;
+
+        let mut set = std::collections::HashSet::new();
+        for row in rows {
+            let s = row?;
+            for part in s.split(|c| c == ',' || c == ';' || c == '|' || c == '，') {
+                let mut trimmed = part.trim();
+                trimmed = trimmed.trim_matches(|c| c == '.' || c == ',');
+                if !trimmed.is_empty() {
+                    set.insert(trimmed.to_string());
+                }
+            }
+        }
+        let mut list: Vec<String> = set.into_iter().collect();
+        list.sort();
+        Ok(list)
+    }
+
+    fn apply_metadata_filters(&self, query: &mut String, params_vec: &mut Vec<Box<dyn rusqlite::ToSql>>, platform_id_filter: Option<&str>, platform_type_filter: Option<&str>, playlist_filter: Option<&str>, installed_only: bool, favorites_only: bool) {
         if let Some(pid) = platform_id_filter {
             if !pid.is_empty() {
                 query.push_str(" AND r.platform_id = ?");
@@ -1556,42 +1551,25 @@ impl DbManager {
         if favorites_only {
             query.push_str(" AND m.is_favorite = 1");
         }
+    }
 
-        let mut stmt = self.conn.prepare(&query)?;
-        let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
-        let rows = stmt.query_map(rusqlite::params_from_iter(param_refs), |row| row.get::<_, String>(0))?;
+    pub fn get_all_genres(&self) -> Result<Vec<String>> {
+        self.get_genres_filtered(None, None, None, false, false)
+    }
 
-        let mut set = std::collections::HashSet::new();
-        for row in rows {
-            let s = row?;
-            for part in s.split(|c| c == ',' || c == ';' || c == '|' || c == '，') {
-                let mut trimmed = part.trim();
-                trimmed = trimmed.trim_matches(|c| c == '.' || c == ',');
-                if !trimmed.is_empty() {
-                    set.insert(trimmed.to_string());
-                }
-            }
-        }
-        let mut list: Vec<String> = set.into_iter().collect();
-        list.sort();
-        Ok(list)
+    pub fn get_all_tags(&self) -> Result<Vec<String>> {
+        self.get_tags_filtered(None, None, None, false, false)
+    }
+
+    pub fn get_all_developers(&self) -> Result<Vec<String>> {
+        self.get_developers_filtered(None, None, None, false, false)
+    }
+
+    pub fn get_all_publishers(&self) -> Result<Vec<String>> {
+        self.get_publishers_filtered(None, None, None, false, false)
     }
 
     pub fn get_all_regions(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT DISTINCT region FROM metadata WHERE region IS NOT NULL AND region != ''")?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        let mut set = std::collections::HashSet::new();
-        for row in rows {
-            let s = row?;
-            for part in s.split(',') {
-                let trimmed = part.trim();
-                if !trimmed.is_empty() {
-                    set.insert(trimmed.to_string());
-                }
-            }
-        }
-        let mut list: Vec<String> = set.into_iter().collect();
-        list.sort();
-        Ok(list)
+        self.get_regions_filtered(None, None, None, false, false)
     }
 }

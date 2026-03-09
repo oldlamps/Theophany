@@ -1767,7 +1767,7 @@ ApplicationWindow {
                 FilterBar {
                     id: filterBar
                     Layout.fillWidth: true
-                    Layout.preferredHeight: window.showFilterBar ? 50 : 0
+                    Layout.preferredHeight: window.showFilterBar ? filterBar.implicitHeight : 0
                     opacity: window.showFilterBar ? 1.0 : 0.0
                     visible: opacity > 0
                     gameModel: gameModel

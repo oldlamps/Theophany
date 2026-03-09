@@ -983,7 +983,7 @@ impl GameListModel {
                 installed_only,
                 favorites_only
             ) {
-                return tags.into_iter().map(|s| QVariant::from(QString::from(s))).collect();
+                return tags.into_iter().map(|s| QVariant::from(QString::from(s))).collect::<QVariantList>();
             }
         }
         QVariantList::default()
@@ -1202,7 +1202,19 @@ impl GameListModel {
     }
 
     fn getAllGenres(&mut self) -> QVariantList {
-        self.get_metadata_list(|db| db.get_all_genres())
+        let platform_filter = self.current_platform_filter.borrow().clone();
+        let platform_type_filter = self.current_platform_type_filter.borrow().clone();
+        let playlist_filter = self.current_playlist_filter.borrow().clone();
+        let installed_only = *self.current_installed_only.borrow();
+        let favorites_only = *self.current_favorites_only.borrow();
+
+        self.get_metadata_list(|db| db.get_genres_filtered(
+            platform_filter.as_deref(),
+            platform_type_filter.as_deref(),
+            playlist_filter.as_deref(),
+            installed_only,
+            favorites_only
+        ))
     }
 
     fn getRegions(&mut self) -> QVariantList {
@@ -1214,7 +1226,19 @@ impl GameListModel {
     }
 
     fn getAllRegions(&mut self) -> QVariantList {
-        self.get_metadata_list(|db| db.get_all_regions())
+        let platform_filter = self.current_platform_filter.borrow().clone();
+        let platform_type_filter = self.current_platform_type_filter.borrow().clone();
+        let playlist_filter = self.current_playlist_filter.borrow().clone();
+        let installed_only = *self.current_installed_only.borrow();
+        let favorites_only = *self.current_favorites_only.borrow();
+
+        self.get_metadata_list(|db| db.get_regions_filtered(
+            platform_filter.as_deref(),
+            platform_type_filter.as_deref(),
+            playlist_filter.as_deref(),
+            installed_only,
+            favorites_only
+        ))
     }
 
     fn getDevelopers(&mut self) -> QVariantList {
@@ -1226,7 +1250,19 @@ impl GameListModel {
     }
 
     fn getAllDevelopers(&mut self) -> QVariantList {
-        self.get_metadata_list(|db| db.get_all_developers())
+        let platform_filter = self.current_platform_filter.borrow().clone();
+        let platform_type_filter = self.current_platform_type_filter.borrow().clone();
+        let playlist_filter = self.current_playlist_filter.borrow().clone();
+        let installed_only = *self.current_installed_only.borrow();
+        let favorites_only = *self.current_favorites_only.borrow();
+
+        self.get_metadata_list(|db| db.get_developers_filtered(
+            platform_filter.as_deref(),
+            platform_type_filter.as_deref(),
+            playlist_filter.as_deref(),
+            installed_only,
+            favorites_only
+        ))
     }
 
     fn getPublishers(&mut self) -> QVariantList {
@@ -1238,7 +1274,19 @@ impl GameListModel {
     }
 
     fn getAllPublishers(&mut self) -> QVariantList {
-        self.get_metadata_list(|db| db.get_all_publishers())
+        let platform_filter = self.current_platform_filter.borrow().clone();
+        let platform_type_filter = self.current_platform_type_filter.borrow().clone();
+        let playlist_filter = self.current_playlist_filter.borrow().clone();
+        let installed_only = *self.current_installed_only.borrow();
+        let favorites_only = *self.current_favorites_only.borrow();
+
+        self.get_metadata_list(|db| db.get_publishers_filtered(
+            platform_filter.as_deref(),
+            platform_type_filter.as_deref(),
+            playlist_filter.as_deref(),
+            installed_only,
+            favorites_only
+        ))
     }
 
     fn getYears(&mut self) -> QVariantList {
@@ -1250,18 +1298,19 @@ impl GameListModel {
     }
 
     fn getAllYears(&mut self) -> QVariantList {
-        self.get_metadata_list(|db| {
-            let mut stmt = db.get_connection().prepare("SELECT DISTINCT SUBSTR(CAST(release_date AS TEXT), 1, 4) as year FROM metadata WHERE release_date IS NOT NULL AND release_date != '' ORDER BY year DESC")?;
-            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-            let mut list = Vec::new();
-            for y in rows {
-                let name = y?;
-                if name.len() == 4 && name.chars().all(|c| c.is_digit(10)) {
-                    list.push(name);
-                }
-            }
-            Ok(list)
-        })
+        let platform_filter = self.current_platform_filter.borrow().clone();
+        let platform_type_filter = self.current_platform_type_filter.borrow().clone();
+        let playlist_filter = self.current_playlist_filter.borrow().clone();
+        let installed_only = *self.current_installed_only.borrow();
+        let favorites_only = *self.current_favorites_only.borrow();
+
+        self.get_metadata_list(|db| db.get_years_filtered(
+            platform_filter.as_deref(),
+            platform_type_filter.as_deref(),
+            playlist_filter.as_deref(),
+            installed_only,
+            favorites_only
+        ))
     }
 
     fn getAllTags(&mut self) -> QVariantList {

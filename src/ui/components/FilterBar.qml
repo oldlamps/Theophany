@@ -6,7 +6,8 @@ import "../style"
 
 Rectangle {
     id: root
-    height: 50
+    implicitHeight: flowLayout.childrenRect.height + 24
+    
     color: Qt.rgba(Theme.secondaryBackground.r, Theme.secondaryBackground.g, Theme.secondaryBackground.b, 0.85)
     
     property var gameModel: null
@@ -21,9 +22,6 @@ Rectangle {
     property var selectedTags: []
     property var allTags: []
 
-    
-    // property alias searchFieldRef: searchField // Removed, moving to Top Bar
-    
     signal filterChanged()
 
     readonly property bool isFiltered: (genreBox.currentIndex > 0) || 
@@ -76,11 +74,15 @@ Rectangle {
         if (gameModel) gameModel.setTagFilter(tag, active)
     }
 
-    RowLayout {
-        anchors.fill: parent
+    Flow {
+        id: flowLayout
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
         anchors.leftMargin: 15
         anchors.rightMargin: 15
-        spacing: 15
+        anchors.topMargin: 12
+        spacing: 12
 
         // All filters moved to Top Bar or added here
 
@@ -90,8 +92,6 @@ Rectangle {
             checkable: true
             text: "💾"
             font.pixelSize: 18
-            Layout.preferredWidth: 40
-            Layout.preferredHeight: 35
             primary: checked
             tooltipText: checked ? "Show All Games" : "Show Installed Only"
             
@@ -106,8 +106,6 @@ Rectangle {
             checkable: true
             text: "❤"
             font.pixelSize: 18
-            Layout.preferredWidth: 40
-            Layout.preferredHeight: 35
             primary: checked
             
             onClicked: {
@@ -119,8 +117,6 @@ Rectangle {
         TheophanyComboBox {
             id: genreBox
             model: ["All Genres"]
-            Layout.preferredWidth: 150
-            Layout.preferredHeight: 35
             
             onActivated: {
                 if (gameModel) gameModel.setGenreFilter(currentText)
@@ -137,8 +133,6 @@ Rectangle {
         TheophanyComboBox {
             id: regionBox
             model: ["All Regions"]
-            Layout.preferredWidth: 130
-            Layout.preferredHeight: 35
             
             onActivated: {
                 if (gameModel) gameModel.setRegionFilter(currentText)
@@ -155,8 +149,6 @@ Rectangle {
         TheophanyComboBox {
             id: developerBox
             model: ["All Developers"]
-            Layout.preferredWidth: 150
-            Layout.preferredHeight: 35
             
             onActivated: {
                 if (gameModel) gameModel.setDeveloperFilter(currentText)
@@ -173,8 +165,6 @@ Rectangle {
         TheophanyComboBox {
             id: publisherBox
             model: ["All Publishers"]
-            Layout.preferredWidth: 150
-            Layout.preferredHeight: 35
             
             onActivated: {
                 if (gameModel) gameModel.setPublisherFilter(currentText)
@@ -191,8 +181,6 @@ Rectangle {
         TheophanyComboBox {
             id: yearBox
             model: ["All Years"]
-            Layout.preferredWidth: 100
-            Layout.preferredHeight: 35
             
             onActivated: {
                 if (gameModel) gameModel.setYearFilter(currentText)
@@ -209,8 +197,6 @@ Rectangle {
         TheophanyComboBox {
             id: ratingBox
             model: ["Any Rating", "1+", "2+", "3+", "4+", "5+", "6+", "7+", "8+", "9+", "10"]
-            Layout.preferredWidth: 100
-            Layout.preferredHeight: 35
             onActivated: {
                 if (gameModel) {
                     // Map "Any Rating" to 0, "1+" to 10, "2+" to 20, etc.
@@ -224,8 +210,6 @@ Rectangle {
         TheophanyButton {
             id: tagsButton
             text: selectedTags.length > 0 ? "Tags (" + selectedTags.length + ") ▼" : "Tags ▼"
-            Layout.preferredWidth: 120
-            Layout.preferredHeight: 35
             primary: selectedTags.length > 0
             onClicked: tagPopup.open()
             
@@ -303,8 +287,6 @@ Rectangle {
                 }
             }
         }
-
-        Item { Layout.fillWidth: true }
     }
 
     Connections {
@@ -316,12 +298,34 @@ Rectangle {
     
     function refreshModels() {
         if (gameModel) {
+            var oldGenre = genreBox.currentText
+            var oldRegion = regionBox.currentText
+            var oldDev = developerBox.currentText
+            var oldPub = publisherBox.currentText
+            var oldYear = yearBox.currentText
+
             genreBox.model = gameModel.getGenres()
             regionBox.model = gameModel.getRegions()
             developerBox.model = gameModel.getDevelopers()
             publisherBox.model = gameModel.getPublishers()
             yearBox.model = gameModel.getYears()
             allTags = gameModel.getTags()
+
+            // Restore selections if they still exist in the new models
+            var idx = genreBox.find(oldGenre)
+            if (idx >= 0) genreBox.currentIndex = idx
+            
+            idx = regionBox.find(oldRegion)
+            if (idx >= 0) regionBox.currentIndex = idx
+            
+            idx = developerBox.find(oldDev)
+            if (idx >= 0) developerBox.currentIndex = idx
+            
+            idx = publisherBox.find(oldPub)
+            if (idx >= 0) publisherBox.currentIndex = idx
+            
+            idx = yearBox.find(oldYear)
+            if (idx >= 0) yearBox.currentIndex = idx
         }
     }
 
