@@ -192,6 +192,7 @@ impl ExoDosManager {
             type_: "launcher".to_string(),
             url: extras_path.join("Alternate Launcher.command").to_string_lossy().to_string(),
             label: Some("Alternate Launcher".to_string()),
+            sort_order: 0,
         });
 
         // Still scan Extras for other resources (manuals, maps, etc.)
@@ -212,6 +213,7 @@ impl ExoDosManager {
                             type_: "generic".to_string(),
                             url: extra_path.to_string_lossy().to_string(),
                             label: Some(extra_path.file_stem().unwrap_or_default().to_string_lossy().to_string()),
+                            sort_order: 0,
                         });
                     }
                 }
@@ -233,6 +235,7 @@ impl ExoDosManager {
                             type_: "magazine".to_string(),
                             url: mag_path.to_string_lossy().to_string(),
                             label: Some(label),
+                            sort_order: 0,
                         });
                     }
                 }

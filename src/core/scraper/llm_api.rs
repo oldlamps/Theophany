@@ -63,16 +63,6 @@ impl LlmApiProvider {
 
         let url = "https://api.openai.com/v1/chat/completions";
         
-        // This client likely needs a way to set headers for Bearer auth
-        // If ScraperClient doesn't support custom headers easily, we might need to modify it or use a raw request here.
-        // Assuming ScraperClient wrapper might be basic. Let's check `client.rs` later. 
-        // For now, I'll attempt to use a standard request if ScraperClient is limiting, but let's assume I can use it or extend it.
-        // Wait, ScraperClient is a wrapper around reqwest::Client likely.
-        
-        // Actually, let's look at `ScraperClient` in `client.rs`. 
-        // Ideally I should have checked it. I'll proceed assuming I can add headers or I'll implement a workaround.
-        // For the sake of this file creation, I'll write the logic.
-        
         let body = json!({
             "model": "gpt-3.5-turbo",
             "messages": [
@@ -82,13 +72,7 @@ impl LlmApiProvider {
             "temperature": 0.7
         });
 
-        // NOTE: The current ScraperClient might not generic post with headers. 
-        // I will use client.post_json_with_auth if it exists, or raw reqwest if I can access the inner client.
-        // Since I haven't seen client.rs, I'll assume standard `post_json` and if auth fails I'll fix it.
-        // BUT OpenAI requires a header. 
-        // Let's assume for this step I write the logic and then fix `client.rs` if needed to support headers.
-        
-        // Let's try to assume a method `post_json_bearer` exists or I'll add it to `client.rs`.
+
         let response_text = self.client.post_json_bearer(url, &body, &self.openai_key).await?;
         
         let response_json: serde_json::Value = serde_json::from_str(&response_text)?;

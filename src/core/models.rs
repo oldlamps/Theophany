@@ -22,6 +22,8 @@ pub struct GameResource {
     pub type_: String, // "wikipedia", "mobygames", "manual", "generic", "video"
     pub url: String,
     pub label: Option<String>,
+    #[serde(default)]
+    pub sort_order: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

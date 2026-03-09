@@ -272,11 +272,6 @@ impl ScraperProvider for OllamaWebProvider {
     }
 
     async fn fetch_details(&self, result_id: &str) -> Result<ScrapedMetadata> {
-        // DESIGN NOTE: search() already synthesizes metadata from 3 sources.
-        // This fetch_details() is called when the UI clicks "Import" but ends up
-        // extracting from ONLY the single result_id URL, which is less comprehensive.
-        // Ideally, the UI should use the already-synthesized metadata from search().
-        // For now, this provides single-source extraction as a fallback.
         
         let html_content = self.client.get(result_id).await?;
         let text = self.extract_clean_text(&html_content);

@@ -83,11 +83,7 @@ impl ScraperProvider for SearchEngineProvider {
         metadata.title = "Image Search Result".to_string();
         metadata.description = "Image found via Bing Search.".to_string();
         
-        // Since we don't know the exact type, we can put it in a generic slot or heuristic.
-        // But the UI expects "Box - Front" etc.
-        // Maybe we just put it in "Box - Front" by default for easy assigning, 
-        // OR the UI manual search could let user pick category?
-        // For now, let's just add it as "Box - Front" to be useful immediately.
+        // Default to "Box - Front" to be useful immediately.
         metadata.assets.entry("Box - Front".to_string())
             .or_insert_with(Vec::new)
             .push(result_id.to_string());

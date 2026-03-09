@@ -8,8 +8,8 @@ import "../style"
 
 Dialog {
     id: root
-    width: 600
-    height: 500
+    width: Window.window ? Window.window.width * 0.7 : 800
+    height: Window.window ? Window.window.height * 0.7 : 600
     title: "Manage Resources"
     modal: true
     
@@ -90,86 +90,156 @@ Dialog {
                 anchors.fill: parent
                 anchors.margins: 10
                 spacing: 8
-                model: ListModel { id: resourceModel }
-                
-                delegate: Rectangle {
-                    width: resListView.width
-                    height: 40
-                    color: Theme.secondaryBackground
-                    radius: 4
-                    border.color: Theme.border
+                model: DelegateModel {
+                    id: visualModel
+                    model: ListModel { id: resourceModel }
                     
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        spacing: 10
+                    delegate: DropArea {
+                        id: delegateRoot
+                        width: resListView.width
+                        height: 44
+                        keys: ["resource"]
                         
-                        // Icon
-                        Text {
-                            text: {
-                                var u = model.url.toLowerCase()
-                                var t = model.type.toLowerCase()
-                                
-                                if (u.includes("wikipedia.org")) return "🌐"
-                                if (u.includes("mobygames.com")) return "🎮"
-                                if (u.includes("steam")) return "🎮"
-                                if (u.includes("youtube.com") || u.includes("youtu.be")) return "▶\ufe0e"
-                                if (u.includes(".pdf")) return "📄"
-                                
-                                // Fallback to type
-                                if (t.includes("manual")) return "📄"
-                                if (t.includes("video")) return "🎬"
-                                if (model.url.startsWith("file://")) return "📁"
-                                return "🔗"
-                            }
-                            font.pixelSize: 16
-                            Layout.preferredWidth: 24
-                        }
-                        
-                        // Label
-                        Label {
-                            text: model.label
-                            font.bold: true
-                            color: Theme.text
-                            Layout.preferredWidth: 120
-                            elide: Text.ElideRight
-                        }
-                        
-                        // URL
-                        Label {
-                            text: model.url
-                            color: Theme.secondaryText
-                            font.pixelSize: 12
-                            Layout.fillWidth: true
-                            elide: Text.ElideMiddle
-                        }
-                        
-                        // Edit Button
-                        TheophanyButton {
-                            text: "✎"
-                            Layout.preferredWidth: 30
-                            Layout.preferredHeight: 24
-                            onClicked: {
-                                root.isEditing = true
-                                root.editingResourceId = model.id
-                                labelField.text = model.label
-                                urlField.text = model.url
-                            }
-                        }
+                        property int visualIndex: DelegateModel.itemsIndex
 
-                        // Delete Button
-                        TheophanyButton {
-                            text: "×"
-                            Layout.preferredWidth: 30
-                            Layout.preferredHeight: 24
-                            background: Rectangle { 
-                                color: parent.down ? "#aa0000" : (parent.hovered ? "#dd0000" : "transparent")
-                                radius: 4
+                        onEntered: (drag) => {
+                            var from = drag.source.visualIndex
+                            var to = delegateRoot.visualIndex
+                            if (from !== to) {
+                                visualModel.items.move(from, to)
                             }
-                            onClicked: {
-                                gameModel.removeGameResource(model.id)
-                                root.resourcesChanged()
-                                root.load(root.gameId)
+                        }
+                        
+                        Rectangle {
+                            id: contentRect
+                            width: delegateRoot.width
+                            height: 40
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: Theme.secondaryBackground
+                            radius: 4
+                            border.color: Theme.border
+                            
+                            Drag.active: dragArea.drag.active
+                            Drag.source: delegateRoot
+                            Drag.keys: ["resource"]
+                            
+                            states: [
+                                State {
+                                    when: dragArea.drag.active
+                                    ParentChange { target: contentRect; parent: resListView }
+                                    AnchorChanges { target: contentRect; anchors.verticalCenter: undefined }
+                                    PropertyChanges { target: contentRect; opacity: 0.8; z: 100 }
+                                }
+                            ]
+                            
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 10
+                                
+                                // Drag Handle
+                                Text {
+                                    text: "☰"
+                                    color: Theme.secondaryText
+                                    font.pixelSize: 16
+                                    Layout.alignment: Qt.AlignVCenter
+                                    
+                                    MouseArea {
+                                        id: dragArea
+                                        anchors.fill: parent
+                                        cursorShape: Qt.OpenHandCursor
+                                        drag.target: contentRect
+                                        drag.axis: Drag.YAxis
+                                        onReleased: {
+                                            // Re-anchor to let states reset cleanly
+                                            var orderedIds = []
+                                            for(var i = 0; i < visualModel.items.count; i++) {
+                                                orderedIds.push(visualModel.items.get(i).model.id)
+                                            }
+                                            gameModel.saveResourceOrder(root.gameId, JSON.stringify(orderedIds))
+                                            root.resourcesChanged()
+                                        }
+                                    }
+                                }
+                                
+                                // Icon
+                                Text {
+                                    text: {
+                                        var u = model.url.toLowerCase()
+                                        var t = model.type.toLowerCase()
+                                        
+                                        if (u.includes("wikipedia.org")) return "🌐"
+                                        if (u.includes("mobygames.com")) return "🎮"
+                                        if (u.includes("steam")) return "🎮"
+                                        if (u.includes("youtube.com") || u.includes("youtu.be")) return "▶\ufe0e"
+                                        if (u.includes(".pdf")) return "📄"
+                                        
+                                        // Fallback to type
+                                        if (t.includes("manual")) return "📄"
+                                        if (t.includes("video")) return "🎬"
+                                        if (model.url.startsWith("file://")) return "📁"
+                                        return "🔗"
+                                    }
+                                    font.pixelSize: 16
+                                    Layout.preferredWidth: 24
+                                }
+                                
+                                // Label
+                                Label {
+                                    text: model.label
+                                    font.bold: true
+                                    color: Theme.text
+                                    Layout.preferredWidth: 120
+                                    elide: Text.ElideRight
+                                }
+                                
+                                // URL
+                                Label {
+                                    text: model.url
+                                    color: Theme.secondaryText
+                                    font.pixelSize: 12
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideMiddle
+                                }
+                                
+                                // Launch Button
+                                TheophanyButton {
+                                    text: "Launch"
+                                    Layout.preferredWidth: 60
+                                    Layout.preferredHeight: 24
+                                    onClicked: {
+                                        gameModel.launchResource(root.gameId, model.url)
+                                    }
+                                }
+
+                                // Edit Button
+                                TheophanyButton {
+                                    text: "✎"
+                                    Layout.preferredWidth: 30
+                                    Layout.preferredHeight: 24
+                                    onClicked: {
+                                        root.isEditing = true
+                                        root.editingResourceId = model.id
+                                        labelField.text = model.label
+                                        urlField.text = model.url
+                                    }
+                                }
+
+                                // Delete Button
+                                TheophanyButton {
+                                    text: "×"
+                                    Layout.preferredWidth: 30
+                                    Layout.preferredHeight: 24
+                                    background: Rectangle { 
+                                        color: parent.down ? "#aa0000" : (parent.hovered ? "#dd0000" : "transparent")
+                                        radius: 4
+                                    }
+                                    onClicked: {
+                                        gameModel.removeGameResource(model.id)
+                                        root.resourcesChanged()
+                                        root.load(root.gameId)
+                                    }
+                                }
                             }
                         }
                     }

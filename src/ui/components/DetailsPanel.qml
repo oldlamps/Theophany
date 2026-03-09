@@ -995,10 +995,47 @@ Rectangle {
             }
         }
 
+        // Top Metadata and Actions Wrapper
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: metadataInner.implicitHeight + 30
+            radius: 8
+            border.color: Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, 0.3)
+            border.width: 1
+            clip: true
+            color: "transparent"
+
+            Image {
+                anchors.fill: parent
+                fillMode: Image.PreserveAspectCrop
+                source: root.bannerSource !== "" ? root.bannerSource : root.boxArtSource
+                opacity: 0.25
+                visible: source !== ""
+                cache: false
+                layer.enabled: true
+                layer.effect: FastBlur {
+                    radius: 32
+                }
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b, 0.7) }
+                    GradientStop { position: 1.0; color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b, 0.95) }
+                }
+            }
+
+            ColumnLayout {
+                id: metadataInner
+                anchors.fill: parent
+                anchors.margins: 20
+                spacing: 20
+
         // Title and Info
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 5
+            spacing: 8
 
             RowLayout {
                 Layout.fillWidth: true
@@ -1023,12 +1060,13 @@ Rectangle {
                 }
             }
 
-            // Developer / Publisher
+            // Developer / Publisher / Year
             Text {
                 text: {
                     var parts = []
                     if (root.gameDeveloper !== "--" && root.gameDeveloper !== "") parts.push(root.gameDeveloper)
                     if (root.gamePublisher !== "--" && root.gamePublisher !== "" && root.gamePublisher !== root.gameDeveloper) parts.push(root.gamePublisher)
+                    if (root.gameReleaseDate !== "") parts.push(root.gameReleaseDate)
                     return parts.join(" • ")
                 }
                 color: Theme.secondaryText
@@ -1066,7 +1104,7 @@ Rectangle {
                 }
             }
             
-            // Meta Row 1: Platform | Year
+            // Meta Row 1: Platform
             RowLayout {
                 spacing: 6
                 Layout.fillWidth: true
@@ -1095,7 +1133,7 @@ Rectangle {
                 }
 
                 Text {
-                    text: root.gamePlatform + (root.gameReleaseDate !== "" ? " • " + root.gameReleaseDate : "")
+                    text: root.gamePlatform
                     color: Theme.secondaryText
                     font.pixelSize: 12
                     Layout.fillWidth: true
@@ -1636,6 +1674,8 @@ Rectangle {
                 }
             }
         }
+            } // end metadataInner
+        } // end metadata wrapper
 
         // Dedicated Download Progress Area (Rich display with stats, buttons, and graph)
         ColumnLayout {

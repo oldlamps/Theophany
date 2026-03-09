@@ -274,6 +274,7 @@ pub struct GameListModel {
     addGameResource: qt_method!(fn(&mut self, rom_id: String, type_: String, url: String, label: String)),
     removeGameResource: qt_method!(fn(&mut self, resource_id: String)),
     updateGameResource: qt_method!(fn(&mut self, resource_id: String, type_: String, url: String, label: String)),
+    saveResourceOrder: qt_method!(fn(&mut self, rom_id: String, ids_json: String)),
     launchResource: qt_method!(fn(&mut self, rom_id: String, url: String)),
 
     getPlatformTypes: qt_method!(fn(&mut self) -> QVariantList),
@@ -2102,6 +2103,7 @@ impl GameListModel {
                                           type_: type_.to_string(),
                                           url: url.to_string(),
                                           label: Some(label.to_string()),
+                                          sort_order: 0,
                                       };
                                       let _ = db.insert_resource(&new_res);
                                   }
@@ -3076,7 +3078,7 @@ impl GameListModel {
                              let start_time = std::time::SystemTime::now();
                              
                              // 1. Wait for the primary child to exit (reaps the process)
-                             let mut exit_status = child.wait();
+                             let exit_status = child.wait();
                              log::debug!("[Launcher] Primary child for {} exited with {:?}", rom_id_thread, exit_status);
 
                              let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
@@ -3176,6 +3178,7 @@ impl GameListModel {
                                                                   type_: "manual".to_string(),
                                                                   url,
                                                                   label: Some(stem.to_string()),
+                                                                  sort_order: 0,
                                                               };
                                                               let _ = db.insert_resource(&resource);
                                                          }
@@ -3974,6 +3977,7 @@ impl GameListModel {
                                                                       type_: r.type_.clone(),
                                                                       url: r.url.clone(),
                                                                       label: Some(r.label.clone()),
+                                                                      sort_order: 0,
                                                                  };
                                                                  let _ = db.insert_resource(&res);
                                                              }
@@ -4783,6 +4787,7 @@ impl GameListModel {
                 type_,
                 url,
                 label: if label.is_empty() { None } else { Some(label) },
+                sort_order: 0,
             };
             let _ = db.insert_resource(&res);
         }
@@ -4806,6 +4811,24 @@ impl GameListModel {
         if let Ok(db) = DbManager::open(&db_path) {
             let label_opt = if label.is_empty() { None } else { Some(label.as_str()) };
             let _ = db.update_resource(&resource_id, &type_, &url, label_opt);
+        }
+    }
+
+    #[allow(non_snake_case)]
+    fn saveResourceOrder(&mut self, rom_id: String, ids_json: String) {
+        let db_path = self.db_path.borrow().clone();
+        if db_path.is_empty() { return; }
+
+        if let Ok(ordered_ids) = serde_json::from_str::<Vec<String>>(&ids_json) {
+            if let Ok(db) = DbManager::open(&db_path) {
+                if let Err(e) = db.update_resource_orders(&rom_id, ordered_ids) {
+                    log::error!("Failed to save resource order: {}", e);
+                } else {
+                    log::debug!("Successfully updated resource order for {}", rom_id);
+                }
+            }
+        } else {
+            log::error!("Failed to parse resource IDs JSON for reordering");
         }
     }
 
@@ -4843,6 +4866,7 @@ impl GameListModel {
                                             type_: "manual".to_string(),
                                             url,
                                             label: Some(stem.to_string()),
+                                            sort_order: 0,
                                         };
                                         if let Ok(_) = db.insert_resource(&resource) {
                                             added += 1;

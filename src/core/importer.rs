@@ -146,6 +146,7 @@ impl BulkImporter {
                             type_: "generic".to_string(),
                             url: format!("https://store.steampowered.com/app/{}/", appid_str),
                             label: Some("Store Page".to_string()),
+                            sort_order: 0,
                         });
                         steam_resources.push(GameResource {
                             id: Uuid::new_v4().to_string(),
@@ -153,6 +154,7 @@ impl BulkImporter {
                             type_: "generic".to_string(),
                             url: base_url.clone(),
                             label: Some("Community Hub".to_string()),
+                            sort_order: 0,
                         });
                         steam_resources.push(GameResource {
                             id: Uuid::new_v4().to_string(),
@@ -160,6 +162,7 @@ impl BulkImporter {
                             type_: "generic".to_string(),
                             url: format!("{}/discussions/", base_url),
                             label: Some("Discussions".to_string()),
+                            sort_order: 0,
                         });
                         steam_resources.push(GameResource {
                             id: Uuid::new_v4().to_string(),
@@ -167,6 +170,7 @@ impl BulkImporter {
                             type_: "generic".to_string(),
                             url: format!("{}/guides/", base_url),
                             label: Some("Guides".to_string()),
+                            sort_order: 0,
                         });
                         meta.resources = Some(steam_resources);
                     }
@@ -185,6 +189,7 @@ impl BulkImporter {
                                 type_: "generic".to_string(),
                                 url: format!("https://store.epicgames.com/en-US/p/{}", slug),
                                 label: Some("Epic Store Page".to_string()),
+                                sort_order: 0,
                             });
                             meta.resources = Some(epic_resources);
                         }

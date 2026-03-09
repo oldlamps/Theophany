@@ -2668,6 +2668,7 @@ ApplicationWindow {
                 id: mainDropArea
                 anchors.fill: parent
                 z: 99
+                keys: ["text/uri-list"]
                 onDropped: (drop) => {
                     if (drop.hasUrls) {
                         for (var i = 0; i < drop.urls.length; i++) {
@@ -3772,10 +3773,6 @@ ApplicationWindow {
                 try {
                     var metaJson = gameModel.getGameMetadata(gameId)
                     var meta = JSON.parse(metaJson)
-                    // We need platform info. 
-                    // Wait, getGameMetadata returns metadata from the DB. Does it have platform?
-                    // Let's check the Rust implementation. 
-                    // Actually, let's use a more direct method if available.
                     
                     // Fallback to model data but with a safer check
                     var index = gameModel.getRowById(gameId)

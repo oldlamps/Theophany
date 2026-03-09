@@ -161,6 +161,7 @@ impl DbManager {
                 type TEXT NOT NULL,
                 url TEXT NOT NULL,
                 label TEXT,
+                sort_order INTEGER DEFAULT 0,
                 FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
             );
 
@@ -243,9 +244,10 @@ impl DbManager {
                     type TEXT NOT NULL,
                     url TEXT NOT NULL,
                     label TEXT,
+                    sort_order INTEGER DEFAULT 0,
                     FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
                  );
-                 INSERT OR IGNORE INTO game_resources_new SELECT * FROM game_resources;
+                 INSERT OR IGNORE INTO game_resources_new SELECT id, rom_id, type, url, label, 0 FROM game_resources;
                  DROP TABLE game_resources;
                  ALTER TABLE game_resources_new RENAME TO game_resources;
 
@@ -352,6 +354,12 @@ impl DbManager {
         if self.conn.prepare("SELECT cloud_saves_supported FROM metadata LIMIT 1").is_err() {
             log::info!("[Migration] Adding cloud_saves_supported column to metadata table...");
             let _ = self.conn.execute("ALTER TABLE metadata ADD COLUMN cloud_saves_supported INTEGER DEFAULT 0", []);
+        }
+
+        // Migration: Add sort_order to game_resources if missing
+        if self.conn.prepare("SELECT sort_order FROM game_resources LIMIT 1").is_err() {
+            log::info!("[Migration] Adding sort_order column to game_resources table...");
+            let _ = self.conn.execute("ALTER TABLE game_resources ADD COLUMN sort_order INTEGER DEFAULT 0", []);
         }
 
         Ok(())
@@ -1035,14 +1043,14 @@ impl DbManager {
 
     pub fn insert_resource(&self, res: &GameResource) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO game_resources (id, rom_id, type, url, label) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![res.id, res.rom_id, res.type_, res.url, res.label],
+            "INSERT OR REPLACE INTO game_resources (id, rom_id, type, url, label, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![res.id, res.rom_id, res.type_, res.url, res.label, res.sort_order],
         )?;
         Ok(())
     }
 
     pub fn get_resources(&self, rom_id: &str) -> Result<Vec<GameResource>> {
-        let mut stmt = self.conn.prepare("SELECT id, rom_id, type, url, label FROM game_resources WHERE rom_id = ?1")?;
+        let mut stmt = self.conn.prepare("SELECT id, rom_id, type, url, label, sort_order FROM game_resources WHERE rom_id = ?1 ORDER BY sort_order ASC, rowid ASC")?;
         let rows = stmt.query_map(params![rom_id], |row| {
             Ok(GameResource {
                 id: row.get(0)?,
@@ -1050,6 +1058,7 @@ impl DbManager {
                 type_: row.get(2)?,
                 url: row.get(3)?,
                 label: row.get(4)?,
+                sort_order: row.get(5).unwrap_or(0),
             })
         })?;
 
@@ -1073,6 +1082,14 @@ impl DbManager {
             "UPDATE game_resources SET type = ?1, url = ?2, label = ?3 WHERE id = ?4",
             params![type_, url, label, id],
         )?;
+        Ok(())
+    }
+
+    pub fn update_resource_orders(&self, rom_id: &str, ordered_ids: Vec<String>) -> Result<()> {
+        let mut stmt = self.conn.prepare("UPDATE game_resources SET sort_order = ?1 WHERE id = ?2 AND rom_id = ?3")?;
+        for (i, id) in ordered_ids.iter().enumerate() {
+            stmt.execute(params![i as i32, id, rom_id])?;
+        }
         Ok(())
     }
 
