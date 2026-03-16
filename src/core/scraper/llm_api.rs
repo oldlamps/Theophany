@@ -188,6 +188,7 @@ impl ScraperProvider for LlmApiProvider {
             rating: None,
             assets: std::collections::HashMap::new(),
             resources: data.links.unwrap_or_default(),
+            comments: None,
             source: "LLM".to_string(),
             source_id: result_id.to_string(),
         })

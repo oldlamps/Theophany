@@ -2,6 +2,7 @@
 use crate::core::models::{Platform, Rom, GameResource};
 use rusqlite::{params, Connection, Result};
 use std::path::Path;
+use serde_json;
 
 pub struct DbManager {
     conn: Connection,
@@ -108,6 +109,17 @@ impl DbManager {
                 FOREIGN KEY(platform_id) REFERENCES platforms(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS game_comments (
+                id TEXT PRIMARY KEY,
+                rom_id TEXT NOT NULL,
+                author TEXT NOT NULL,
+                comment_text TEXT NOT NULL,
+                is_positive INTEGER DEFAULT 1,
+                upvotes INTEGER DEFAULT 0,
+                source TEXT NOT NULL,
+                FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS playlists (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -146,6 +158,7 @@ impl DbManager {
                 wrapper TEXT,
                 use_gamescope INTEGER,
                 gamescope_args TEXT,
+                gs_state TEXT,
                 use_mangohud INTEGER,
                 pre_launch_script TEXT,
                 post_launch_script TEXT,
@@ -176,6 +189,9 @@ impl DbManager {
 
             COMMIT;",
         )?;
+
+        // Column migration: Add gs_state to pc_configurations if missing
+        let _ = self.conn.execute("ALTER TABLE pc_configurations ADD COLUMN gs_state TEXT;", []);
 
         // Migration: Ensure all tables have ON DELETE CASCADE where needed
         // We check 'roms' as a canary. If it doesn't have CASCADE, we recreate the tables.
@@ -228,12 +244,15 @@ impl DbManager {
                  CREATE TABLE IF NOT EXISTS pc_configurations_new (
                     rom_id TEXT PRIMARY KEY,
                     umu_proton_version TEXT, umu_store TEXT, wine_prefix TEXT, working_dir TEXT, umu_id TEXT, env_vars TEXT, extra_args TEXT, proton_verb TEXT,
-                    disable_fixes INTEGER, no_runtime INTEGER, log_level TEXT, wrapper TEXT, use_gamescope INTEGER, gamescope_args TEXT, use_mangohud INTEGER,
+                    disable_fixes INTEGER, no_runtime INTEGER, log_level TEXT, wrapper TEXT, use_gamescope INTEGER, gamescope_args TEXT, 
+                    gs_state TEXT,
+                    use_mangohud INTEGER,
                     pre_launch_script TEXT, post_launch_script TEXT,
                     cloud_saves_enabled INTEGER, cloud_save_path TEXT, cloud_save_auto_sync INTEGER,
                     FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
                  );
-                 INSERT OR IGNORE INTO pc_configurations_new SELECT rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, use_mangohud, pre_launch_script, post_launch_script, NULL, NULL, NULL FROM pc_configurations;
+                 INSERT OR IGNORE INTO pc_configurations_new (rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, use_mangohud, pre_launch_script, post_launch_script)
+                 SELECT rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, use_mangohud, pre_launch_script, post_launch_script FROM pc_configurations;
                  DROP TABLE pc_configurations;
                  ALTER TABLE pc_configurations_new RENAME TO pc_configurations;
 
@@ -1069,6 +1088,43 @@ impl DbManager {
         Ok(resources)
     }
 
+    pub fn insert_game_comment(&self, comment: &crate::core::models::GameComment) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO game_comments (id, rom_id, author, comment_text, is_positive, upvotes, source) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![comment.id, comment.rom_id, comment.author, comment.comment_text, comment.is_positive as i32, comment.upvotes, comment.source],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_game_comments(&self, rom_id: &str) -> Result<Vec<crate::core::models::GameComment>> {
+        let mut stmt = self.conn.prepare("SELECT id, rom_id, author, comment_text, is_positive, upvotes, source FROM game_comments WHERE rom_id = ?1 ORDER BY upvotes DESC")?;
+        let rows = stmt.query_map(params![rom_id], |row| {
+            Ok(crate::core::models::GameComment {
+                id: row.get(0)?,
+                rom_id: row.get(1)?,
+                author: row.get(2)?,
+                comment_text: row.get(3)?,
+                is_positive: row.get::<_, i32>(4)? != 0,
+                upvotes: row.get(5)?,
+                source: row.get(6)?,
+            })
+        })?;
+
+        let mut comments = Vec::new();
+        for row in rows {
+            comments.push(row?);
+        }
+        Ok(comments)
+    }
+
+    pub fn delete_game_comments(&self, rom_id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM game_comments WHERE rom_id = ?1",
+            params![rom_id],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_resource(&self, id: &str) -> Result<()> {
         self.conn.execute(
             "DELETE FROM game_resources WHERE id = ?1",
@@ -1095,7 +1151,7 @@ impl DbManager {
 
     pub fn get_pc_config(&self, rom_id: &str) -> Result<Option<crate::core::models::PcConfig>> {
         let mut stmt = self.conn.prepare(
-            "SELECT rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, use_mangohud, pre_launch_script, post_launch_script, cloud_saves_enabled, cloud_save_path, cloud_save_auto_sync 
+            "SELECT rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, gs_state, use_mangohud, pre_launch_script, post_launch_script, cloud_saves_enabled, cloud_save_path, cloud_save_auto_sync 
              FROM pc_configurations WHERE rom_id = ?1"
         )?;
         let mut rows = stmt.query(params![rom_id])?;
@@ -1116,12 +1172,13 @@ impl DbManager {
                 wrapper: row.get(12)?,
                 use_gamescope: row.get(13)?,
                 gamescope_args: row.get(14)?,
-                use_mangohud: row.get(15)?,
-                pre_launch_script: row.get(16)?,
-                post_launch_script: row.get(17)?,
-                cloud_saves_enabled: row.get::<_, Option<i32>>(18)?.map(|v| v != 0),
-                cloud_save_path: row.get(19)?,
-                cloud_save_auto_sync: row.get::<_, Option<i32>>(20)?.map(|v| v != 0),
+                gs_state: row.get::<_, Option<String>>(15)?.and_then(|s| serde_json::from_str(&s).ok()),
+                use_mangohud: row.get(16)?,
+                pre_launch_script: row.get(17)?,
+                post_launch_script: row.get(18)?,
+                cloud_saves_enabled: row.get::<_, Option<i32>>(19)?.map(|v| v != 0),
+                cloud_save_path: row.get(20)?,
+                cloud_save_auto_sync: row.get::<_, Option<i32>>(21)?.map(|v| v != 0),
             }))
         } else {
             Ok(None)
@@ -1130,8 +1187,8 @@ impl DbManager {
 
     pub fn insert_pc_config(&self, config: &crate::core::models::PcConfig) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO pc_configurations (rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, use_mangohud, pre_launch_script, post_launch_script, cloud_saves_enabled, cloud_save_path, cloud_save_auto_sync)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+            "INSERT OR REPLACE INTO pc_configurations (rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, gs_state, use_mangohud, pre_launch_script, post_launch_script, cloud_saves_enabled, cloud_save_path, cloud_save_auto_sync)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
             params![
                 config.rom_id,
                 config.umu_proton_version,
@@ -1148,6 +1205,7 @@ impl DbManager {
                 config.wrapper,
                 config.use_gamescope,
                 config.gamescope_args,
+                config.gs_state.as_ref().map(|v| v.to_string()),
                 config.use_mangohud,
                 config.pre_launch_script,
                 config.post_launch_script,

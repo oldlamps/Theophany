@@ -2303,6 +2303,22 @@ ApplicationWindow {
                                                     }
                                                 }
                                                 TheophanyMenuItem {
+                                                    text: "Fetch Enhanced Steam Metadata"
+                                                    iconSource: "qrc:/ui/assets/systems/steam.png"
+                                                    visible: (typeof gamePlatformType !== "undefined" && gamePlatformType.toLowerCase() === "steam") || (typeof gamePlatformName !== "undefined" && gamePlatformName.toLowerCase() === "steam") || gameId.startsWith("steam-")
+                                                    onTriggered: {
+                                                        if (rootViewStack.sharedSelectedIndices.length > 1) {
+                                                            var ids = []
+                                                            for (var i = 0; i < rootViewStack.sharedSelectedIndices.length; i++) {
+                                                                ids.push(gameModel.getGameId(rootViewStack.sharedSelectedIndices[i]))
+                                                            }
+                                                            bulkScrapeDialog.showForGames(ids, "Steam")
+                                                        } else {
+                                                            bulkScrapeDialog.showForGames([gameId], "Steam")
+                                                        }
+                                                    }
+                                                }
+                                                TheophanyMenuItem {
                                                     text: "Update RetroAchievements"
                                                     iconSource: "🏆"
                                                     visible: !gamePlatformType.includes("PC")

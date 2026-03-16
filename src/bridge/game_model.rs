@@ -233,6 +233,7 @@ pub struct GameListModel {
     getAllYears: qt_method!(fn(&mut self) -> QVariantList),
     getAllTags: qt_method!(fn(&mut self) -> QVariantList),
     getGameMetadata: qt_method!(fn(&mut self, rom_id: String) -> QString),
+    getGameComments: qt_method!(fn(&mut self, rom_id: String) -> QString),
     updateGameMetadata: qt_method!(fn(&mut self, rom_id: String, json_data: String)),
     updateGameAchievements: qt_method!(fn(&mut self, rom_id: String, count: i32, unlocked: i32, badges: String)), // New method
     getUpNextSuggestion: qt_method!(fn(&mut self, last_played_id: String) -> QString),
@@ -1696,6 +1697,7 @@ impl GameListModel {
                             wrapper: defaults.get("wrapper").and_then(|v| v.as_str()).map(|s| s.to_string()),
                             use_gamescope: defaults.get("use_gamescope").and_then(|v| v.as_bool()),
                             gamescope_args: defaults.get("gamescope_args").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            gs_state: defaults.get("gs_state").cloned(),
                             use_mangohud: defaults.get("use_mangohud").and_then(|v| v.as_bool()),
                              pre_launch_script: None,
                              post_launch_script: None,
@@ -1949,6 +1951,20 @@ impl GameListModel {
     }
 
     #[allow(non_snake_case)]
+    fn getGameComments(&mut self, rom_id: String) -> QString {
+        let db_path = self.db_path.borrow().clone();
+        if db_path.is_empty() { return QString::from("[]"); }
+        if let Ok(db) = DbManager::open(&db_path) {
+            if let Ok(comments) = db.get_game_comments(&rom_id) {
+                if let Ok(json) = serde_json::to_string(&comments) {
+                    return QString::from(json);
+                }
+            }
+        }
+        QString::from("[]")
+    }
+
+    #[allow(non_snake_case)]
     fn getUpNextSuggestion(&mut self, last_played_id: String) -> QString {
         let db_path = self.db_path.borrow().clone();
         if db_path.is_empty() { return QString::from("{}"); }
@@ -2108,6 +2124,33 @@ impl GameListModel {
                                       let _ = db.insert_resource(&new_res);
                                   }
                               }
+                          }
+                      }
+                  }
+                  
+                  // Handle Comments
+                  if let Some(comments) = json.get("comments").and_then(|v| v.as_array()) {
+                      let _ = db.delete_game_comments(&rom_id);
+                      for c in comments {
+                          if let (Some(id), Some(author), Some(comment_text), Some(source)) = (
+                              c.get("id").and_then(|v| v.as_str()),
+                              c.get("author").and_then(|v| v.as_str()),
+                              c.get("comment_text").and_then(|v| v.as_str()),
+                              c.get("source").and_then(|v| v.as_str())
+                          ) {
+                              let is_positive = c.get("is_positive").and_then(|v| v.as_bool()).unwrap_or(true);
+                              let upvotes = c.get("upvotes").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                              
+                              let new_comment = crate::core::models::GameComment {
+                                  id: id.to_string(),
+                                  rom_id: rom_id.clone(),
+                                  author: author.to_string(),
+                                  comment_text: comment_text.to_string(),
+                                  is_positive,
+                                  upvotes,
+                                  source: source.to_string(),
+                              };
+                              let _ = db.insert_game_comment(&new_comment);
                           }
                       }
                   }
@@ -3825,7 +3868,26 @@ impl GameListModel {
                         None
                     };
 
-                    match provider.search(&query_title, platform_opt).await {
+                    let search_results = if provider_name == "Steam" && job.id.starts_with("steam-") {
+                        // Bypass search for Steam integration
+                        vec![crate::core::scraper::ScraperSearchResult {
+                            id: job.id.replace("steam-", ""),
+                            title: job.title.clone(),
+                            platform: "PC".to_string(),
+                            platforms: None,
+                            platform_ids: None,
+                            region: None,
+                            release_year: None,
+                            thumbnail_url: None,
+                            resolution: None,
+                            can_add_to_collection: false,
+                            metadata: None,
+                        }]
+                    } else {
+                        provider.search(&query_title, platform_opt).await.unwrap_or_default()
+                    };
+                    let fake_result: anyhow::Result<Vec<crate::core::scraper::ScraperSearchResult>> = Ok(search_results);
+                    match fake_result {
                         Ok(results) => {
                             if results.is_empty() {
                                 log::warn!("[BulkScrape] Search returned 0 results for '{}'", title);
@@ -3870,6 +3932,14 @@ impl GameListModel {
                                     let r_id = job.id.clone();
                                     let _ = tokio::task::spawn_blocking(move || {
                                         if let Ok(db) = DbManager::open(&db_p) {
+                                            if let Some(comments) = &m.comments {
+                                                let _ = db.delete_game_comments(&r_id);
+                                                for mut c in comments.clone() {
+                                                    c.rom_id = r_id.clone();
+                                                    let _ = db.insert_game_comment(&c);
+                                                }
+                                            }
+
                                             let mut final_meta = crate::core::models::GameMetadata {
                                                 rom_id: r_id.clone(),
                                                 title: if m.title.is_empty() { None } else { Some(m.title.clone()) },

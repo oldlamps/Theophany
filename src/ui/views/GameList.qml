@@ -694,6 +694,23 @@ FocusScope {
                                     }
                                 }
                                 TheophanyMenuItem {
+                                    text: "Fetch Enhanced Steam Metadata"
+                                    iconSource: "qrc:/ui/assets/systems/steam.png"
+                                    visible: (typeof gamePlatformType !== "undefined" && gamePlatformType.toLowerCase() === "steam") || (typeof gamePlatformName !== "undefined" && gamePlatformName.toLowerCase() === "steam") || gameId.startsWith("steam-")
+                                    onTriggered: {
+                                        if (rootRoot.selectedIndices.length > 1) {
+                                            var ids = []
+                                            for (var i = 0; i < rootRoot.selectedIndices.length; i++) {
+                                                ids.push(gameModel.getGameId(rootRoot.selectedIndices[i]))
+                                            }
+                                            bulkScrapeDialog.showForGames(ids, "Steam")
+                                        } else {
+                                            var gId = gameModel.getGameId(index)
+                                            bulkScrapeDialog.showForGames([gId], "Steam")
+                                        }
+                                    }
+                                }
+                                TheophanyMenuItem {
                                     text: "Update RetroAchievements"
                                     iconSource: "🏆"
                                     visible: !gamePlatformType.includes("PC")

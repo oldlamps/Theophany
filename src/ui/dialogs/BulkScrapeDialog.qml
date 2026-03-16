@@ -96,18 +96,24 @@ Dialog {
     // Close Policy: Allow closing (minimizing) even when scraping
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
+    property string overrideProvider: ""
+
     onOpened: {
-        var defaultScraper = appSettings.activeMetadataScraper
+        var defaultScraper = overrideProvider !== "" ? overrideProvider : appSettings.activeMetadataScraper
         for (var i = 0; i < comboMetadataProvider.model.length; i++) {
             if (comboMetadataProvider.model[i] === defaultScraper) {
                 comboMetadataProvider.currentIndex = i
                 break
             }
         }
+        overrideProvider = "" // Reset
     }
 
-    function showForGames(ids) {
+    function showForGames(ids, provider) {
         root.gameIds = ids
+        if (provider !== undefined) {
+            root.overrideProvider = provider
+        }
         root.open()
     }
 
@@ -271,7 +277,17 @@ Dialog {
                     id: comboMetadataProvider
                     visible: checkMetadata.checked
                     Layout.fillWidth: true
-                    model: gameModel.getAvailableScrapers()
+                    model: {
+                        var scrapers = gameModel.getAvailableScrapers()
+                        if (!hasSteamGames) {
+                            var filtered = []
+                            for (var i = 0; i < scrapers.length; i++) {
+                                if (scrapers[i] !== "Steam") filtered.push(scrapers[i])
+                            }
+                            return filtered
+                        }
+                        return scrapers
+                    }
                 }
 
                 // Granular Fields

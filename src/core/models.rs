@@ -1,5 +1,6 @@
 // Core data models shared across modules
 use serde::{Deserialize, Serialize};
+use serde_json;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Platform {
@@ -142,6 +143,17 @@ pub struct GameSession {
     pub total_play_time: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameComment {
+    pub id: String,
+    pub rom_id: String,
+    pub author: String,
+    pub comment_text: String,
+    pub is_positive: bool,
+    pub upvotes: i32,
+    pub source: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GameProgress {
     pub title: String,
@@ -167,6 +179,7 @@ pub struct PcConfig {
     pub wrapper: Option<String>,
     pub use_gamescope: Option<bool>,
     pub gamescope_args: Option<String>,
+    pub gs_state: Option<serde_json::Value>,
     pub use_mangohud: Option<bool>,
     pub pre_launch_script: Option<String>,
     pub post_launch_script: Option<String>,

@@ -16,6 +16,7 @@ impl ScraperManager {
             "Ollama + Web Search" => Arc::new(crate::core::scraper::ollama_web::OllamaWebProvider::new(client, ollama_url, ollama_model)),
             "LLM API" => Arc::new(crate::core::scraper::llm_api::LlmApiProvider::new(client, gemini_key, openai_key, active_llm_provider)),
             "Wikipedia" => Arc::new(WikipediaProvider::new(client)),
+            "Steam" => Arc::new(crate::core::scraper::steam::SteamProvider::new(client)),
             // Map "Web Search" to SearchEngineProvider (which reports "Bing Images" as name)
             "Bing Images" | "Web Search" => Arc::new(SearchEngineProvider::new(client)),
             _ => Arc::new(LaunchBoxProvider::new(client)), // Fallback
@@ -26,6 +27,7 @@ impl ScraperManager {
         vec![
             "IGDB".to_string(),
             "Wikipedia".to_string(),
+            "Steam".to_string(),
             "Ollama + Web Search".to_string(),
             "LLM API".to_string(),
             "LaunchBox".to_string(),

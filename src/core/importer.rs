@@ -122,6 +122,15 @@ impl BulkImporter {
                     if final_rom.is_installed.is_some() {
                         sidecar.is_installed = meta.is_installed;
                     }
+
+                    // Preserve initial playtime values before sidecar overrides them
+                    if meta.total_play_time > 0 {
+                        sidecar.total_play_time = meta.total_play_time;
+                    }
+                    if meta.last_played.is_some() {
+                        sidecar.last_played = meta.last_played;
+                    }
+
                     meta = sidecar;
                     
                     // Ensure resources from sidecar are correctly associated with the new rom_id
@@ -331,6 +340,7 @@ impl BulkImporter {
                                     wrapper: defaults.get("wrapper").and_then(|v| v.as_str()).map(|s| s.to_string()),
                                     use_gamescope: defaults.get("use_gamescope").and_then(|v| v.as_bool()),
                                     gamescope_args: defaults.get("gamescope_args").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    gs_state: defaults.get("gs_state").cloned(),
                                     use_mangohud: defaults.get("use_mangohud").and_then(|v| v.as_bool()),
                                     pre_launch_script: defaults.get("pre_launch_script").and_then(|v| v.as_str()).map(|s| s.to_string()),
                                     post_launch_script: defaults.get("post_launch_script").and_then(|v| v.as_str()).map(|s| s.to_string()),

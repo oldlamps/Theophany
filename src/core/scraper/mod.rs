@@ -12,6 +12,7 @@ pub mod ollama_web;
 pub mod llm_api;
 pub mod wikipedia;
 pub mod igdb;
+pub mod steam;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScrapedResource {
@@ -34,6 +35,8 @@ pub struct ScrapedMetadata {
     pub assets: HashMap<String, Vec<String>>, // Category -> URLs
     #[serde(default)]
     pub resources: Vec<ScrapedResource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comments: Option<Vec<crate::core::models::GameComment>>,
     pub source: String,
     pub source_id: String,
 }

@@ -194,6 +194,7 @@ Rectangle {
     onGameIdChanged: {
         raOverlay.visible = false
         root.videoList = []
+        root.gameReviews = []
         root.currentVideoIndex = 0
         root.currentVideoTitle = ""
         root._recentBadges = []
@@ -225,8 +226,10 @@ Rectangle {
     function checkImages() {
         if (root.gameId !== "") {
              var json = gameModel.getGameMetadata(root.gameId)
+             var commentsJson = gameModel.getGameComments(root.gameId)
               try {
                   var data = JSON.parse(json)
+                  try { root.gameReviews = JSON.parse(commentsJson) } catch(e) { root.gameReviews = [] }
                   root.gameCloudSavesSupported = data.cloud_saves_supported || false
                   updateImageList(data)
                   updateResources(data)
@@ -381,6 +384,7 @@ Rectangle {
     property string gamePlatformType: ""
     property var emulatorProfiles: []
     property var gameResources: []
+    property var gameReviews: []
     
     function refreshProfiles() {
 
@@ -2059,12 +2063,115 @@ Rectangle {
         // Description
         TextArea {
             Layout.fillWidth: true
-            text: root.gameDescription
+            text: {
+                var d = root.gameDescription || "";
+                if (d.startsWith("Overall Reviews: ")) {
+                    var idx = d.indexOf("\n\n");
+                    if (idx !== -1) return d.substring(idx + 2);
+                    return "";
+                }
+                return d;
+            }
             color: Theme.bodyText
             wrapMode: Text.Wrap
             readOnly: true
             background: null
             font.pixelSize: 14
+        }
+        
+        // User Reviews
+        Column {
+            Layout.fillWidth: true
+            spacing: 12
+            visible: root.gameReviews && root.gameReviews.length > 0
+
+            Row {
+                width: parent.width
+                spacing: 12
+                
+                Text {
+                    text: "USER REVIEWS"
+                    font.pixelSize: 10
+                    font.bold: true
+                    color: Theme.secondaryText
+                    font.letterSpacing: 1
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                
+                Rectangle {
+                    visible: (root.gameDescription || "").startsWith("Overall Reviews: ")
+                    width: sentimentText.implicitWidth + 16
+                    height: sentimentText.implicitHeight + 8
+                    radius: 4
+                    color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.2)
+                    border.color: Theme.accent
+                    border.width: 1
+                    anchors.verticalCenter: parent.verticalCenter
+                    
+                    Text {
+                        id: sentimentText
+                        anchors.centerIn: parent
+                        text: {
+                            var d = root.gameDescription || "";
+                            if (d.startsWith("Overall Reviews: ")) {
+                                var match = d.match(/^Overall Reviews: (.*?)(?:\n\n|$)/);
+                                return match ? match[1] : "";
+                            }
+                            return "";
+                        }
+                        color: Theme.accent
+                        font.pixelSize: 11
+                        font.bold: true
+                    }
+                }
+            }
+
+            Repeater {
+                model: root.gameReviews
+                delegate: Rectangle {
+                    width: parent.width
+                    height: reviewCol.height + 24
+                    color: Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.03)
+                    border.color: Theme.border
+                    border.width: 1
+                    radius: 8
+
+                    Column {
+                        id: reviewCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 12
+                        spacing: 8
+
+                        Row {
+                            width: parent.width
+                            spacing: 8
+                            
+                            Text {
+                                text: modelData.is_positive ? "👍" : "👎"
+                                font.pixelSize: 16
+                            }
+                            
+                            Text {
+                                text: modelData.author
+                                color: Theme.text
+                                font.pixelSize: 14
+                                font.bold: true
+                                width: parent.width - 32
+                            }
+                        }
+
+                        Text {
+                            text: modelData.comment_text
+                            color: Theme.bodyText
+                            font.pixelSize: 13
+                            wrapMode: Text.Wrap
+                            width: parent.width
+                        }
+                    }
+                }
+            }
         }
 
         }
