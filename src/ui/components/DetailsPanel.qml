@@ -2214,7 +2214,7 @@ Rectangle {
                     font.pixelSize: 12 
                 }
                 onClicked: {
-                     Window.window.openVideoDownload(root.gameFilename, root.gameTitle, root.gamePlatform, root.gamePlatformType, root.platformFolder)
+                     Window.window.openVideoDownload(root.gameId, root.gameTitle, root.gamePlatform, root.gamePlatformType, root.platformFolder)
                 }
                 
                 TheophanyTooltip {

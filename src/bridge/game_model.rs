@@ -4853,13 +4853,14 @@ impl GameListModel {
 
             let res = GameResource {
                 id: Uuid::new_v4().to_string(),
-                rom_id,
+                rom_id: rom_id.clone(),
                 type_,
                 url,
                 label: if label.is_empty() { None } else { Some(label) },
                 sort_order: 0,
             };
             let _ = db.insert_resource(&res);
+            self.gameDataChanged(rom_id.into());
         }
     }
 
@@ -4869,7 +4870,20 @@ impl GameListModel {
         if db_path.is_empty() { return; }
         
         if let Ok(db) = DbManager::open(&db_path) {
-            let _ = db.delete_resource(&resource_id);
+            // We need the rom_id to emit the signal
+            let mut rom_id = String::new();
+            if let Ok(mut stmt) = db.get_connection().prepare("SELECT rom_id FROM game_resources WHERE id = ?1") {
+                if let Ok(mut rows) = stmt.query(rusqlite::params![resource_id]) {
+                    if let Ok(Some(row)) = rows.next() {
+                         rom_id = row.get(0).unwrap_or_default();
+                    }
+                }
+            }
+
+            let _ = db.get_connection().execute("DELETE FROM game_resources WHERE id = ?1", rusqlite::params![resource_id]);
+            if !rom_id.is_empty() {
+                self.gameDataChanged(rom_id.into());
+            }
         }
     }
 
@@ -4879,8 +4893,22 @@ impl GameListModel {
         if db_path.is_empty() { return; }
         
         if let Ok(db) = DbManager::open(&db_path) {
+            // We need the rom_id to emit the signal
+            let mut rom_id = String::new();
+            if let Ok(mut stmt) = db.get_connection().prepare("SELECT rom_id FROM game_resources WHERE id = ?1") {
+                if let Ok(mut rows) = stmt.query(rusqlite::params![resource_id]) {
+                    if let Ok(Some(row)) = rows.next() {
+                         rom_id = row.get(0).unwrap_or_default();
+                    }
+                }
+            }
+
             let label_opt = if label.is_empty() { None } else { Some(label.as_str()) };
             let _ = db.update_resource(&resource_id, &type_, &url, label_opt);
+            
+            if !rom_id.is_empty() {
+                self.gameDataChanged(rom_id.into());
+            }
         }
     }
 

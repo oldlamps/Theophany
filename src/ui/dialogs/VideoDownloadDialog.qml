@@ -29,6 +29,9 @@ Dialog {
     property string sortMode: "Relevance" // Relevance, Shortest, Longest
     property string currentPlayingTitle: ""
     property string currentPlayingUploader: ""
+    property real playerVolume: 1.0
+    property string notificationText: ""
+    property bool showNotification: false
     
     x: (parent.width - width) / 2
     y: (parent.height - height) / 2
@@ -96,6 +99,19 @@ Dialog {
     property int currentTab: 0
 
     signal downloadCompleted(string path)
+
+    function showFeedback(text) {
+        notificationText = text
+        showNotification = true
+        notificationTimer.restart()
+    }
+
+    Timer {
+        id: notificationTimer
+        interval: 3000
+        repeat: false
+        onTriggered: root.showNotification = false
+    }
 
     background: Rectangle {
         color: Theme.secondaryBackground
@@ -301,13 +317,13 @@ Dialog {
                                         Label {
                                             text: "Search Results"
                                             color: Theme.secondaryText
-                                            font.pixelSize: 12
+                                            font.pixelSize: 11 // Made slightly smaller
                                             font.bold: true
                                             Layout.alignment: Qt.AlignVCenter
                                         }
                                         Item { Layout.fillWidth: true }
                                         TheophanyButton {
-                                            text: "Sort: " + root.sortMode
+                                            text: root.sortMode
                                             Layout.preferredHeight: 28
                                             Layout.alignment: Qt.AlignVCenter
                                             onClicked: {
@@ -430,6 +446,20 @@ Dialog {
                                                                         if (!root.downloading) {
                                                                             root.downloading = true
                                                                             videoProxyInternal.downloadVideo(modelData.url, root.gameId, root.platformFolder, modelData.title)
+                                                                        }
+                                                                    }
+                                                                }
+
+                                                                TheophanyButton {
+                                                                    iconEmoji: "🔗"
+                                                                    Layout.preferredHeight: 28
+                                                                    Layout.preferredWidth: 32
+                                                                    Layout.alignment: Qt.AlignVCenter
+                                                                    tooltipText: "Add to Resources"
+                                                                    onClicked: {
+                                                                        if (typeof gameModel !== "undefined") {
+                                                                            gameModel.addGameResource(root.gameId, "Video", modelData.url, modelData.title)
+                                                                            root.showFeedback("Resource link added!")
                                                                         }
                                                                     }
                                                                 }
@@ -628,18 +658,32 @@ Dialog {
 
                         property bool isFullscreen: false
                         
+                        function togglePlayback() {
+                            if (streamPlayer.playbackState === MediaPlayer.PlayingState) {
+                                streamPlayer.pause()
+                                if (typeof(pauseIconAnim) !== "undefined") pauseIconAnim.restart()
+                            } else {
+                                streamPlayer.play()
+                                if (typeof(playIconAnim) !== "undefined") playIconAnim.restart()
+                            }
+                        }
+
                         function toggleFullscreen() {
+                            var wasPlaying = streamPlayer.playbackState === MediaPlayer.PlayingState
                             if (isFullscreen) {
                                 videoContainer.parent = videoSlot
                                 videoContainer.z = 0 // Reset Z
                                 isFullscreen = false
-                                videoContainer.forceActiveFocus()
                             } else {
                                 videoContainer.parent = Overlay.overlay
                                 videoContainer.z = 1000 // Ensure it is on top of the modal
                                 isFullscreen = true
-                                videoContainer.forceActiveFocus()
                             }
+                            if (wasPlaying) {
+                                // Delay slightly to ensure re-parenting is finished before playing
+                                Qt.callLater(function() { streamPlayer.play() })
+                            }
+                            videoContainer.forceActiveFocus()
                         }
                         
                         Keys.onPressed: (event) => {
@@ -661,6 +705,11 @@ Dialog {
                             }
                             onDoubleClicked: {
                                 videoContainer.toggleFullscreen()
+                            }
+
+                            // Click-to-pause logic
+                            TapHandler {
+                                onTapped: videoContainer.togglePlayback()
                             }
 
                             ColumnLayout {
@@ -720,28 +769,73 @@ Dialog {
                                     MediaPlayer {
                                         id: streamPlayer
                                         videoOutput: videoOutput
-                                        audioOutput: AudioOutput { volume: 1.0 }
+                                        audioOutput: AudioOutput { id: audioOut; volume: root.playerVolume }
+                                    }
+
+                                    // Large Overlay Icons for feedback
+                                    Label {
+                                        id: overlayIcon
+                                        anchors.centerIn: parent
+                                        text: "▶\ufe0e"
+                                        color: "white"
+                                        font.pixelSize: 64
+                                        opacity: 0
+                                        z: 20
+                                        visible: opacity > 0
+                                        
+                                        SequentialAnimation on opacity {
+                                            id: playIconAnim
+                                            running: false
+                                            NumberAnimation { from: 0; to: 0.8; duration: 200; easing.type: Easing.OutCubic }
+                                            PauseAnimation { duration: 400 }
+                                            NumberAnimation { from: 0.8; to: 0; duration: 200; easing.type: Easing.InCubic }
+                                            onStarted: overlayIcon.text = "▶\ufe0e"
+                                        }
+                                        SequentialAnimation on opacity {
+                                            id: pauseIconAnim
+                                            running: false
+                                            NumberAnimation { from: 0; to: 0.8; duration: 200; easing.type: Easing.OutCubic }
+                                            PauseAnimation { duration: 400 }
+                                            NumberAnimation { from: 0.8; to: 0; duration: 200; easing.type: Easing.InCubic }
+                                            onStarted: overlayIcon.text = "⏸\ufe0e"
+                                        }
                                     }
 
                                     // Player Overlay / Placeholder
                                     Rectangle {
                                         anchors.fill: parent
-                                        color: "black"
-                                        visible: streamPlayer.playbackState === MediaPlayer.StoppedState && !root.streaming
+                                        color: "#0a0a0a"
+                                        visible: streamPlayer.source == "" && !root.streaming
                                         z: 5
                                         
                                         ColumnLayout {
                                             anchors.centerIn: parent
-                                            spacing: 10
-                                            Label {
-                                                text: "Preview Area"
-                                                color: Theme.secondaryText
-                                                font.pixelSize: 16
+                                            spacing: 15
+                                            
+                                            Text {
+                                                Layout.alignment: Qt.AlignHCenter
+                                                text: "🎬"
+                                                font.pixelSize: 48
+                                                opacity: 0.15
                                             }
-                                            Label {
-                                                text: "Select a video on the left to start streaming"
-                                                color: Theme.secondaryText
-                                                font.pixelSize: 12
+                                            
+                                            ColumnLayout {
+                                                spacing: 2
+                                                Label {
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    text: "No Video Selected"
+                                                    color: Theme.text
+                                                    font.pixelSize: 16
+                                                    font.bold: true
+                                                    opacity: 0.5
+                                                }
+                                                Label {
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    text: "Select a clip to begin previewing"
+                                                    color: Theme.secondaryText
+                                                    font.pixelSize: 11
+                                                    opacity: 0.4
+                                                }
                                             }
                                         }
                                     }
@@ -751,51 +845,52 @@ Dialog {
                                         id: controlsOverlay
                                         anchors.bottom: parent.bottom
                                         width: parent.width
-                                        height: 80
+                                        height: 100
                                         z: 15
-                                        gradient: Gradient {
-                                            GradientStop { position: 0.0; color: "transparent" }
-                                            GradientStop { position: 1.0; color: "#CC000000" }
-                                        }
+                                        color: "transparent"
                                         visible: (playerMouseArea.containsMouse || root.streaming) && streamPlayer.playbackState !== MediaPlayer.StoppedState
                                         opacity: playerMouseArea.containsMouse ? 1 : 0
                                         Behavior on opacity { NumberAnimation { duration: 250 } }
 
+                                        // Background gradient for readability
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            gradient: Gradient {
+                                                GradientStop { position: 0.0; color: "transparent" }
+                                                GradientStop { position: 1.0; color: Theme.secondaryBackground }
+                                            }
+                                            opacity: 0.9
+                                        }
+
                                         ColumnLayout {
                                             anchors.fill: parent
-                                            anchors.margins: 15
+                                            anchors.margins: 10
                                             spacing: 5
 
+                                            // SEEK BAR
                                             RowLayout {
                                                 Layout.fillWidth: true
                                                 spacing: 10
                                                 
-                                                TheophanyButton {
-                                                    text: streamPlayer.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
-                                                    Layout.preferredWidth: 70
-                                                    Layout.preferredHeight: 28
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    focusPolicy: Qt.NoFocus
-                                                    onClicked: {
-                                                        if (streamPlayer.playbackState === MediaPlayer.PlayingState) {
-                                                            streamPlayer.pause()
-                                                        } else {
-                                                            streamPlayer.play()
-                                                        }
-                                                        videoContainer.forceActiveFocus()
-                                                    }
+                                                Label {
+                                                    text: formatDuration(streamPlayer.position / 1000)
+                                                    color: Theme.text
+                                                    font.pixelSize: 11
+                                                    Layout.preferredWidth: 40
                                                 }
 
                                                 Slider {
                                                     id: seekSlider
                                                     Layout.fillWidth: true
-                                                    Layout.alignment: Qt.AlignVCenter
                                                     from: 0
-                                                    to: streamPlayer.duration
+                                                    to: Math.max(1, streamPlayer.duration)
                                                     value: streamPlayer.position
                                                     enabled: streamPlayer.seekable
-                                                    focusPolicy: Qt.NoFocus // Don't steal focus
-                                                    onMoved: streamPlayer.position = value
+                                                    focusPolicy: Qt.NoFocus
+                                                    onMoved: {
+                                                        streamPlayer.position = value
+                                                        streamPlayer.play()
+                                                    }
                                                     
                                                     background: Rectangle {
                                                         x: seekSlider.leftPadding
@@ -818,28 +913,190 @@ Dialog {
                                                     handle: Rectangle {
                                                         x: seekSlider.leftPadding + seekSlider.visualPosition * (seekSlider.availableWidth - width)
                                                         y: seekSlider.topPadding + seekSlider.availableHeight / 2 - height / 2
-                                                        implicitWidth: 12
-                                                        implicitHeight: 12
-                                                        radius: 6
+                                                        implicitWidth: 14
+                                                        implicitHeight: 14
+                                                        radius: 7
                                                         color: Theme.accent
-                                                        visible: seekSlider.hovered || seekSlider.pressed
+                                                        scale: seekSlider.pressed ? 1.2 : 1.0
+                                                        Behavior on scale { NumberAnimation { duration: 100 } }
                                                     }
                                                 }
 
                                                 Label {
-                                                    text: formatDuration(streamPlayer.position / 1000) + " / " + formatDuration(streamPlayer.duration / 1000)
-                                                    color: "white"
+                                                    text: formatDuration(streamPlayer.duration / 1000)
+                                                    color: Theme.text
                                                     font.pixelSize: 11
-                                                    Layout.alignment: Qt.AlignVCenter
+                                                    Layout.preferredWidth: 40
+                                                    horizontalAlignment: Text.AlignRight
                                                 }
-                                                
-                                                TheophanyButton {
-                                                    text: videoContainer.isFullscreen ? "Exit" : "Fullscreen"
-                                                    Layout.preferredHeight: 28
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    focusPolicy: Qt.NoFocus
-                                                    onClicked: {
-                                                        videoContainer.toggleFullscreen()
+                                            }
+
+                                            // CONTROL BAR (Centered Cluster + Sides)
+                                            Item {
+                                                Layout.fillWidth: true
+                                                Layout.preferredHeight: 60
+
+                                                // Centered Playback Buttons Cluster (Absolute Positioning for True Center)
+                                                Row {
+                                                    id: playbackCluster
+                                                    anchors.centerIn: parent
+                                                    spacing: 30
+                                                    
+                                                    // Skip Back 30s
+                                                    Rectangle {
+                                                        width: 50; height: 50; radius: 25
+                                                        color: "transparent"
+                                                        border.color: skipBackMouse.containsMouse ? Theme.accent : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.2)
+                                                        border.width: 2
+                                                        Label { 
+                                                            anchors.centerIn: parent
+                                                            text: "⟲\ufe0e"
+                                                            color: Theme.text
+                                                            font.pixelSize: 32
+                                                        }
+                                                        Label {
+                                                            anchors.centerIn: parent
+                                                            anchors.verticalCenterOffset: 4
+                                                            text: "30"
+                                                            color: Theme.text
+                                                            font.pixelSize: 10
+                                                            font.bold: true
+                                                        }
+                                                        
+                                                        MouseArea {
+                                                            id: skipBackMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                streamPlayer.position = Math.max(0, streamPlayer.position - 30000)
+                                                                streamPlayer.play()
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // Main Play/Pause (FIXED TOGGLE)
+                                                    Rectangle {
+                                                        width: 52; height: 52; radius: 26
+                                                        color: Theme.accent
+                                                        Label { 
+                                                            anchors.centerIn: parent
+                                                            anchors.horizontalCenterOffset: streamPlayer.playbackState === MediaPlayer.PlayingState ? 0 : 3
+                                                            text: streamPlayer.playbackState === MediaPlayer.PlayingState ? "⏸" : "▶"
+                                                            color: "white" 
+                                                            font.pixelSize: 26 
+                                                        }
+                                                        
+                                                        MouseArea {
+                                                            id: playButtonMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                videoContainer.togglePlayback()
+                                                                videoContainer.forceActiveFocus()
+                                                            }
+                                                        }
+
+                                                        scale: playButtonMouse.containsMouse ? 1.05 : 1.0
+                                                        Behavior on scale { NumberAnimation { duration: 100 } }
+                                                    }
+
+                                                    // Skip Forward 30s
+                                                    Rectangle {
+                                                        width: 50; height: 50; radius: 25
+                                                        color: "transparent"
+                                                        border.color: skipForwMouse.containsMouse ? Theme.accent : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.2)
+                                                        border.width: 2
+                                                        Label { 
+                                                            anchors.centerIn: parent
+                                                            text: "⟳\ufe0e"
+                                                            color: Theme.text
+                                                            font.pixelSize: 32
+                                                        }
+                                                        Label {
+                                                            anchors.centerIn: parent
+                                                            anchors.verticalCenterOffset: 4
+                                                            text: "30"
+                                                            color: Theme.text
+                                                            font.pixelSize: 10
+                                                            font.bold: true
+                                                        }
+                                                        
+                                                        MouseArea {
+                                                            id: skipForwMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                streamPlayer.position = Math.min(streamPlayer.duration, streamPlayer.position + 30000)
+                                                                streamPlayer.play()
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                // Volume Control (Left Aligned)
+                                                RowLayout {
+                                                    anchors.left: parent.left
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    spacing: 12
+                                                    
+                                                    Rectangle {
+                                                        width: 40; height: 40; radius: 20
+                                                        color: volHover.hovered ? Theme.buttonBackground : "transparent"
+                                                        Label { 
+                                                            anchors.centerIn: parent
+                                                            text: root.playerVolume === 0 ? "🔈" : (root.playerVolume < 0.5 ? "🔉" : "🔊")
+                                                            color: Theme.text; font.pixelSize: 20 
+                                                        }
+                                                        HoverHandler { id: volHover }
+                                                        TapHandler { onTapped: root.playerVolume = (root.playerVolume === 0 ? 1.0 : 0) }
+                                                    }
+
+                                                    Slider {
+                                                        id: volumeSlider
+                                                        width: 120
+                                                        from: 0; to: 1.0; value: root.playerVolume
+                                                        onMoved: root.playerVolume = value
+                                                        background: Rectangle {
+                                                            x: volumeSlider.leftPadding
+                                                            y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
+                                                            implicitWidth: 120; implicitHeight: 6
+                                                            width: volumeSlider.availableWidth; height: implicitHeight
+                                                            radius: 3; color: Theme.border
+                                                            Rectangle {
+                                                                width: volumeSlider.visualPosition * parent.width
+                                                                height: parent.height; color: Theme.accent; radius: 3
+                                                            }
+                                                        }
+                                                        handle: Rectangle {
+                                                            x: volumeSlider.leftPadding + volumeSlider.visualPosition * (volumeSlider.availableWidth - width)
+                                                            y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
+                                                            implicitWidth: 14; implicitHeight: 14; radius: 7; color: "white"
+                                                            visible: volumeSlider.hovered || volumeSlider.pressed
+                                                        }
+                                                    }
+                                                }
+
+                                                // Fullscreen Toggle (Right Aligned)
+                                                Rectangle {
+                                                    anchors.right: parent.right
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    width: 44; height: 44; radius: 22
+                                                    color: fsHover.hovered ? Theme.buttonBackground : "transparent"
+                                                    border.color: fsHover.hovered ? Theme.accent : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.1)
+                                                    border.width: 1
+                                                    
+                                                    Label {
+                                                        anchors.centerIn: parent
+                                                        text: videoContainer.isFullscreen ? "↘" : "⛶"
+                                                        color: Theme.text
+                                                        font.pixelSize: 24
+                                                    }
+                                                    HoverHandler { id: fsHover }
+                                                    TapHandler { 
+                                                        onTapped: videoContainer.toggleFullscreen()
                                                     }
                                                 }
                                             }
@@ -848,7 +1105,7 @@ Dialog {
 
                                     BusyIndicator {
                                         anchors.centerIn: parent
-                                        visible: root.streaming || (streamPlayer.playbackState === MediaPlayer.LoadingState && streamPlayer.playbackState !== MediaPlayer.PlayingState)
+                                        visible: root.streaming || streamPlayer.mediaStatus === MediaPlayer.LoadingMedia || streamPlayer.mediaStatus === MediaPlayer.BufferingMedia
                                         z: 10
                                     }
                                 }
@@ -962,5 +1219,53 @@ Dialog {
         
         if (hours !== "00") return hours+':'+minutes+':'+seconds;
         return minutes+':'+seconds;
+    }
+    // Notification Overlay
+    Rectangle {
+        id: notificationPopup
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 40
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(parent.width - 40, notifLayout.implicitWidth + 60)
+        height: 48
+        z: 1000
+        color: Theme.accent
+        radius: 24
+        opacity: root.showNotification ? 1.0 : 0.0
+        visible: opacity > 0
+        
+        Behavior on opacity { NumberAnimation { duration: 250 } }
+        
+        RowLayout {
+            id: notifLayout
+            anchors.centerIn: parent
+            width: parent.width - 40
+            spacing: 15
+            
+            Text {
+                text: "✅"
+                font.pixelSize: 20
+                Layout.alignment: Qt.AlignVCenter
+            }
+            
+            Text {
+                id: notifText
+                text: root.notificationText
+                color: "white"
+                font.pixelSize: 15
+                font.bold: true
+                Layout.alignment: Qt.AlignVCenter
+            }
+        }
+        
+        layer.enabled: true
+        layer.effect: DropShadow {
+            transparentBorder: true
+            horizontalOffset: 0
+            verticalOffset: 6
+            radius: 12.0
+            samples: 25
+            color: "#60000000"
+        }
     }
 }
