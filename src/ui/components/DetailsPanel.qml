@@ -32,6 +32,10 @@ Rectangle {
     
     property bool isGameRunning: root.gameModel ? root.gameModel.isGameRunning(root.gameId) : false
     
+    // Notification State
+    property string notificationText: ""
+    property bool showNotification: false
+    
     // Watch for setting changes to auto-switch if currently viewing a game with video
     Connections {
         target: appSettings
@@ -85,18 +89,43 @@ Rectangle {
                  player.stop()
              }
         }
+        onStreamUrlReady: (url, original_url) => {
+            if (root.videoList.length > 0 && root.currentVideoIndex < root.videoList.length) {
+                var v = root.videoList[root.currentVideoIndex]
+                if (v.url === original_url) {
+                    player.source = url
+                    if (root.showVideoOverlay) {
+                        player.play()
+                    }
+                }
+            }
+        }
+        onErrorOccurred: (msg) => {
+            showFeedback("Video Error: " + msg)
+            root.showVideoOverlay = false
+        }
     }
     
+    Component.onCompleted: {
+        videoProxy.init(appInfo.getDataPath() + "/games.db")
+    }
+
     function loadCurrentVideo() {
         if (root.videoList.length > 0 && root.currentVideoIndex < root.videoList.length) {
             var v = root.videoList[root.currentVideoIndex]
             player.stop()
             player.source = ""
-            player.source = v.url
             root.currentVideoTitle = v.title
             
-            if (root.showVideoOverlay) {
-                player.play()
+            if (v.is_resource) {
+                // Remote streaming
+                videoProxy.getStreamUrl(v.url)
+            } else {
+                // Local file
+                player.source = v.url
+                if (root.showVideoOverlay) {
+                    player.play()
+                }
             }
         }
     }
@@ -125,6 +154,19 @@ Rectangle {
         }
     }
     
+    function showFeedback(text) {
+        notificationText = text
+        showNotification = true
+        notificationTimer.restart()
+    }
+
+    Timer {
+        id: notificationTimer
+        interval: 3000
+        repeat: false
+        onTriggered: showNotification = false
+    }
+
     StoreBridge { id: storeBridge }
 
     Timer {
@@ -557,8 +599,8 @@ Rectangle {
                 id: mainColumn
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.leftMargin: 20
-                anchors.rightMargin: 20
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
                 spacing: 15
 
         // Header Area (Banner or Box Art)
@@ -571,6 +613,8 @@ Rectangle {
             color: Theme.secondaryBackground
             radius: 8
             clip: true
+            border.color: Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, 0.4)
+            border.width: 1
 
             property bool headerHovered: headerBackgroundMouse.containsMouse || 
                                          carouselHoverArea.containsMouse || 
@@ -599,9 +643,7 @@ Rectangle {
             // Top Image (Foreground - Cycling)
 
             Item {
-                anchors.centerIn: parent
-                height: parent.height - 20
-                width: parent.width - 20
+                anchors.fill: parent
 
                 Item {
                     id: imageSlot
@@ -673,8 +715,8 @@ Rectangle {
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 20
-                        anchors.rightMargin: 20
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 12
                         spacing: 0
                         
                         Item {
@@ -1033,7 +1075,7 @@ Rectangle {
             ColumnLayout {
                 id: metadataInner
                 anchors.fill: parent
-                anchors.margins: 20
+                anchors.margins: 12
                 spacing: 20
 
         // Title and Info
@@ -2211,8 +2253,8 @@ Rectangle {
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 20
-            anchors.rightMargin: 20
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
             spacing: 15
             
             Item { Layout.fillWidth: true }
@@ -2269,7 +2311,7 @@ Rectangle {
 
         ColumnLayout {
             anchors.fill: parent
-            anchors.margins: 20
+            anchors.margins: 12
             spacing: 15
             
             // Header
@@ -2663,5 +2705,44 @@ Rectangle {
         var h = Math.floor(seconds / 3600);
         var m = Math.floor((seconds % 3600) / 60);
         return h + "h " + m + "m";
+    }
+
+    // Notification Overlay
+    Rectangle {
+        id: notificationPopup
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 40
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(parent.width - 40, notifLayout.implicitWidth + 60)
+        height: 48
+        z: 1000
+        color: Theme.accent
+        radius: 24
+        opacity: root.showNotification ? 1.0 : 0.0
+        visible: opacity > 0
+        
+        Behavior on opacity { NumberAnimation { duration: 250 } }
+        
+        RowLayout {
+            id: notifLayout
+            anchors.centerIn: parent
+            width: parent.width - 40
+            spacing: 15
+            
+            Text {
+                text: "⚠️"
+                font.pixelSize: 20
+                Layout.alignment: Qt.AlignVCenter
+            }
+            
+            Text {
+                id: notifText
+                text: root.notificationText
+                color: "white"
+                font.pixelSize: 15
+                font.bold: true
+                Layout.alignment: Qt.AlignVCenter
+            }
+        }
     }
 }

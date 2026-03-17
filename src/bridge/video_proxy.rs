@@ -52,7 +52,7 @@ pub struct VideoProxy {
     videoDownloadFinished: qt_signal!(path: QString),
     videoListReady: qt_signal!(json: QString),
     videoDeleted: qt_signal!(path: QString),
-    streamUrlReady: qt_signal!(url: QString),
+    streamUrlReady: qt_signal!(url: QString, original_url: QString),
 
     // Methods
     init: qt_method!(fn(&mut self, path: String)),
@@ -81,7 +81,7 @@ enum VideoWorkerMsg {
     DownloadFinished(String),
     VideoListReady(String),
     VideoDeleted(String),
-    StreamUrlReady(String),
+    StreamUrlReady(String, String), // resolved_url, original_url
     Error(String),
 }
 
@@ -318,7 +318,7 @@ impl VideoProxy {
                             lower_url.contains(".mpd?");
 
             if is_direct {
-                let _ = tx.send(VideoWorkerMsg::StreamUrlReady(url));
+                let _ = tx.send(VideoWorkerMsg::StreamUrlReady(url.clone(), url));
                 return;
             }
 
@@ -333,7 +333,7 @@ impl VideoProxy {
                 .arg("-f")
                 // Prioritize progressive MP4 (itag 22 and 18) for maximum player compatibility
                 .arg("22/18/best[ext=mp4][height<=720]/best[height<=720]/best")
-                .arg(url)
+                .arg(&url)
                 .output();
 
             match output {
@@ -363,7 +363,7 @@ impl VideoProxy {
                         }
 
                         if !stream_url.is_empty() {
-                            let _ = tx.send(VideoWorkerMsg::StreamUrlReady(stream_url));
+                            let _ = tx.send(VideoWorkerMsg::StreamUrlReady(stream_url, url));
                         } else {
                             let _ = tx.send(VideoWorkerMsg::Error("Empty stream URL returned".to_string()));
                         }
@@ -549,7 +549,7 @@ impl VideoProxy {
                     VideoWorkerMsg::DownloadFinished(path) => self.videoDownloadFinished(path.into()),
                     VideoWorkerMsg::VideoListReady(json) => self.videoListReady(json.into()),
                     VideoWorkerMsg::VideoDeleted(path) => self.videoDeleted(path.into()),
-                    VideoWorkerMsg::StreamUrlReady(url) => self.streamUrlReady(url.into()),
+                    VideoWorkerMsg::StreamUrlReady(url, original) => self.streamUrlReady(url.into(), original.into()),
                     VideoWorkerMsg::Error(e) => self.errorOccurred(e.into()),
                 }
             }

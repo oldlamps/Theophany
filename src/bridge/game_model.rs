@@ -273,6 +273,7 @@ pub struct GameListModel {
     
     // Resources
     addGameResource: qt_method!(fn(&mut self, rom_id: String, type_: String, url: String, label: String)),
+    addGameResources: qt_method!(fn(&mut self, rom_id: String, resources_json: String)),
     removeGameResource: qt_method!(fn(&mut self, resource_id: String)),
     updateGameResource: qt_method!(fn(&mut self, resource_id: String, type_: String, url: String, label: String)),
     saveResourceOrder: qt_method!(fn(&mut self, rom_id: String, ids_json: String)),
@@ -4844,29 +4845,59 @@ impl GameListModel {
 
     #[allow(non_snake_case)]
     fn addGameResource(&mut self, rom_id: String, type_: String, url: String, label: String) {
+        let res = serde_json::json!([{
+            "type": type_,
+            "url": url,
+            "label": if label.is_empty() { None } else { Some(label) }
+        }]);
+        self.addGameResources(rom_id, res.to_string());
+    }
+
+    #[allow(non_snake_case)]
+    fn addGameResources(&mut self, rom_id: String, resources_json: String) {
         let db_path = self.db_path.borrow().clone();
         if db_path.is_empty() { return; }
         
+        let resources: Vec<serde_json::Value> = match serde_json::from_str(&resources_json) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("Failed to parse resources JSON for bulk add: {}", e);
+                return;
+            }
+        };
+
         if let Ok(db) = DbManager::open(&db_path) {
-            // Check if exists first
-            let normalized_url = normalize_url(&url);
-            if let Ok(existing_resources) = db.get_resources(&rom_id) {
+            let mut added = false;
+            let existing_resources = db.get_resources(&rom_id).unwrap_or_default();
+            
+            for res_val in resources {
+                let url = res_val["url"].as_str().unwrap_or_default().to_string();
+                if url.is_empty() { continue; }
+                
+                let normalized_url = normalize_url(&url);
                 if existing_resources.iter().any(|r| normalize_url(&r.url) == normalized_url) {
-                    log::warn!("Resource already exists (normalized): {} ({})", url, type_);
-                    return;
+                    continue;
+                }
+
+                let type_ = res_val["type"].as_str().unwrap_or("Link").to_string();
+                let label = res_val["label"].as_str().map(|s| s.to_string());
+
+                let res = GameResource {
+                    id: Uuid::new_v4().to_string(),
+                    rom_id: rom_id.clone(),
+                    type_,
+                    url,
+                    label,
+                    sort_order: 0,
+                };
+                if let Ok(_) = db.insert_resource(&res) {
+                    added = true;
                 }
             }
-
-            let res = GameResource {
-                id: Uuid::new_v4().to_string(),
-                rom_id: rom_id.clone(),
-                type_,
-                url,
-                label: if label.is_empty() { None } else { Some(label) },
-                sort_order: 0,
-            };
-            let _ = db.insert_resource(&res);
-            self.gameDataChanged(rom_id.into());
+            
+            if added {
+                self.gameDataChanged(rom_id.into());
+            }
         }
     }
 

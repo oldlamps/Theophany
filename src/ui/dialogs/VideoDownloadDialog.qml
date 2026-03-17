@@ -73,7 +73,7 @@ Dialog {
             refreshLibrary()
         }
 
-        onStreamUrlReady: (url) => {
+        onStreamUrlReady: (url, original_url) => {
             root.streaming = false
             streamPlayer.stop()
             streamPlayer.source = ""

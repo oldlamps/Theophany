@@ -3885,12 +3885,19 @@ ApplicationWindow {
                 
                 // Add Resources (Links)
                 if (data.resources && Array.isArray(data.resources)) {
-
+                     var resourcesToAdd = []
                      for (var i = 0; i < data.resources.length; i++) {
                          var r = data.resources[i]
                          if (r.url && r.url !== "") {
-                              gameModel.addGameResource(id, r.type || "Link", r.url, r.label || "")
+                             resourcesToAdd.push({
+                                 "type": r.type || "Link",
+                                 "url": r.url,
+                                 "label": r.label || ""
+                             })
                          }
+                     }
+                     if (resourcesToAdd.length > 0) {
+                         gameModel.addGameResources(id, JSON.stringify(resourcesToAdd))
                      }
                 }
                 
