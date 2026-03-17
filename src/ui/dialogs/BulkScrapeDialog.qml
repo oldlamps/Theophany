@@ -308,6 +308,7 @@ Dialog {
                     StyledCheckBox { id: checkDate; text: "Release Date"; checked: true }
                     StyledCheckBox { id: checkRating; text: "Rating"; checked: true }
                     StyledCheckBox { id: checkRes; text: "Links (Resources)"; checked: true }
+                    StyledCheckBox { id: checkVideoTrailers; text: "Video Trailers"; checked: true }
                 }
 
                 Label {
@@ -592,6 +593,7 @@ Dialog {
                         "date": checkDate.checked,
                         "rating": checkRating.checked,
                         "resources": checkRes.checked,
+                        "video_trailers": checkVideoTrailers.checked,
                         "asset_boxart": checkAssetBoxart.checked,
                         "asset_icon": checkAssetIcon.checked,
                         "asset_logo": checkAssetLogo.checked,

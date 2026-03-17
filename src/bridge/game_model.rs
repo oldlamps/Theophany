@@ -3690,6 +3690,7 @@ impl GameListModel {
             #[serde(default = "default_true")] date: bool,
             #[serde(default = "default_true")] rating: bool,
             #[serde(default = "default_true")] resources: bool,
+            #[serde(default = "default_true")] video_trailers: bool,
             #[serde(default = "default_true")] asset_boxart: bool,
             #[serde(default = "default_true")] asset_icon: bool,
             #[serde(default = "default_true")] asset_logo: bool,
@@ -3700,8 +3701,9 @@ impl GameListModel {
         
         let field_config: FieldConfig = serde_json::from_str(&json_fields).unwrap_or(FieldConfig {
             title: true, description: true, dev_pub: true, genre_tags: true, 
-            date: true, rating: true, resources: true, asset_boxart: true,
-            asset_icon: true, asset_logo: true, asset_screenshot: true, asset_background: true
+            date: true, rating: true, resources: true, video_trailers: true,
+            asset_boxart: true, asset_icon: true, asset_logo: true, 
+            asset_screenshot: true, asset_background: true
         });
         
         if ids.is_empty() { return; }
@@ -4039,6 +4041,10 @@ impl GameListModel {
                                                                                                 // Save Resources (Filtered)
                                                  if field_config.resources {
                                                      for r in &m.resources {
+                                                         // If it's a video resource, check video_trailers toggle
+                                                         if r.type_ == "video" && !field_config.video_trailers {
+                                                             continue;
+                                                         }
                                                          if let Ok(exists) = db.resource_exists(&r_id, &r.url) {
                                                              if !exists {
                                                                   let res = crate::core::models::GameResource {

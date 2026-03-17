@@ -128,18 +128,41 @@ impl ScraperProvider for SteamProvider {
                             }
                         }
 
-                        // Movies (Videos)
-                        if let Some(movies) = app_data.get("movies").and_then(|v| v.as_array()) {
-                            if let Some(best_movie) = movies.first() {
-                                if let Some(video_url) = best_movie.get("mp4").and_then(|m| m.get("max")).and_then(|v| v.as_str()) {
-                                    meta.resources.push(ScrapedResource {
-                                        type_: "video".to_string(),
-                                        url: video_url.to_string(),
-                                        label: best_movie.get("name").and_then(|n| n.as_str()).unwrap_or("Trailer").to_string()
-                                    });
+                        // Movies (Videos) - Capture all available trailers
+                         if let Some(movies) = app_data.get("movies").and_then(|v| v.as_array()) {
+                             for movie in movies {
+                                let mut video_url = None;
+                                
+                                // Prefer MP4 max quality
+                                if let Some(mp4_max) = movie.get("mp4").and_then(|m| m.get("max")).and_then(|v| v.as_str()) {
+                                    video_url = Some(mp4_max.to_string());
+                                } 
+                                // Fallback to WebM max quality
+                                else if let Some(webm_max) = movie.get("webm").and_then(|m| m.get("max")).and_then(|v| v.as_str()) {
+                                    video_url = Some(webm_max.to_string());
                                 }
-                            }
-                        }
+                                // Fallback to HLS (very common now)
+                                else if let Some(hls) = movie.get("hls_h264").and_then(|v| v.as_str()) {
+                                    video_url = Some(hls.to_string());
+                                }
+                                // Fallback to DASH
+                                else if let Some(dash) = movie.get("dash_h264").and_then(|v| v.as_str()) {
+                                    video_url = Some(dash.to_string());
+                                }
+                                // Fallback to 480p if max is missing
+                                else if let Some(mp4_480) = movie.get("mp4").and_then(|m| m.get("480")).and_then(|v| v.as_str()) {
+                                    video_url = Some(mp4_480.to_string());
+                                }
+
+                                 if let Some(url) = video_url {
+                                     meta.resources.push(ScrapedResource {
+                                         type_: "video".to_string(),
+                                         url,
+                                         label: movie.get("name").and_then(|n| n.as_str()).unwrap_or("Trailer").to_string()
+                                     });
+                                 }
+                             }
+                         }
                     }
                 }
             }

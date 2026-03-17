@@ -178,7 +178,7 @@ ApplicationWindow {
                      window.loadGameDetails(index);
                 }
                 window.openVideoDownload(
-                    detailsPanel.gameFilename, 
+                    detailsPanel.gameId, 
                     detailsPanel.gameTitle, 
                     detailsPanel.gamePlatform, 
                     detailsPanel.gamePlatformType,
@@ -2369,7 +2369,7 @@ ApplicationWindow {
                                                 onTriggered: {
                                                     // Open video download dialog (same as V key)
                                                     window.openVideoDownload(
-                                                        detailsPanel.gameFilename,
+                                                        detailsPanel.gameId,
                                                         detailsPanel.gameTitle,
                                                         detailsPanel.gamePlatform,
                                                         detailsPanel.gamePlatformType,
@@ -2842,14 +2842,14 @@ ApplicationWindow {
         gameEditDialog.open()
     }
 
-    function openVideoDownload(gameId, title, platform, platformType, platformFolder) {
+    function openVideoDownload(gameId, title, platform, platformType, platformFolder, autoPlayUrl, autoPlayTitle) {
         var customPath = appSettings.useCustomYtdlp ? appSettings.customYtdlpPath : ""
         var result = JSON.parse(rootAppInfo.checkYtdlp(customPath))
         if (!result.found) {
             ytdlpMissingDialog.open()
             return
         }
-        videoDownloadDialog.show(gameId, title, platform, platformType, platformFolder)
+        videoDownloadDialog.show(gameId, title, platform, platformType, platformFolder, autoPlayUrl, autoPlayTitle)
     }
 
     function openPcConfig(gameId, title, platformType) {

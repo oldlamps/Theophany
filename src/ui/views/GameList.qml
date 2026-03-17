@@ -762,7 +762,7 @@ FocusScope {
                                 onTriggered: {
                                     // Open video download dialog (same as V key)
                                     window.openVideoDownload(
-                                        detailsPanel.gameFilename,
+                                        detailsPanel.gameId,
                                         detailsPanel.gameTitle,
                                         detailsPanel.gamePlatform,
                                         detailsPanel.gamePlatformType,

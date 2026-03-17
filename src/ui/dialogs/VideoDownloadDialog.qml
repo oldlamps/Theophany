@@ -14,6 +14,9 @@ Dialog {
     modal: true
     // title removed to prevent default title bar
     
+    Component.onCompleted: {
+        videoProxyInternal.init(appInfo.getDataPath() + "/games.db")
+    }
     // Properties
     property string gameId: ""
     property string gameTitle: ""
@@ -80,6 +83,7 @@ Dialog {
         }
         
         onErrorOccurred: (msg) => {
+            root.showFeedback("Error: " + msg)
 
             root.searching = false
             root.downloading = false
@@ -541,20 +545,29 @@ Dialog {
 
                                                     Label {
                                                         anchors.centerIn: parent
-                                                        text: "🎬"
+                                                        text: modelData.is_resource ? "🔗" : "🎬"
                                                         opacity: libHover.hovered ? 1.0 : 0.6
                                                         font.pixelSize: 22
                                                     }
 
                                                     TapHandler {
                                                         onTapped: {
-                                                            root.streaming = false 
-                                                            root.currentPlayingTitle = modelData.title
-                                                            root.currentPlayingUploader = "Local Library"
-                                                            streamPlayer.stop()
-                                                            streamPlayer.source = ""
-                                                            streamPlayer.source = modelData.url
-                                                            streamPlayer.play()
+                                                            if (modelData.is_resource) {
+                                                                root.streaming = true
+                                                                root.currentPlayingTitle = modelData.title
+                                                                root.currentPlayingUploader = "Remote Resource"
+                                                                streamPlayer.stop()
+                                                                streamPlayer.source = ""
+                                                                videoProxyInternal.getStreamUrl(modelData.url)
+                                                            } else {
+                                                                root.streaming = false 
+                                                                root.currentPlayingTitle = modelData.title
+                                                                root.currentPlayingUploader = "Local Library"
+                                                                streamPlayer.stop()
+                                                                streamPlayer.source = ""
+                                                                streamPlayer.source = modelData.url
+                                                                streamPlayer.play()
+                                                            }
                                                             videoContainer.forceActiveFocus()
                                                         }
                                                     }
@@ -573,7 +586,7 @@ Dialog {
                                                     }
 
                                                     Label {
-                                                        text: (modelData.size || "--") + " • " + (modelData.duration || "--:--")
+                                                        text: modelData.is_resource ? "Remote Resource" : ((modelData.size || "--") + " • " + (modelData.duration || "--:--"))
                                                         color: Theme.secondaryText
                                                         font.pixelSize: 10
                                                     }
@@ -585,13 +598,22 @@ Dialog {
                                                             Layout.preferredHeight: 28
                                                             Layout.alignment: Qt.AlignVCenter
                                                             onClicked: {
-                                                                root.streaming = false 
-                                                                root.currentPlayingTitle = modelData.title
-                                                                root.currentPlayingUploader = "Local Library"
-                                                                streamPlayer.stop()
-                                                                streamPlayer.source = ""
-                                                                streamPlayer.source = modelData.url
-                                                                streamPlayer.play()
+                                                                if (modelData.is_resource) {
+                                                                    root.streaming = true
+                                                                    root.currentPlayingTitle = modelData.title
+                                                                    root.currentPlayingUploader = "Remote Resource"
+                                                                    streamPlayer.stop()
+                                                                    streamPlayer.source = ""
+                                                                    videoProxyInternal.getStreamUrl(modelData.url)
+                                                                } else {
+                                                                    root.streaming = false 
+                                                                    root.currentPlayingTitle = modelData.title
+                                                                    root.currentPlayingUploader = "Local Library"
+                                                                    streamPlayer.stop()
+                                                                    streamPlayer.source = ""
+                                                                    streamPlayer.source = modelData.url
+                                                                    streamPlayer.play()
+                                                                }
                                                                 videoContainer.forceActiveFocus()
                                                             }
                                                         }
@@ -602,6 +624,7 @@ Dialog {
                                                             Layout.alignment: Qt.AlignVCenter
                                                             radius: 6
                                                             color: deleteHover.hovered ? Qt.lighter("#cc0000", 1.1) : "#cc0000"
+                                                            visible: !modelData.is_resource
                                                             
                                                             Behavior on color { ColorAnimation { duration: 100 } }
                                                             
@@ -770,6 +793,10 @@ Dialog {
                                         id: streamPlayer
                                         videoOutput: videoOutput
                                         audioOutput: AudioOutput { id: audioOut; volume: root.playerVolume }
+                                        onErrorOccurred: (error, errorString) => {
+                                            root.showFeedback("Playback Error: " + errorString)
+                                            root.streaming = false
+                                        }
                                     }
 
                                     // Large Overlay Icons for feedback
@@ -1176,7 +1203,7 @@ Dialog {
         videoProxyInternal.searchVideos(searchField.text)
     }
     
-    function show(gId, gTitle, gPlatform, gPlatformType, pFolder) {
+    function show(gId, gTitle, gPlatform, gPlatformType, pFolder, autoPlayUrl, autoPlayTitle) {
         root.gameId = gId 
         root.gameTitle = gTitle
         root.gamePlatform = gPlatform
@@ -1201,7 +1228,19 @@ Dialog {
         
         searchField.text = gTitle + " " + pSearch
         
-        startSearch()
+        if (autoPlayUrl) {
+            root.currentTab = 1
+            root.streaming = true
+            root.currentPlayingTitle = autoPlayTitle || gTitle
+            root.currentPlayingUploader = "Remote Resource"
+            streamPlayer.stop()
+            streamPlayer.source = ""
+            videoProxyInternal.getStreamUrl(autoPlayUrl)
+        } else {
+            root.currentTab = 0
+            startSearch()
+        }
+        
         refreshLibrary()
         root.open()
     }

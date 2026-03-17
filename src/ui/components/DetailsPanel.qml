@@ -217,7 +217,7 @@ Rectangle {
     
     function checkVideo() {
         if (root.gameFilename !== "" && root.gameFilename !== "--" && root.platformFolder !== "") {
-             videoProxy.getVideoList(root.gameFilename, root.platformFolder)
+             videoProxy.getVideoList(root.gameId, root.platformFolder)
         } else {
              videoOverlay.visible = false
         }
@@ -2022,7 +2022,22 @@ Rectangle {
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
-                                            gameModel.launchResource(root.gameId, modelData.url)
+                                            var t = modelData.type.toLowerCase()
+                                            if (t.includes("video") || t.includes("trailer")) {
+                                                if (typeof window !== "undefined" && window.openVideoDownload) {
+                                                    window.openVideoDownload(
+                                                        root.gameId, 
+                                                        root.gameTitle, 
+                                                        root.gamePlatform, 
+                                                        root.gamePlatformType,
+                                                        root.platformFolder,
+                                                        modelData.url,
+                                                        modelData.label || "Remote Resource"
+                                                    )
+                                                }
+                                            } else {
+                                                gameModel.launchResource(root.gameId, modelData.url)
+                                            }
                                         }
                                     }
                                 }

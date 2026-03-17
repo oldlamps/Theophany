@@ -55,6 +55,7 @@ pub struct VideoProxy {
     streamUrlReady: qt_signal!(url: QString),
 
     // Methods
+    init: qt_method!(fn(&mut self, path: String)),
     fetchTrailerUrl: qt_method!(fn(&mut self, id: String, title: String, platform: String, platform_folder: String)),
     checkCachedVideo: qt_method!(fn(&mut self, id: String, platform_folder: String)),
     getVideoList: qt_method!(fn(&mut self, id: String, platform_folder: String)),
@@ -65,6 +66,7 @@ pub struct VideoProxy {
     poll: qt_method!(fn(&mut self)),
     
     // Internal
+    db_path: RefCell<String>,
     // We need different channels or message types for search vs download
     // Using a simple enum for message passing
     tx: RefCell<Option<mpsc::Sender<VideoWorkerMsg>>>,
@@ -84,6 +86,10 @@ enum VideoWorkerMsg {
 }
 
 impl VideoProxy {
+    fn init(&mut self, path: String) {
+        *self.db_path.borrow_mut() = path;
+    }
+
     fn fetchTrailerUrl(&mut self, id: String, title: String, platform: String, platform_folder: String) {
         // Initialize channel if needed
         if self.tx.borrow().is_none() {
@@ -298,6 +304,24 @@ impl VideoProxy {
         let tx = self.tx.borrow().as_ref().unwrap().clone();
 
         thread::spawn(move || {
+            // Check if it's already a direct streamable link to avoid yt-dlp overhead/failures
+            let lower_url = url.to_lowercase();
+            let is_direct = lower_url.contains("steamstatic.com") || 
+                            lower_url.ends_with(".mp4") || 
+                            lower_url.ends_with(".mkv") || 
+                            lower_url.ends_with(".webm") || 
+                            lower_url.ends_with(".m3u8") || 
+                            lower_url.ends_with(".mpd") ||
+                            lower_url.contains(".mp4?") || 
+                            lower_url.contains(".webm?") || 
+                            lower_url.contains(".m3u8?") || 
+                            lower_url.contains(".mpd?");
+
+            if is_direct {
+                let _ = tx.send(VideoWorkerMsg::StreamUrlReady(url));
+                return;
+            }
+
             let output = Command::new(&get_ytdlp_binary())
                 .arg("-g")
                 .arg("--no-config")
@@ -388,12 +412,35 @@ impl VideoProxy {
              *self.rx.borrow_mut() = Some(rx);
         }
         let tx = self.tx.borrow().as_ref().unwrap().clone();
+        let db_path = self.db_path.borrow().clone();
         
         thread::spawn(move || {
             let data_dir = crate::core::paths::get_data_dir();
             let game_video_dir = data_dir.join("Videos").join(&platform_folder).join(&id);
             
             let mut list = Vec::new();
+
+            // 1. Fetch from Database Resources (Streamable Links)
+            if !db_path.is_empty() {
+                if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                    if let Ok(resources) = db.get_resources(&id) {
+                        for res in resources {
+                            if res.type_.to_lowercase() == "video" {
+                                list.push(serde_json::json!({
+                                    "title": res.label.unwrap_or_else(|| "Video Resource".to_string()),
+                                    "url": res.url,
+                                    "is_resource": true,
+                                    "size": "--",
+                                    "duration": "--:--",
+                                    "duration_secs": 0.0
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Fetch from Local Files
             if let Ok(entries) = std::fs::read_dir(&game_video_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();

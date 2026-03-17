@@ -8,8 +8,8 @@ import "../style"
 
 Dialog {
     id: root
-    width: Window.window ? Window.window.width * 0.7 : 800
-    height: Window.window ? Window.window.height * 0.7 : 600
+    width: Overlay.overlay ? Overlay.overlay.width * 0.7 : 800
+    height: Overlay.overlay ? Overlay.overlay.height * 0.7 : 600
     title: "Manage Resources"
     modal: true
     

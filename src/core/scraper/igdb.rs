@@ -259,6 +259,18 @@ impl ScraperProvider for IGDBProvider {
                     }
                 }
 
+                if let Some(vids) = item["videos"].as_array() {
+                    for vid in vids {
+                        if let Some(vid_id) = vid["video_id"].as_str() {
+                            metadata.resources.push(crate::core::scraper::ScrapedResource {
+                                type_: "video".to_string(),
+                                url: format!("https://www.youtube.com/watch?v={}", vid_id),
+                                label: vid["name"].as_str().unwrap_or("Trailer").to_string(),
+                            });
+                        }
+                    }
+                }
+
                 if let Some(sites) = item["websites"].as_array() {
                     log::info!("[IGDB Search] Found {} websites", sites.len());
                     for site in sites {
@@ -303,7 +315,7 @@ impl ScraperProvider for IGDBProvider {
         let body = format!(
             "fields name, summary, first_release_date, genres.name, \
             involved_companies.company.name, involved_companies.developer, involved_companies.publisher, \
-            cover.url, artworks.url, artworks.alpha_channel, screenshots.url, total_rating, websites.*; \
+            cover.url, artworks.url, artworks.alpha_channel, screenshots.url, total_rating, websites.*, videos.*; \
             where id = {};", 
             result_id
         );
@@ -393,6 +405,18 @@ impl ScraperProvider for IGDBProvider {
                     metadata.assets.entry("Screenshot".to_string())
                         .or_default()
                         .push(fix_url(u, "t_1080p"));
+                }
+            }
+        }
+
+        if let Some(vids) = item["videos"].as_array() {
+            for vid in vids {
+                if let Some(vid_id) = vid["video_id"].as_str() {
+                    metadata.resources.push(crate::core::scraper::ScrapedResource {
+                        type_: "video".to_string(),
+                        url: format!("https://www.youtube.com/watch?v={}", vid_id),
+                        label: vid["name"].as_str().unwrap_or("Trailer").to_string(),
+                    });
                 }
             }
         }
