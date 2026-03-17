@@ -3842,79 +3842,27 @@ ApplicationWindow {
         
         function onAutoScrapeFinished(rom_id, json) {
             // If the Edit Dialog is open, it handles its own auto-scrape logic.
-            if (gameEditDialog.visible) {
-
-                 return;
-            }
+            if (gameEditDialog.visible) return;
             
             try {
                 var data = JSON.parse(json)
                 var id = rom_id 
-                if (!id) {
- 
-                    return
-                }
-
-
+                if (!id) return
                 
                 var currentJson = gameModel.getGameMetadata(id)
                 var currentData = JSON.parse(currentJson)
                 
-                var merged = {
-                    title: currentData.title, // NEVER OVERWRITE TITLE (as requested)
-                    description: data.description || currentData.description || "",
-                    developer: data.developer || currentData.developer || "",
-                    publisher: data.publisher || currentData.publisher || "",
-                    genre: data.genre || currentData.genre || "",
-                    tags: data.tags || currentData.tags || "",
-                    region: data.region || currentData.region || "",
-                    rating: (data.rating !== undefined && data.rating !== 0) ? data.rating : (currentData.rating || 0),
-                    release_date: (data.release_year !== undefined && data.release_year !== 0) ? data.release_year.toString() : (currentData.release_date || "")
-                }
+                // Set the gameId for the comparison dialog context
+                mainScrapeDialog.gameId = id
                 
-                // Merge Assets (Overwrite/Add new)
-                if (data.assets) {
-                    merged.assets = {}
-                    for (var k in data.assets) {
-                         merged.assets[k] = data.assets[k]
-                    }
-                }
+                // Open the compare dialog with the new data
+                mainCompareDialog.init(currentData, data)
+                mainCompareDialog.open()
                 
-
-                gameModel.updateGameMetadata(id, JSON.stringify(merged))
-                
-                // Add Resources (Links)
-                if (data.resources && Array.isArray(data.resources)) {
-                     var resourcesToAdd = []
-                     for (var i = 0; i < data.resources.length; i++) {
-                         var r = data.resources[i]
-                         if (r.url && r.url !== "") {
-                             resourcesToAdd.push({
-                                 "type": r.type || "Link",
-                                 "url": r.url,
-                                 "label": r.label || ""
-                             })
-                         }
-                     }
-                     if (resourcesToAdd.length > 0) {
-                         gameModel.addGameResources(id, JSON.stringify(resourcesToAdd))
-                     }
-                }
-                
-                // Refresh details if this is the currently selected game
-                
-                // Refresh details if this is the currently selected game (Check index-based ID)
-                var currentIndex = (viewStack.currentIndex === 0) ? gameGrid.currentIndex : gameList.currentIndex;
-                var currentId = (currentIndex >= 0) ? gameModel.getGameId(currentIndex) : ""
-                
-
-                
-                if (String(currentId) === String(id)) {
-
-                    loadGameDetails(currentIndex)
-                }
+                // Show a small toast to let user know it finished searching
+                mainScrapeDialog.showToast("Auto-Fetch found results for: " + (data.title || "Game"))
             } catch (e) {
-
+                console.error("Error processing auto-scrape results: " + e)
             }
         }
 
