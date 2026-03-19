@@ -2545,7 +2545,7 @@ impl GameListModel {
             if let Ok(Some(platform)) = db.get_platform(&platform_id) {
                 let platform_type = platform.platform_type.clone().unwrap_or_default().to_lowercase();
                 
-                if platform_type == "steam" || platform_type == "heroic" || platform_type == "lutris" {
+                if platform_type == "steam" || platform_type == "heroic" || platform_type == "lutris" || platform_type == "epic" {
                     log::debug!("[Rescan] Specialized rescan for store platform: {}", platform_type);
                     
                     let scanned_roms = match platform_type.as_str() {
@@ -2561,14 +2561,16 @@ impl GameListModel {
                         },
                         "heroic" => crate::core::store::StoreManager::scan_heroic_games(),
                         "lutris" => crate::core::store::StoreManager::scan_lutris_games(),
+                        "epic" => crate::core::store::StoreManager::scan_legendary_games(),
                         _ => Vec::new(),
                     };
 
                     let existing_roms = db.get_roms_by_platform(&platform_id).unwrap_or_default();
                     let existing_paths: std::collections::HashSet<String> = existing_roms.iter().map(|r| r.path.clone()).collect();
                     
+                    let existing_map: std::collections::HashMap<String, String> = existing_roms.iter().map(|r| (r.path.clone(), r.id.clone())).collect();
+                    
                     if platform_type == "steam" {
-                        let existing_map: std::collections::HashMap<String, String> = existing_roms.into_iter().map(|r| (r.path, r.id)).collect();
                         let mut updates = Vec::new(); // will be Vec<(String, i64, i64)>
                         for remote_rom in &scanned_roms {
                             if let Some(existing_id) = existing_map.get(&remote_rom.path) {
@@ -2582,13 +2584,13 @@ impl GameListModel {
                         if !updates.is_empty() {
                             let _ = db.bulk_update_playtimes(&updates);
                         }
+                    }
 
-                        // Sync is_installed status
-                        for remote_rom in &scanned_roms {
-                            if let Some(existing_id) = existing_map.get(&remote_rom.path) {
-                                let installed = remote_rom.is_installed.unwrap_or(true);
-                                let _ = db.get_connection().execute("UPDATE metadata SET is_installed = ?1 WHERE rom_id = ?2", rusqlite::params![installed as i32, existing_id]);
-                            }
+                    // Sync is_installed status for all specialized platforms
+                    for remote_rom in &scanned_roms {
+                        if let Some(existing_id) = existing_map.get(&remote_rom.path) {
+                            let installed = remote_rom.is_installed.unwrap_or(true);
+                            let _ = db.get_connection().execute("UPDATE metadata SET is_installed = ?1 WHERE rom_id = ?2", rusqlite::params![installed as i32, existing_id]);
                         }
                     }
 

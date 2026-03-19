@@ -99,15 +99,6 @@ FocusScope {
         property int tags: 200
         // Path fills remaining space
     }
-
-    // Helper to calculate X positions consistently
-    // Spacing is 10px between columns in the header RowLayout logic
-    // We need to match that in the manual positioning of the delegate
-    // Header Structure:
-    // Spacer(5) + IconRegion(30) + Gap(10) + Title(W) + Gap(10) ...
-    // Actually, looking at previous code:
-    // Header had: anchors.leftMargin: 5, spacing: 10
-    // Item { width: 30 } (Icon placeholder) ...
     
     function getX(colName) {
         // Base start X (matches header leftMargin)
@@ -261,41 +252,30 @@ FocusScope {
                         }
                     }
 
-                    // 1. Icon Spacer (Not sortable, fixed structural)
                     Item { 
                         width: colWidths.icon
                         height: parent.height 
                         // No text, just spacer
                     }
 
-                    // 2. Title
                     HeaderButton { text: "TITLE"; sortId: "Title"; widthProp: "title" }
                     
-                    // 3. Platform
                     HeaderButton { text: "Platform"; sortId: "Platform"; widthProp: "platform" }
                     
-                    // 4. Region
                     HeaderButton { text: "Region"; sortId: "Region"; widthProp: "region" }
                     
-                    // 5. Genre
                     HeaderButton { text: "Genre"; sortId: "Genre"; widthProp: "genre" }
                     
-                    // 6. Developer
                     HeaderButton { text: "Developer"; sortId: "Developer"; widthProp: "developer" }
                     
-                    // 7. Publisher
                     HeaderButton { text: "Publisher"; sortId: "Publisher"; widthProp: "publisher" }
                     
-                    // 8. Year
                     HeaderButton { text: "Year"; sortId: "Year"; widthProp: "year" }
                     
-                    // 9. Rating
                     HeaderButton { text: "Rating"; sortId: "Rating"; widthProp: "rating" }
                     
-                    // 10. Tags
                     HeaderButton { text: "Tags"; sortId: "Tags"; widthProp: "tags" }
                     
-                    // 11. Path (Not sortable, fills rest)
                     Item {
                         width: 100 // Minimum width for label
                         height: parent.height

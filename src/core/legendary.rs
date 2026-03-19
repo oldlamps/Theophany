@@ -112,6 +112,18 @@ impl LegendaryWrapper {
         None
     }
 
+    /// Retrieves the Epic account ID from Legendary's user.json.
+    pub fn get_epic_account_id() -> Option<String> {
+        let legendary_config = crate::core::paths::get_config_dir().join("legendary");
+        let user_json = legendary_config.join("user.json");
+        if let Ok(content) = std::fs::read_to_string(&user_json) {
+            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
+                return data["account_id"].as_str().map(|s| s.to_string());
+            }
+        }
+        None
+    }
+
     /// Helper to create a Command configured with the correct paths and environment variables.
     fn build_command(binary: &PathBuf, subcommand: &str) -> Command {
         let mut cmd = Command::new(binary);
@@ -467,6 +479,8 @@ impl LegendaryWrapper {
         let saved_games      = user_root.join("Saved Games");
         let documents        = user_root.join("Documents");
 
+        let epic_id = Self::get_epic_account_id().unwrap_or_default();
+
         // Legendary (and EGS manifests) can return any of these casings.
         // Order: longest names first to avoid partial matches.
         let s = template.replace('\\', "/"); // normalise separators first
@@ -496,7 +510,10 @@ impl LegendaryWrapper {
             .replace("{installdir}",      install_path.as_deref().unwrap_or(""))
             .replace("{INSTALLDIR}",      install_path.as_deref().unwrap_or(""))
             // Some templates use the literal Wine username in braces
-            .replace(&format!("{{{}}}", wine_user), &*user_root.to_string_lossy());
+            .replace(&format!("{{{}}}", wine_user), &*user_root.to_string_lossy())
+            .replace("{EpicID}", &epic_id)
+            .replace("{epicid}", &epic_id)
+            .replace("{EPICID}", &epic_id);
 
         // Expand ~ to HOME if present at start.
         let s = if s.starts_with('~') {

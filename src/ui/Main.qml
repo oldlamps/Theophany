@@ -1709,6 +1709,10 @@ ApplicationWindow {
                                      if (index === 1) method = "TitleZA"
                                      else if (index === 2) method = "Recent"
                                      else if (index === 3) method = "LastPlayed"
+                                     
+                                     // Force selection of first item after refresh
+                                     window.pendingSelectionId = "-1"
+                                     
                                      gameModel.setSortMethod(method)
                                      window.refocusList()
                                  }
