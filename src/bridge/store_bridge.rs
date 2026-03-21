@@ -1551,8 +1551,9 @@ impl StoreBridge {
         std::thread::spawn(move || {
             let rom_id = format!("gog-{}", slug);
 
+            let _ = broadcast_msg(StoreMsg::InstallStarted(rom_id.clone(), 0));
             let _ = broadcast_msg(StoreMsg::InstallProgress(
-                rom_id.clone(), 0.0, "{\"raw_line\":\"Initialising lgogdownloader...\"}".into()
+                rom_id.clone(), 0.0, "{\"raw_line\":\"Initializing Download...\"}".into()
             ));
 
             match crate::core::gog::GogDownloader::install_game(&slug, &install_path, &platform, no_dependencies) {
@@ -1596,9 +1597,9 @@ impl StoreBridge {
                                                 }
                                             }
 
-                                            if let Some((p, status_json)) = crate::core::gog::GogDownloader::parse_install_progress(&line) {
-                                                last_progress = p;
-                                                let _ = broadcast_msg(StoreMsg::InstallProgress(rid.clone(), p, status_json));
+                                            if let Some((opt_p, status_json)) = crate::core::gog::GogDownloader::parse_install_progress(&line, last_progress) {
+                                                if let Some(p) = opt_p { last_progress = p; }
+                                                let _ = broadcast_msg(StoreMsg::InstallProgress(rid.clone(), last_progress, status_json));
                                             }
                                         }
                                         buf.clear();

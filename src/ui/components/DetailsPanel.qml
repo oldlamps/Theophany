@@ -1732,6 +1732,7 @@ Rectangle {
 
             property var statusData: ({})
             property var speedHistory: []
+            property bool isInitializing: window.storeInstallProgress === 0.0 && statusData.raw_line === "Initializing Download..."
             
             Connections {
                 target: window
@@ -1758,8 +1759,34 @@ Rectangle {
                 }
             }
 
-            // Stats Grid
-            GridLayout {
+            // Initialization state
+            RowLayout {
+                Layout.fillWidth: true
+                visible: downloadProgressArea.isInitializing
+                spacing: 12
+
+                BusyIndicator {
+                    running: downloadProgressArea.isInitializing
+                    Layout.preferredWidth: 24
+                    Layout.preferredHeight: 24
+                }
+                
+                Text {
+                    text: downloadProgressArea.statusData.raw_line || "Initializing..."
+                    color: Theme.text
+                    font.pixelSize: 14
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                visible: !downloadProgressArea.isInitializing
+
+                // Stats Grid
+                GridLayout {
                 columns: 2
                 Layout.fillWidth: true
                 rowSpacing: 4
@@ -1783,6 +1810,7 @@ Rectangle {
                 }
 
                 ColumnLayout {
+                    visible: !!downloadProgressArea.statusData.disk_rate
                     spacing: 2
                     Text {
                         text: "DISK ACTIVITY"
@@ -1821,9 +1849,17 @@ Rectangle {
                         font.bold: true
                     }
                     Text {
+                        visible: window.storeInstallProgress > 0
                         text: (window.storeInstallProgress * 100).toFixed(2) + "%"
                         color: Theme.text
                         font.pixelSize: 14
+                    }
+                    Text {
+                        visible: !!downloadProgressArea.statusData.remaining
+                        text: downloadProgressArea.statusData.remaining || ""
+                        color: Theme.text
+                        font.pixelSize: 12
+                        opacity: 0.8
                     }
                 }
             }
@@ -1927,15 +1963,16 @@ Rectangle {
                 }
             }
 
-            Text {
-                text: downloadProgressArea.statusData.raw_line || ""
-                color: Theme.secondaryText
-                font.pixelSize: 10
-                wrapMode: Text.Wrap
-                maximumLineCount: 2
-                Layout.fillWidth: true
-                opacity: 0.7
-            }
+                Text {
+                    text: downloadProgressArea.statusData.raw_line || ""
+                    color: Theme.secondaryText
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    Layout.fillWidth: true
+                    opacity: 0.7
+                }
+            } // End of !isInitializing ColumnLayout
         }
 
         // Removed redundant bottom tags section

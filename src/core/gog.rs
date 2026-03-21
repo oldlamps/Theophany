@@ -106,9 +106,6 @@ impl GogDownloader {
         let binary =
             Self::find_binary().ok_or_else(|| anyhow::anyhow!("lgogdownloader binary not found"))?;
 
-        // `--browser-login` prints the URL to stdout/stderr, then waits for the redirect URL.
-        // We only want the URL; we'll complete auth separately via `authenticate()`.
-        // Run with a very short timeout pipe-trick: spawn, read first URL line, then kill.
         let output = Self::build_command(&binary)
             .arg("--browser-login")
             .output()?;
@@ -133,11 +130,7 @@ impl GogDownloader {
         ))
     }
 
-    /// Completes browser-based login by passing the redirect URL that the user copies from
-    /// their browser after completing the GOG OAuth flow.
-    ///
-    /// lgogdownloader command:
-    ///   `lgogdownloader --browser-login --browser-login-redirect-url=<redirect_url>`
+
     pub fn authenticate(redirect_url: &str) -> anyhow::Result<()> {
         let binary =
             Self::find_binary().ok_or_else(|| anyhow::anyhow!("lgogdownloader binary not found"))?;
@@ -224,14 +217,7 @@ impl GogDownloader {
         Ok(games)
     }
 
-    /// Parses the text output of `lgogdownloader --list` into a list of `GogGame`.
-    ///
-    /// lgogdownloader outputs one slug per line (sometimes with colour codes). Each line is
-    /// typically just the game slug, e.g.:
-    ///   `the_witcher_3_wild_hunt`
-    ///   `cyberpunk_2077`
-    ///
-    /// Some builds emit "Game: <slug>" or "<index>. <slug>" prefixes — we handle both.
+   
     pub(crate) fn parse_list_output(raw: &str) -> Vec<GogGame> {
         let mut games = Vec::new();
 
@@ -265,8 +251,6 @@ impl GogDownloader {
                 clean.clone()
             };
 
-            // Strip trailing bracket annotations like " [1]", " [2]" that lgogdownloader
-            // appends to disambiguate duplicate entries. These are not part of the slug.
             let slug = {
                 let s = slug.trim_end();
                 if let Some(bracket_pos) = s.rfind(" [") {
@@ -315,12 +299,6 @@ impl GogDownloader {
             .join(" ")
     }
 
-    /// Converts a `GogGame` into a `Rom` for import into the database.
-    ///
-    /// GOG games are DRM-free so there is no URI to launch — the path is a placeholder
-    /// based on the slug. The user (or a rescan) can later point it to the actual executable.
-    /// The platform_type is "gog" so that `launchGame()` maps it to the PC (Windows)
-    /// umu-run path.
     pub fn to_rom(game: &GogGame) -> Rom {
         let title = game.title.clone().unwrap_or_else(|| game.slug.clone());
 
@@ -358,12 +336,6 @@ impl GogDownloader {
         }
     }
 
-    /// Installs a game via the GOG Galaxy API.
-    ///
-    /// `lgogdownloader --galaxy-platform <platform> --galaxy-install <slug>/0
-    ///                  --directory <install_path> [--galaxy-no-dependencies] --no-color`
-    ///
-    /// Returns the spawned `Child` with stderr piped for progress streaming.
     pub fn install_game(
         slug: &str,
         install_path: &str,
@@ -391,23 +363,30 @@ impl GogDownloader {
         cmd.spawn().map_err(|e| anyhow::anyhow!("Failed to spawn lgogdownloader: {}", e))
     }
 
-    /// Parses a single line from lgogdownloader install output.
-    ///
-    /// Returns `Some((progress_0_to_1, status_json))` on a recognisable progress line.
-    ///
-    /// Formats handled:
-    ///   `[Progress] 45.20% (123 MB / 272 MB) ETA: 00:02:13 DL: 5.20 MB/s`
-    ///   `Downloading file: something.bin [45.20%]`
-    ///   `45.20%`
-    pub fn parse_install_progress(line: &str) -> Option<(f32, String)> {
+    pub fn parse_install_progress(line: &str, last_progress: f32) -> Option<(Option<f32>, String)> {
         let clean = strip_ansi(line.trim());
         if clean.is_empty() { return None; }
 
-        let pct = Self::extract_percent(&clean)?;
-        let progress = (pct / 100.0).clamp(0.0, 1.0);
+        let is_thread_line = clean.contains('▕') || clean.starts_with('#');
+        if is_thread_line {
+            return None;
+        }
+
+        let mut opt_progress = None;
+        let pct = Self::extract_percent(&clean);
+        if let Some(p) = pct {
+            opt_progress = Some((p / 100.0).clamp(0.0, 1.0));
+        }
+
+        let is_total_line = clean.starts_with("Total: ");
+        if opt_progress.is_none() && !is_total_line {
+            return None;
+        }
+
+        let current_progress = opt_progress.unwrap_or(last_progress);
 
         let mut status = serde_json::Map::new();
-        status.insert("progress".to_string(), serde_json::json!(progress));
+        status.insert("progress".to_string(), serde_json::json!(current_progress));
 
         if let Some(eta_rest) = Self::extract_after(&clean, "ETA: ") {
             let eta_val = eta_rest.split_whitespace().next().unwrap_or("").to_string();
@@ -417,11 +396,21 @@ impl GogDownloader {
         if let Some(dl_rest) = Self::extract_after(&clean, "DL: ") {
             let dl_val: String = dl_rest.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
             status.insert("dl_rate".to_string(), serde_json::json!(format!("DL: {}", dl_val)));
+        } else if let Some(total_rest) = Self::extract_after(&clean, "Total: ") {
+            let dl_val: String = total_rest.split_whitespace().take(1).collect::<Vec<_>>().join(" ");
+            status.insert("dl_rate".to_string(), serde_json::json!(format!("DL: {}", dl_val)));
+        }
+        
+        if let Some(rem_rest) = Self::extract_after(&clean, "Remaining: ") {
+            if let Some(pipe_idx) = rem_rest.find(" ETA:") {
+                let remaining_val = rem_rest[..pipe_idx].trim();
+                status.insert("remaining".to_string(), serde_json::json!(remaining_val));
+            }
         }
 
         status.insert("raw_line".to_string(), serde_json::json!(clean.chars().take(120).collect::<String>()));
 
-        Some((progress, serde_json::Value::Object(status).to_string()))
+        Some((opt_progress, serde_json::Value::Object(status).to_string()))
     }
 
     fn extract_percent(s: &str) -> Option<f32> {
