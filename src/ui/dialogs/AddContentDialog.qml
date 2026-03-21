@@ -179,7 +179,7 @@ Dialog {
 
                 Grid {
                     columns: 3
-                    rows: 2
+                    rows: 3
                     spacing: 10
                     Layout.fillWidth: true
 
@@ -196,6 +196,12 @@ Dialog {
                         iconSource: "assets/systems/epic.png"
                         width: parent.btnWidth
                         onClicked: { root.close(); epicImportDialog.openImport() }
+                    }
+                    TheophanyButton {
+                        text: "GOG"
+                        iconSource: "assets/systems/gog.png"
+                        width: parent.btnWidth
+                        onClicked: { root.close(); gogImportDialog.openImport() }
                     }
                     TheophanyButton {
                         text: "Heroic"

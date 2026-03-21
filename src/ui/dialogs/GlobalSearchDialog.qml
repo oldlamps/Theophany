@@ -144,22 +144,27 @@ Dialog {
             delegate: ItemDelegate {
                 id: delegate
                 width: ListView.view.width
-                height: 50
+                height: 56
+                hoverEnabled: true
                 
                 background: Rectangle {
-                    color: delegate.highlighted ? Theme.accent : "transparent"
-                    opacity: delegate.highlighted ? 0.3 : 0
-                    radius: 6
+                    color: delegate.highlighted ? Theme.accent : (delegate.hovered ? Theme.text : "transparent")
+                    opacity: delegate.highlighted ? 0.3 : (delegate.hovered ? 0.05 : 0)
+                    radius: 8
+                    
+                    Behavior on opacity {
+                        NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                    }
                 }
                 
                 contentItem: RowLayout {
-                    spacing: 12
+                    spacing: 14
                     
                     // Icon
                     Image {
-                        Layout.preferredWidth: 32
-                        Layout.preferredHeight: 32
-                        source: modelData.icon || modelData.boxart
+                        Layout.preferredWidth: 36
+                        Layout.preferredHeight: 36
+                        source: modelData.icon || modelData.boxart || modelData.platform_icon || ""
                         fillMode: Image.PreserveAspectFit
                         visible: source != ""
                     }
@@ -167,46 +172,71 @@ Dialog {
                     // Text Info
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 2
+                        spacing: 3
                         
                         Text {
                             text: modelData.title
                             color: Theme.text
                             font.bold: true
-                            font.pixelSize: 14
+                            font.pixelSize: 15
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
                         
-                        Text {
-                            text: modelData.platform
-                            color: Theme.secondaryText
-                            font.pixelSize: 12
-                            elide: Text.ElideRight
+                        RowLayout {
                             Layout.fillWidth: true
+                            spacing: 4
+                            
+                            Image {
+                                source: modelData.platform_icon || ""
+                                Layout.preferredWidth: 14
+                                Layout.preferredHeight: 14
+                                fillMode: Image.PreserveAspectFit
+                                visible: source != ""
+                            }
+                            
+                            Text {
+                                text: modelData.platform
+                                color: Theme.secondaryText
+                                font.pixelSize: 12
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
                         }
                     }
                     
-                    // Launch Action Hint
-                    Text {
-                        text: "⏎ Launch"
-                        color: Theme.secondaryText
-                        font.pixelSize: 11
-                        visible: delegate.highlighted
-                    }
-                    
-                    // Select Action Hint
-                    Text {
-                        text: "Ctrl+⏎ View"
-                        color: Theme.secondaryText
-                        font.pixelSize: 11
-                        visible: delegate.highlighted
+                    // Action Buttons
+                    RowLayout {
+                        visible: delegate.highlighted || delegate.hovered
+                        spacing: 8
+                        Layout.alignment: Qt.AlignVCenter
+                        
+                        TheophanyButton {
+                            text: "Details"
+                            Layout.preferredHeight: 28
+                            font.pixelSize: 12
+                            onClicked: {
+                                handleResult(modelData, Qt.ControlModifier)
+                            }
+                        }
+                        
+                        TheophanyButton {
+                            text: "Launch"
+                            Layout.preferredHeight: 28
+                            font.pixelSize: 12
+                            onClicked: {
+                                handleResult(modelData, Qt.NoModifier)
+                            }
+                        }
                     }
                 }
                 
                 highlighted: ListView.isCurrentItem
                 
-                onClicked: handleResult(modelData, Qt.NoModifier)
+                onClicked: {
+                    resultList.currentIndex = index
+                    resultList.forceActiveFocus()
+                }
             }
             
             Keys.onEnterPressed: (event) => {

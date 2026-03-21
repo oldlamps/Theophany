@@ -2545,7 +2545,7 @@ impl GameListModel {
             if let Ok(Some(platform)) = db.get_platform(&platform_id) {
                 let platform_type = platform.platform_type.clone().unwrap_or_default().to_lowercase();
                 
-                if platform_type == "steam" || platform_type == "heroic" || platform_type == "lutris" || platform_type == "epic" {
+                if platform_type == "steam" || platform_type == "heroic" || platform_type == "lutris" || platform_type == "epic" || platform_type == "gog" {
                     log::debug!("[Rescan] Specialized rescan for store platform: {}", platform_type);
                     
                     let scanned_roms = match platform_type.as_str() {
@@ -2562,6 +2562,13 @@ impl GameListModel {
                         "heroic" => crate::core::store::StoreManager::scan_heroic_games(),
                         "lutris" => crate::core::store::StoreManager::scan_lutris_games(),
                         "epic" => crate::core::store::StoreManager::scan_legendary_games(),
+                        "gog" => {
+                            crate::core::gog::GogDownloader::list_games()
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|g| crate::core::gog::GogDownloader::to_rom(&g))
+                                .collect()
+                        },
                         _ => Vec::new(),
                     };
 
@@ -2695,7 +2702,8 @@ impl GameListModel {
                  let mut working_dir = std::path::Path::new(&rom_path).parent().map(|p| p.to_string_lossy().to_string());
 
                   let p_type = platform_type.unwrap_or_default();
-                  let is_pc = p_type.contains("PC") || rom_path.starts_with("epic://");
+                  let is_pc = p_type.contains("PC") || p_type == "gog" || rom_path.starts_with("epic://");
+
                   
                   let mut env_prefix = String::new();
                   let mut wrapper_cmd = String::new();
@@ -2754,7 +2762,7 @@ impl GameListModel {
 
                               extra = c.extra_args.clone().unwrap_or_default();
 
-                              if p_type == "PC (Windows)" || rom_path.starts_with("epic://") {
+                              if p_type == "PC (Windows)" || p_type == "gog" || rom_path.starts_with("epic://") {
                                   env_prefix.push_str("UMU_LOG=1 ");
                                   
                                   if let Some(v) = c.umu_proton_version.as_ref().filter(|s| !s.trim().is_empty()) { 
@@ -2809,7 +2817,7 @@ impl GameListModel {
 
                               extra = platform_defaults.as_ref().and_then(|d| d["extra_args"].as_str().map(|s| s.to_string())).unwrap_or_default();
 
-                              if p_type == "PC (Windows)" || rom_path.starts_with("epic://") {
+                               if p_type == "PC (Windows)" || p_type == "gog" || rom_path.starts_with("epic://") {
                                   env_prefix.push_str("UMU_LOG=1 ");
                                   
                                   let proton = platform_defaults.as_ref().and_then(|d| d["umu_proton_version"].as_str().map(|s| s.to_string())).filter(|s| !s.trim().is_empty());
@@ -2868,7 +2876,7 @@ impl GameListModel {
                   } else if is_pc {
                       let base_cmd = if command_template.is_empty() || command_template == "%ROM%" { "%ROM%" } else { &command_template };
                       
-                      if p_type == "PC (Windows)" {
+                      if p_type == "PC (Windows)" || p_type == "gog" {
                           let runner = if base_cmd.contains("umu-run") { "" } else { "umu-run " };
                           command_template = format!("{} {}{}{} {}", env_prefix.trim(), wrapper_cmd, runner, base_cmd, extra).trim().to_string();
                       } else {
@@ -4487,7 +4495,7 @@ impl GameListModel {
             }
 
             // 3. Search Games (Enhanced)
-            let sql_games = "SELECT r.id, COALESCE(m.title, r.filename), p.name, p.platform_type, r.icon_path, r.boxart_path 
+            let sql_games = "SELECT r.id, COALESCE(m.title, r.filename), p.name, p.platform_type, r.icon_path, r.boxart_path, p.icon 
                              FROM roms r
                              LEFT JOIN metadata m ON r.id = m.rom_id
                              JOIN platforms p ON r.platform_id = p.id
@@ -4508,6 +4516,7 @@ impl GameListModel {
                         "type": row.get::<_, String>(3)?,
                         "icon": resolve_asset_path(&row.get::<_, Option<String>>(4)?.unwrap_or_default()),
                         "boxart": resolve_asset_path(&row.get::<_, Option<String>>(5)?.unwrap_or_default()),
+                        "platform_icon": resolve_asset_path(&row.get::<_, Option<String>>(6)?.unwrap_or_default()),
                         "result_type": "game"
                     }))
                 }) {

@@ -54,6 +54,10 @@ pub struct StoreBridge {
     folderAnalyzed: qt_signal!(json: QString),
     steamAchievementsFinished: qt_signal!(json: QString, success: bool, message: QString),
     exodosLibraryFinished: qt_signal!(results: QString),
+    gogLibraryFinished: qt_signal!(results: QString),
+    gogAuthUrlReceived: qt_signal!(url: QString),
+    gogAuthFinished: qt_signal!(success: bool, message: QString),
+    gogLogoutFinished: qt_signal!(success: bool, message: QString),
 
     // Methods
     search_store: qt_method!(fn(&self, query: String)),
@@ -88,6 +92,13 @@ pub struct StoreBridge {
     resume_legendary_install: qt_method!(fn(&self, app_name: String)),
     cancel_legendary_install: qt_method!(fn(&self, app_name: String)),
     import_exodos_games: qt_method!(fn(&self, roms_json: String, platform_id: String, exodos_base_path: String)),
+    refresh_gog_library: qt_method!(fn(&self)),
+    check_gog_auth: qt_method!(fn(&self) -> bool),
+    get_gog_auth_url: qt_method!(fn(&self)),
+    authenticate_gog: qt_method!(fn(&self, redirect_url: String)),
+    logout_gog: qt_method!(fn(&self)),
+    install_gog_game: qt_method!(fn(&self, slug: String, install_path: String, platform: String, no_dependencies: bool)),
+    cancel_gog_install: qt_method!(fn(&self, slug: String)),
 
     // Internal
     tx: RefCell<Option<mpsc::Sender<StoreMsg>>>,
@@ -119,6 +130,10 @@ enum StoreMsg {
     SteamAchievementsFinished(String, bool, String),
     InstallStarted(String, u32),
     ExoDosLibraryFinished(String),
+    GogLibraryFinished(String),
+    GogAuthUrlReceived(String),
+    GogAuthFinished(bool, String),
+    GogLogoutFinished(bool, String),
 }
 
 #[allow(non_snake_case)]
@@ -179,6 +194,10 @@ impl StoreBridge {
                     StoreMsg::FolderAnalyzed(j) => self.folderAnalyzed(j.into()),
                     StoreMsg::SteamAchievementsFinished(j, s, m) => self.steamAchievementsFinished(j.into(), s, m.into()),
                     StoreMsg::ExoDosLibraryFinished(j) => self.exodosLibraryFinished(j.into()),
+                    StoreMsg::GogLibraryFinished(j) => self.gogLibraryFinished(j.into()),
+                    StoreMsg::GogAuthUrlReceived(url) => self.gogAuthUrlReceived(url.into()),
+                    StoreMsg::GogAuthFinished(s, m) => self.gogAuthFinished(s, m.into()),
+                    StoreMsg::GogLogoutFinished(s, m) => self.gogLogoutFinished(s, m.into()),
                 }
             }
         }
@@ -660,7 +679,6 @@ impl StoreBridge {
                             if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
                                 let rom_id = format!("legendary-{}", app_name_clone);
                                 let conn = db.get_connection();
-                                let _ = conn.execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id]);
                                 let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
                             }
                             let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, true, "Installed successfully".into()));
@@ -853,7 +871,6 @@ impl StoreBridge {
                             if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
                                 let rom_id = format!("legendary-{}", app_name_clone);
                                 let conn = db.get_connection();
-                                let _ = conn.execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id]);
                                 let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
                             }
                             let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, true, "Imported successfully".into()));
@@ -1423,5 +1440,264 @@ impl StoreBridge {
                 }
             }
         });
+    }
+
+    fn check_gog_auth(&self) -> bool {
+        crate::core::gog::GogDownloader::is_authenticated()
+    }
+
+    fn refresh_gog_library(&self) {
+        log::debug!("[StoreBridge] Refreshing GOG library via lgogdownloader --list");
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            match crate::core::gog::GogDownloader::list_games() {
+                Ok(games) => {
+                    // Convert to ROM-like JSON the same way legendary does, so QML sees the
+                    // same fields as the Epic import dialog.
+                    let roms: Vec<serde_json::Value> = games
+                        .iter()
+                        .map(|g| {
+                            let rom = crate::core::gog::GogDownloader::to_rom(g);
+                            serde_json::json!({
+                                "id":              rom.id,
+                                "platform_id":     rom.platform_id,
+                                "path":            rom.path,
+                                "filename":        rom.filename,
+                                "title":           rom.title.unwrap_or_default(),
+                                "icon_path":       rom.icon_path.unwrap_or_default(),
+                                "boxart_path":     rom.boxart_path.unwrap_or_default(),
+                                "background_path": rom.background_path.unwrap_or_default(),
+                                "platform_name":   rom.platform_name.unwrap_or_default(),
+                                "platform_type":   rom.platform_type.unwrap_or_default(),
+                                "tags":            rom.tags.unwrap_or_default(),
+                                "developer":       rom.developer.unwrap_or_default(),
+                                "genre":           rom.genre.unwrap_or_default(),
+                                "description":     rom.description.unwrap_or_default(),
+                                "total_play_time": rom.total_play_time.unwrap_or(0),
+                                "last_played":     rom.last_played.unwrap_or(0),
+                                "is_installed":    rom.is_installed.unwrap_or(false),
+                                "cloud_saves_supported": false
+                            })
+                        })
+                        .collect();
+                    let json = serde_json::to_string(&roms).unwrap_or_else(|_| "[]".into());
+                    let _ = tx.send(StoreMsg::GogLibraryFinished(json));
+                }
+                Err(e) => {
+                    log::error!("[GogBridge] list_games failed: {}", e);
+                    let _ = tx.send(StoreMsg::GogLibraryFinished("[]".into()));
+                }
+            }
+        });
+    }
+
+    fn get_gog_auth_url(&self) {
+        log::debug!("[StoreBridge] get_gog_auth_url() called from QML");
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            match crate::core::gog::GogDownloader::get_auth_url() {
+                Ok(url) => {
+                    log::debug!("[StoreBridge] GOG auth URL: {}", url);
+                    let _ = tx.send(StoreMsg::GogAuthUrlReceived(url));
+                }
+                Err(e) => {
+                    log::error!("[GogBridge] get_auth_url failed: {}", e);
+                    let _ = tx.send(StoreMsg::GogAuthFinished(false, e.to_string()));
+                }
+            }
+        });
+    }
+
+    fn authenticate_gog(&self, redirect_url: String) {
+        log::debug!("[StoreBridge] authenticate_gog() called");
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            match crate::core::gog::GogDownloader::authenticate(&redirect_url) {
+                Ok(_) => {
+                    let _ = tx.send(StoreMsg::GogAuthFinished(true, "Authentication successful".into()));
+                }
+                Err(e) => {
+                    log::error!("[GogBridge] authenticate failed: {}", e);
+                    let _ = tx.send(StoreMsg::GogAuthFinished(false, e.to_string()));
+                }
+            }
+        });
+    }
+
+    fn logout_gog(&self) {
+        log::debug!("[StoreBridge] logout_gog() called");
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            match crate::core::gog::GogDownloader::logout() {
+                Ok(_) => {
+                    let _ = tx.send(StoreMsg::GogLogoutFinished(true, "Logged out successfully".into()));
+                }
+                Err(e) => {
+                    log::error!("[GogBridge] logout failed: {}", e);
+                    let _ = tx.send(StoreMsg::GogLogoutFinished(false, e.to_string()));
+                }
+            }
+        });
+    }
+
+    fn install_gog_game(&self, slug: String, install_path: String, platform: String, no_dependencies: bool) {
+        log::info!("[GogBridge] Starting install: slug={} path={} platform={}", slug, install_path, platform);
+        self.ensure_channels();
+
+        std::thread::spawn(move || {
+            let rom_id = format!("gog-{}", slug);
+
+            let _ = broadcast_msg(StoreMsg::InstallProgress(
+                rom_id.clone(), 0.0, "{\"raw_line\":\"Initialising lgogdownloader...\"}".into()
+            ));
+
+            match crate::core::gog::GogDownloader::install_game(&slug, &install_path, &platform, no_dependencies) {
+                Ok(mut child) => {
+                    let _ = broadcast_msg(StoreMsg::InstallStarted(rom_id.clone(), child.id()));
+
+                    use std::io::{BufReader, Read};
+
+                    // Read both stdout and stderr — lgogdownloader writes progress to both
+                    // depending on version. Merge by draining stderr in a thread.
+                    let stderr = child.stderr.take().unwrap();
+                    let stdout = child.stdout.take().unwrap();
+                    let rom_id_stderr = rom_id.clone();
+                    
+                    let info_path_mutex = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+
+                    let parse_and_broadcast = |reader: Box<dyn Read + Send>, rid: String, path_mutex: std::sync::Arc<std::sync::Mutex<Option<String>>>, base_install_path: String| {
+                        let mut reader = BufReader::new(reader);
+                        let mut buf = Vec::new();
+                        let mut last_progress = 0.0f32;
+
+                        for byte_result in (&mut reader).bytes() {
+                            if let Ok(b) = byte_result {
+                                if b == b'\r' || b == b'\n' {
+                                    if !buf.is_empty() {
+                                        if let Ok(line) = String::from_utf8(buf.clone()) {
+                                            let clean = crate::core::gog::strip_ansi(line.trim());
+                                            
+                                            // Extract the game directory created by lgogdownloader
+                                            if path_mutex.lock().unwrap().is_none() {
+                                                let mut root_path = base_install_path.clone();
+                                                if !root_path.ends_with('/') { root_path.push('/'); }
+                                                
+                                                if let Some(idx) = clean.find(&root_path) {
+                                                    let rest = &clean[idx + root_path.len()..];
+                                                    if let Some(slash_idx) = rest.find('/') {
+                                                        let game_folder = &rest[..slash_idx];
+                                                        let exact_dir = format!("{}{}", root_path, game_folder);
+                                                        *path_mutex.lock().unwrap() = Some(exact_dir);
+                                                    }
+                                                }
+                                            }
+
+                                            if let Some((p, status_json)) = crate::core::gog::GogDownloader::parse_install_progress(&line) {
+                                                last_progress = p;
+                                                let _ = broadcast_msg(StoreMsg::InstallProgress(rid.clone(), p, status_json));
+                                            }
+                                        }
+                                        buf.clear();
+                                    }
+                                } else {
+                                    buf.push(b);
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                        last_progress
+                    };
+
+                    let rom_id_stdout = rom_id.clone();
+                    let info_path_mutex_clone = info_path_mutex.clone();
+                    let install_path_stdout = install_path.clone();
+                    let stdout_handle = std::thread::spawn(move || {
+                        parse_and_broadcast(Box::new(stdout), rom_id_stdout, info_path_mutex_clone, install_path_stdout);
+                    });
+
+                    let info_path_mutex_stderr = info_path_mutex.clone();
+                    let install_path_stderr = install_path.clone();
+                    parse_and_broadcast(Box::new(stderr), rom_id_stderr, info_path_mutex_stderr, install_path_stderr);
+
+                    match child.wait() {
+                        Ok(status) if status.success() => {
+                            let _ = stdout_handle.join();
+                            
+                            let captured_dir = info_path_mutex.lock().unwrap().clone();
+                            let exe_path = if let Some(game_dir) = captured_dir {
+                                log::info!("[GogBridge] Extracted Exact Game Directory: {}", game_dir);
+                                crate::core::gog::GogDownloader::find_exe_from_info_dir(&game_dir)
+                                    .unwrap_or_else(|| game_dir.clone())
+                            } else {
+                                log::warn!("[GogBridge] Failed to extract the game directory from output stream.");
+                                install_path.clone()
+                            };
+
+                            log::info!("[GogBridge] Install complete, exe_path={}", exe_path);
+
+                            // Update the ROM record
+                            let db_path = crate::core::paths::get_data_dir().join("games.db");
+                            if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                                let conn = db.get_connection();
+                                
+                                let exe_filename = std::path::Path::new(&exe_path)
+                                    .file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy()
+                                    .to_string();
+
+                                let _ = conn.execute(
+                                    "UPDATE roms SET path = ?1, filename = ?2 WHERE id = ?3",
+                                    [&exe_path, &exe_filename, &rom_id],
+                                );
+                                let _ = conn.execute(
+                                    "UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1",
+                                    [&rom_id],
+                                );
+                            }
+
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(
+                                rom_id, true, "Installed successfully".into()
+                            ));
+                        }
+                        Ok(status) => {
+                            let msg = if status.signal() == Some(15) {
+                                "Cancelled".to_string()
+                            } else {
+                                format!("lgogdownloader exited with status: {}", status)
+                            };
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(rom_id, false, msg));
+                        }
+                        Err(e) => {
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(rom_id, false, e.to_string()));
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("[GogBridge] install failed to start: {}", e);
+                    let _ = broadcast_msg(StoreMsg::InstallFinished(rom_id, false, e.to_string()));
+                }
+            }
+        });
+    }
+
+    fn cancel_gog_install(&self, slug: String) {
+        let rom_id = format!("gog-{}", slug);
+        let pid_opt = {
+            let state = get_global_state().lock().unwrap();
+            state.active_processes.get(&rom_id).copied()
+        };
+        if let Some(pid) = pid_opt {
+            log::info!("[GogBridge] Cancelling install for {} (PID {})", rom_id, pid);
+            let _ = std::process::Command::new("kill")
+                .arg("-TERM")
+                .arg(pid.to_string())
+                .status();
+        }
     }
 }

@@ -803,6 +803,8 @@ ApplicationWindow {
         // Handle Legendary Installation Trigger
         var path = ""
         var isInstalled = true
+        var platformType = ""
+        var gameTitle = ""
         var idx = gameModel.getRowById(id)
         if (idx >= 0) {
             path = gameModel.data(gameModel.index(idx, 0), 258) // PathRole
@@ -810,7 +812,10 @@ ApplicationWindow {
             try {
                 var meta = JSON.parse(metaJson)
                 isInstalled = (typeof meta.is_installed !== "undefined") ? meta.is_installed : true
+                gameTitle = meta.title || ""
             } catch(e) {}
+            // PlatformTypeRole = 261 in game_model
+            platformType = gameModel.data(gameModel.index(idx, 0), 261) || ""
         }
         
         if (path.startsWith("epic://") && !isInstalled) {
@@ -821,6 +826,15 @@ ApplicationWindow {
                 epicInstallPathDialog.open()
                 return
             }
+        }
+
+        // GOG uninstalled intercept — path is "/gog/<slug>" placeholder
+        if ((platformType === "gog" || path.startsWith("/gog/")) && !isInstalled) {
+            var gogSlug = path.replace("/gog/", "").split("/")[0]
+            gogInstallDialog.slug = gogSlug
+            gogInstallDialog.gameTitle = gameTitle || gogSlug
+            gogInstallDialog.open()
+            return
         }
 
         gameModel.launchGame(id)
@@ -2870,6 +2884,10 @@ ApplicationWindow {
         localAppImportDialog.openImport()
     }
 
+    function openGogImport() {
+        gogImportDialog.openImport()
+    }
+
     FirstRunWizard {
         id: firstRunWizard
         raBridge: raBridge
@@ -2912,6 +2930,16 @@ ApplicationWindow {
 
     EpicImportDialog {
         id: epicImportDialog
+    }
+
+    GogImportDialog {
+        id: gogImportDialog
+    }
+
+    GogInstallDialog {
+        id: gogInstallDialog
+        appSettings: appSettings
+        storeBridge: storeBridge
     }
 
     LutrisImportDialog {
