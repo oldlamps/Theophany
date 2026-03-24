@@ -125,6 +125,8 @@ struct SettingsData {
     pub custom_legendary_path: String,
     #[serde(default = "default_install_location")]
     pub default_install_location: String,
+    #[serde(default = "default_true")]
+    pub grid_title_overlay: bool,
 }
 
 impl Default for SettingsData {
@@ -189,6 +191,7 @@ impl Default for SettingsData {
             use_custom_legendary: false,
             custom_legendary_path: String::new(),
             default_install_location: default_install_location(),
+            grid_title_overlay: true,
         }
     }
 }
@@ -311,6 +314,7 @@ pub struct AppSettings {
     hidePlatformsSidebar: qt_property!(bool; NOTIFY settingsChanged),
     firstRunCompleted: qt_property!(bool; NOTIFY settingsChanged),
     checkForUpdatesOnStartup: qt_property!(bool; NOTIFY settingsChanged),
+    gridTitleOverlay: qt_property!(bool; NOTIFY settingsChanged),
     steamId: qt_property!(QString; NOTIFY settingsChanged),
     steamApiKey: qt_property!(QString; NOTIFY settingsChanged),
     exodosPath: qt_property!(QString; NOTIFY settingsChanged),
@@ -454,6 +458,7 @@ impl AppSettings {
             use_custom_legendary: self.useCustomLegendary,
             custom_legendary_path: self.customLegendaryPath.to_string(),
             default_install_location: self.defaultInstallLocation.to_string(),
+            grid_title_overlay: self.gridTitleOverlay,
         };
         
         if let Ok(json) = serde_json::to_string_pretty(&data) {
@@ -557,6 +562,7 @@ impl AppSettings {
                     self.useCustomLegendary = data.use_custom_legendary;
                     self.customLegendaryPath = QString::from(data.custom_legendary_path);
                     self.defaultInstallLocation = QString::from(if data.default_install_location.is_empty() { default_install_location() } else { data.default_install_location });
+                    self.gridTitleOverlay = data.grid_title_overlay;
                     
                     self.settingsChanged();
                 }
@@ -663,6 +669,7 @@ impl Default for AppSettings {
             useCustomLegendary: false,
             customLegendaryPath: Default::default(),
             defaultInstallLocation: QString::from(default_install_location()),
+            gridTitleOverlay: true,
             
             settingsChanged: Default::default(),
             closeToTrayChanged: Default::default(),
@@ -737,6 +744,7 @@ impl Default for AppSettings {
         s.useCustomLegendary = s.data.use_custom_legendary;
         s.customLegendaryPath = QString::from(s.data.custom_legendary_path.clone());
         s.defaultInstallLocation = QString::from(s.data.default_install_location.clone());
+        s.gridTitleOverlay = s.data.grid_title_overlay;
  
         s
     }

@@ -46,16 +46,37 @@ impl BulkImporter {
             if existing_ids.contains(&rom.id) {
                 log::info!("[BulkImporter] ROM already exists, updating metadata: {}", rom.id);
                 // Even if exists, we update metadata from the scan to catch enrichment (e.g. descriptions, developer)
-                let mut meta = GameMetadata::default();
+                let mut meta = db.get_metadata(&final_rom.id).ok().flatten().unwrap_or_default();
+                let existing_is_installed = meta.is_installed;
+
                 meta.rom_id = final_rom.id.clone();
-                meta.title = final_rom.title.clone();
-                meta.developer = final_rom.developer.clone();
-                meta.publisher = final_rom.publisher.clone();
-                meta.genre = final_rom.genre.clone();
-                meta.description = final_rom.description.clone();
-                meta.tags = final_rom.tags.clone();
-                meta.release_date = final_rom.release_date.clone();
+                if meta.title.as_deref().unwrap_or("").is_empty() {
+                    meta.title = final_rom.title.clone();
+                }
+                if meta.developer.as_deref().unwrap_or("").is_empty() {
+                    meta.developer = final_rom.developer.clone();
+                }
+                if meta.publisher.as_deref().unwrap_or("").is_empty() {
+                    meta.publisher = final_rom.publisher.clone();
+                }
+                if meta.genre.as_deref().unwrap_or("").is_empty() {
+                    meta.genre = final_rom.genre.clone();
+                }
+                if meta.description.as_deref().unwrap_or("").is_empty() {
+                    meta.description = final_rom.description.clone();
+                }
+                if meta.tags.as_deref().unwrap_or("").is_empty() {
+                    meta.tags = final_rom.tags.clone();
+                }
+                if meta.release_date.as_deref().unwrap_or("").is_empty() {
+                    meta.release_date = final_rom.release_date.clone();
+                }
                 meta.cloud_saves_supported = final_rom.cloud_saves_supported.unwrap_or(false);
+
+                // Preserve local is_installed if true, or update if scan says it's newly installed
+                if final_rom.is_installed.unwrap_or(false) || existing_is_installed {
+                    meta.is_installed = true;
+                }
 
                 if let Some(played) = final_rom.last_played {
                     meta.last_played = Some(played);
@@ -347,6 +368,7 @@ impl BulkImporter {
                                     cloud_saves_enabled: defaults.get("cloud_saves_enabled").and_then(|v| v.as_bool()),
                                     cloud_save_path: defaults.get("cloud_save_path").and_then(|v| v.as_str()).map(|s| s.to_string()),
                                     cloud_save_auto_sync: defaults.get("cloud_save_auto_sync").and_then(|v| v.as_bool()),
+                                    steam_compat_mode: defaults.get("steam_compat_mode").and_then(|v| v.as_bool()).or(Some(true)),
                                 };
                                 let _ = db.insert_pc_config(&new_config);
                             }

@@ -224,10 +224,12 @@ Rectangle {
 
                         window.loadGameDetails(idx)
                         root.checkImages() // Force local image check too
+                        root.checkVideo()
                     }
                 } else {
                     // Fallback: local refresh
                     root.checkImages()
+                    root.checkVideo()
                 }
             }
         }
@@ -2493,7 +2495,10 @@ Rectangle {
 
     ResourceManagerDialog {
         id: resourceManagerDialog
-        onResourcesChanged: root.checkImages() // Refresh
+        onResourcesChanged: {
+            root.checkImages() // Refresh
+            root.checkVideo()
+        }
     }
     
     // Logic to parse JSON

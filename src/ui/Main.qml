@@ -1954,8 +1954,8 @@ ApplicationWindow {
                     // Index 0: Grid
                     GridView {
                         id: gameGrid
-                        cellWidth: 207 * window.gridScale
-                        cellHeight: 299 * window.gridScale
+                        cellWidth: 238 * window.gridScale
+                        cellHeight: (appSettings.gridTitleOverlay ? 327 : 357) * window.gridScale
                         model: gameModel
                         focus: true
                         clip: true
@@ -2068,10 +2068,11 @@ ApplicationWindow {
                                     id: poster
                                     anchors.top: parent.top
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    width: parent.width - 20
+                                    width: parent.width - (20 * window.gridScale)
                                     height: width * 1.5
                                     color: Theme.secondaryBackground
                                     radius: 8
+                                    clip: true
                                     
                                     // Shadow/Glow - Only for selected item to avoid rapid layer allocation during hover/scroll
                                     layer.enabled: delegateRoot.isSelected
@@ -2157,26 +2158,111 @@ ApplicationWindow {
                                         color: Theme.secondaryText
                                         visible: parent.children[0].status !== Image.Ready && gameBoxArt === ""
                                     }
+
+                                    // Cinematic Overlay (Visible when setting is ON)
+                                    Rectangle {
+                                        visible: appSettings.gridTitleOverlay
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width
+                                        height: parent.height * 0.33
+                                        clip: true
+                                        radius: 8
+
+                                        // Subtle background tint for readability on bright covers
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            color: "black"
+                                            opacity: 0.15
+                                        }
+
+                                        gradient: Gradient {
+                                            GradientStop { position: 0.0; color: "transparent" }
+                                            GradientStop { position: 0.4; color: Qt.rgba(0, 0, 0, 0.45) }
+                                            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.9) }
+                                        }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 12 * window.gridScale
+                                            spacing: 10 * window.gridScale
+
+                                            Image {
+                                                id: overlayIcon
+                                                source: (typeof gamePlatformIcon !== "undefined" && gamePlatformIcon !== "") ? gamePlatformIcon : ""
+                                                Layout.preferredWidth: 20 * window.gridScale
+                                                Layout.preferredHeight: 20 * window.gridScale
+                                                visible: source != ""
+                                                fillMode: Image.PreserveAspectFit
+
+                                                layer.enabled: true
+                                                layer.effect: DropShadow {
+                                                    color: "black"
+                                                    radius: 4
+                                                    samples: 9
+                                                    horizontalOffset: 0
+                                                    verticalOffset: 1
+                                                }
+                                            }
+
+                                            Text {
+                                                text: (typeof gameTitle !== "undefined") ? gameTitle : ""
+                                                color: "white"
+                                                font.pixelSize: Math.max(12, 14 * window.gridScale)
+                                                font.bold: true
+                                                elide: Text.ElideRight
+                                                wrapMode: Text.Wrap
+                                                Layout.fillWidth: true
+                                                Layout.alignment: Qt.AlignVCenter
+
+                                                layer.enabled: true
+                                                layer.effect: DropShadow {
+                                                    color: "black"
+                                                    radius: 4
+                                                    samples: 9
+                                                    horizontalOffset: 0
+                                                    verticalOffset: 1
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
-                                // Title Text
-                                Text {
+                                // Separate Title Area (Visible when setting is OFF)
+                                ColumnLayout {
+                                    visible: !appSettings.gridTitleOverlay
                                     anchors.top: poster.bottom
-                                    anchors.topMargin: 10
                                     anchors.left: parent.left
                                     anchors.right: parent.right
-                                    anchors.bottom: parent.bottom
-                                    text: gameTitle
-                                    color: Theme.text
-                                    font.pixelSize: 13
-                                    elide: Text.ElideRight
-                                    horizontalAlignment: Text.AlignHCenter
-                                    wrapMode: Text.Wrap
+                                    anchors.margins: 10 * window.gridScale
+                                    spacing: 4
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        Image {
+                                            source: (typeof gamePlatformIcon !== "undefined" && gamePlatformIcon !== "") ? gamePlatformIcon : ""
+                                            Layout.preferredWidth: 16 * window.gridScale
+                                            Layout.preferredHeight: 16 * window.gridScale
+                                            visible: source != ""
+                                            fillMode: Image.PreserveAspectFit
+                                        }
+
+                                        Text {
+                                            text: (typeof gameTitle !== "undefined") ? gameTitle : ""
+                                            color: Theme.text
+                                            font.pixelSize: 12 * window.gridScale
+                                            font.bold: true
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                        }
+                                    }
                                 }
-                                
+
                                 MouseArea {
                                     anchors.fill: parent
                                     hoverEnabled: true
+
                                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                                     onEntered: {
                                         delegateRoot.hovered = true
@@ -3125,6 +3211,7 @@ ApplicationWindow {
         currentDefaultProtonGamescopeFullscreen: appSettings.defaultProtonGamescopeFullscreen
         currentHidePlatformsSidebar: appSettings.hidePlatformsSidebar
         currentCheckForUpdatesOnStartup: appSettings.checkForUpdatesOnStartup
+        currentGridTitleOverlay: appSettings.gridTitleOverlay
         currentUseCustomLegendary: appSettings.useCustomLegendary
         currentCustomLegendaryPath: appSettings.customLegendaryPath
         currentDefaultInstallLocation: appSettings.defaultInstallLocation
@@ -3133,12 +3220,13 @@ ApplicationWindow {
         availableRegions: gameModel.getRegions()
         availableScrapers: gameModel.getAvailableScrapers()
         
-        onSettingsApplied: (viewMode, showFilter, defRegion, themeName, raUser, raToken, raEnabled, showTray, closeToTray, aiEnabled, ollamaUrl, ollamaModel, detailsPreferVideo, ignoreTheInSort, aiDescriptionPrompt, defaultIgnoreOnDelete, activeMeta, activeImage, geminiKey, openaiKey, llmProvider, saveHeroicLocally, autoRescan, confirmQuit, gridScale, useCustomYtdlp, customYtdlpPath, defaultProtonRunner, defaultProtonPrefix, defaultProtonWrapper, defaultProtonUseGamescope, defaultProtonUseMangohud, defaultProtonGamescopeArgs, defaultProtonGamescopeW, defaultProtonGamescopeH, defaultProtonGamescopeOutW, defaultProtonGamescopeOutH, defaultProtonGamescopeRefresh, defaultProtonGamescopeScaling, defaultProtonGamescopeUpscaler, defaultProtonGamescopeFullscreen, hidePlatformsSidebar, checkUpdates, useCustomLegendary, customLegendaryPath, defaultInstallLocation) => {
+        onSettingsApplied: (viewMode, showFilter, defRegion, themeName, raUser, raToken, raEnabled, showTray, closeToTray, aiEnabled, ollamaUrl, ollamaModel, detailsPreferVideo, ignoreTheInSort, aiDescriptionPrompt, defaultIgnoreOnDelete, activeMeta, activeImage, geminiKey, openaiKey, llmProvider, saveHeroicLocally, autoRescan, confirmQuit, gridScale, gridTitleOverlay, useCustomYtdlp, customYtdlpPath, defaultProtonRunner, defaultProtonPrefix, defaultProtonWrapper, defaultProtonUseGamescope, defaultProtonUseMangohud, defaultProtonGamescopeArgs, defaultProtonGamescopeW, defaultProtonGamescopeH, defaultProtonGamescopeOutW, defaultProtonGamescopeOutH, defaultProtonGamescopeRefresh, defaultProtonGamescopeScaling, defaultProtonGamescopeUpscaler, defaultProtonGamescopeFullscreen, hidePlatformsSidebar, checkUpdates, useCustomLegendary, customLegendaryPath, defaultInstallLocation) => {
              // Update Settings
              appSettings.defaultView = viewMode
              appSettings.showFilterBar = showFilter
              appSettings.defaultRegion = defRegion
              appSettings.themeName = themeName
+             appSettings.gridTitleOverlay = gridTitleOverlay
              
              var raChanged = (appSettings.retroAchievementsUser !== raUser) || 
                              (appSettings.retroAchievementsToken !== raToken) ||

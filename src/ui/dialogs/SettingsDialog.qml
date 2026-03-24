@@ -32,7 +32,7 @@ Dialog {
         }
     }
 
-    signal settingsApplied(int viewMode, bool showFilter, string defRegion, string themeName, string raUser, string raToken, bool raEnabled, bool showTray, bool closeToTray, bool aiEnabled, string ollamaUrl, string ollamaModel, bool detailsPreferVideo, bool ignoreTheInSort, string aiDescriptionPrompt, bool defaultIgnoreOnDelete, string activeMeta, string activeImage, string geminiKey, string openaiKey, string llmProvider, bool saveHeroicLocally, bool autoRescan, bool confirmQuit, real gridScale, bool useCustomYtdlp, string customYtdlpPath, string defaultProtonRunner, string defaultProtonPrefix, string defaultProtonWrapper, bool defaultProtonUseGamescope, bool defaultProtonUseMangohud, string defaultProtonGamescopeArgs, string defaultProtonGamescopeW, string defaultProtonGamescopeH, string defaultProtonGamescopeOutW, string defaultProtonGamescopeOutH, string defaultProtonGamescopeRefresh, int defaultProtonGamescopeScaling, int defaultProtonGamescopeUpscaler, bool defaultProtonGamescopeFullscreen, bool hidePlatformsSidebar, bool checkUpdates, bool useCustomLegendary, string customLegendaryPath, string defaultInstallLocation)
+    signal settingsApplied(int viewMode, bool showFilter, string defRegion, string themeName, string raUser, string raToken, bool raEnabled, bool showTray, bool closeToTray, bool aiEnabled, string ollamaUrl, string ollamaModel, bool detailsPreferVideo, bool ignoreTheInSort, string aiDescriptionPrompt, bool defaultIgnoreOnDelete, string activeMeta, string activeImage, string geminiKey, string openaiKey, string llmProvider, bool saveHeroicLocally, bool autoRescan, bool confirmQuit, real gridScale, bool gridTitleOverlay, bool useCustomYtdlp, string customYtdlpPath, string defaultProtonRunner, string defaultProtonPrefix, string defaultProtonWrapper, bool defaultProtonUseGamescope, bool defaultProtonUseMangohud, string defaultProtonGamescopeArgs, string defaultProtonGamescopeW, string defaultProtonGamescopeH, string defaultProtonGamescopeOutW, string defaultProtonGamescopeOutH, string defaultProtonGamescopeRefresh, int defaultProtonGamescopeScaling, int defaultProtonGamescopeUpscaler, bool defaultProtonGamescopeFullscreen, bool hidePlatformsSidebar, bool checkUpdates, bool useCustomLegendary, string customLegendaryPath, string defaultInstallLocation)
 
     property int currentViewMode: 0
     property bool currentShowFilterBar: false
@@ -62,6 +62,7 @@ Dialog {
     property bool currentAutoRescanOnStartup: false
     property bool currentConfirmOnQuit: true
     property real currentGridScale: 1.0
+    property bool currentGridTitleOverlay: true
     property bool currentUseCustomYtdlp: false
     property string currentCustomYtdlpPath: ""
     property string currentDefaultProtonRunner: ""
@@ -449,6 +450,7 @@ Dialog {
         ignoreTheInSortSwitch.checked = currentIgnoreTheInSort
         defaultIgnoreOnDeleteSwitch.checked = currentDefaultIgnoreOnDelete
         gridScaleSlider.value = currentGridScale
+        gridTitleOverlaySwitch.checked = currentGridTitleOverlay
 
         aiOnBtn.checked = currentAiEnabled
         ollamaUrlField.text = currentOllamaUrl !== "" ? currentOllamaUrl : "http://localhost:11434"
@@ -742,6 +744,13 @@ Dialog {
                                     spacing: 15
                                     TheophanySwitch { id: hidePlatformsSidebarSwitch; checked: root.currentHidePlatformsSidebar }
                                     Label { text: "Hide Platforms section from sidebar"; color: Theme.text }
+                                }
+
+                                Label { text: "Grid Options"; color: Theme.secondaryText; font.bold: true }
+                                RowLayout {
+                                    spacing: 15
+                                    TheophanySwitch { id: gridTitleOverlaySwitch; checked: root.currentGridTitleOverlay }
+                                    Label { text: "Show title inside the block (Overlay mode)"; color: Theme.text }
                                 }
                             }
                         }
@@ -1708,6 +1717,7 @@ Dialog {
                                     autoRescanSwitch.checked,
                                     confirmQuitSwitch.checked,
                                     gridScaleSlider.value,
+                                    gridTitleOverlaySwitch.checked,
                                     customYtdlpSwitch.checked,
                                     ytdlpPathField.text,
                                     protonDefaultCombo.currentValue,

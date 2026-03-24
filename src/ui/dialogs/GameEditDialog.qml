@@ -211,6 +211,7 @@ Dialog {
             workingDirField.placeholderText = platformDefaults.working_dir || "EXE directory"
 
             mangohudCheck.checked = (currentConfig.use_mangohud !== undefined) ? !!currentConfig.use_mangohud : !!platformDefaults.use_mangohud
+            steamCompatCheck.checked = (currentConfig.steam_compat_mode !== undefined) ? !!currentConfig.steam_compat_mode : (platformDefaults.steam_compat_mode !== undefined ? !!platformDefaults.steam_compat_mode : true)
             preLaunchField.text = (currentConfig.pre_launch_script !== undefined) ? (currentConfig.pre_launch_script || "") : ""
             postLaunchField.text = (currentConfig.post_launch_script !== undefined) ? (currentConfig.post_launch_script || "") : ""
 
@@ -1298,6 +1299,12 @@ Dialog {
                                             text: "Enable MangoHud (Performance Overlay)"
                                             Layout.topMargin: 5
                                         }
+
+                                        TheophanyCheckBox {
+                                            id: steamCompatCheck
+                                            text: "Steam Compatibility Mode (Sets STEAM_COMPAT_* variables)"
+                                            checked: true
+                                        }
                                     }
 
                                     Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
@@ -1592,6 +1599,7 @@ Dialog {
                 "U": gsUpscalerCombo.currentIndex,
                 "f": gsFullscreenCheck.checked
             },
+            "steam_compat_mode": steamCompatCheck.checked,
             "env_vars": JSON.stringify(envs),
             "extra_args": extraArgsField.text
         }

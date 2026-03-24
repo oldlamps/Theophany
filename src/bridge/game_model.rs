@@ -1705,6 +1705,7 @@ impl GameListModel {
                              cloud_saves_enabled: None,
                              cloud_save_path: None,
                              cloud_save_auto_sync: None,
+                             steam_compat_mode: Some(true),
                          };
                         
                         if let Err(e) = db.insert_pc_config(&new_config) {
@@ -2593,11 +2594,15 @@ impl GameListModel {
                         }
                     }
 
-                    // Sync is_installed status for all specialized platforms
+                    // Sync is_installed status for all specialized platforms.
+                    // We preserve the installed status if it's already true in the database.
                     for remote_rom in &scanned_roms {
                         if let Some(existing_id) = existing_map.get(&remote_rom.path) {
                             let installed = remote_rom.is_installed.unwrap_or(true);
-                            let _ = db.get_connection().execute("UPDATE metadata SET is_installed = ?1 WHERE rom_id = ?2", rusqlite::params![installed as i32, existing_id]);
+                            let _ = db.get_connection().execute(
+                                "UPDATE metadata SET is_installed = CASE WHEN is_installed = 1 OR ?1 = 1 THEN 1 ELSE 0 END WHERE rom_id = ?2", 
+                                rusqlite::params![installed as i32, existing_id]
+                            );
                         }
                     }
 
@@ -2796,7 +2801,22 @@ impl GameListModel {
                                           _ => {} 
                                       }
                                   }
-                              }
+
+                                      // Steam Compatibility Mode
+                                      if c.steam_compat_mode.unwrap_or(true) {
+                                          if let Some(parent) = std::path::Path::new(&rom_path).parent() {
+                                               env_prefix.push_str(&format!("STEAM_COMPAT_INSTALL_PATH=\"{}\" ", parent.to_string_lossy()));
+                                          }
+                                          
+                                          let home = std::env::var("HOME").unwrap_or_default();
+                                          let steam_client_path = format!("{}/.steam/steam", home);
+                                          env_prefix.push_str(&format!("STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{}\" ", steam_client_path));
+
+                                          if let Some(prefix) = c.wine_prefix.as_ref().filter(|s| !s.trim().is_empty()) {
+                                              env_prefix.push_str(&format!("STEAM_COMPAT_DATA_PATH=\"{}\" ", prefix));
+                                          }
+                                      }
+                                  }
 
                           } else {
                               // --- NO LOCAL CONFIG: FALLBACK TO DEFAULTS ---
@@ -2832,7 +2852,7 @@ impl GameListModel {
                                   if let Some(s) = store { env_prefix.push_str(&format!("UMU_STORE=\"{}\" ", s)); }
 
                                   let prefix = platform_defaults.as_ref().and_then(|d| d["wine_prefix"].as_str().map(|s| s.to_string())).filter(|s| !s.trim().is_empty());
-                                  if let Some(p) = prefix { env_prefix.push_str(&format!("WINEPREFIX=\"{}\" ", p)); }
+                                  if let Some(p) = &prefix { env_prefix.push_str(&format!("WINEPREFIX=\"{}\" ", p)); }
 
                                   let umu_id = platform_defaults.as_ref().and_then(|d| d["umu_id"].as_str().map(|s| s.to_string())).filter(|s| !s.trim().is_empty());
                                   if let Some(uid) = umu_id { 
@@ -2861,7 +2881,23 @@ impl GameListModel {
                                           _ => {} 
                                       }
                                   }
-                              }
+
+                                      // Steam Compatibility Mode (Default)
+                                      let steam_compat = platform_defaults.as_ref().and_then(|d| d["steam_compat_mode"].as_bool()).unwrap_or(true);
+                                      if steam_compat {
+                                          if let Some(parent) = std::path::Path::new(&rom_path).parent() {
+                                               env_prefix.push_str(&format!("STEAM_COMPAT_INSTALL_PATH=\"{}\" ", parent.to_string_lossy()));
+                                          }
+                                          
+                                          let home = std::env::var("HOME").unwrap_or_default();
+                                          let steam_client_path = format!("{}/.steam/steam", home);
+                                          env_prefix.push_str(&format!("STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{}\" ", steam_client_path));
+
+                                          if let Some(p) = &prefix {
+                                              env_prefix.push_str(&format!("STEAM_COMPAT_DATA_PATH=\"{}\" ", p));
+                                          }
+                                      }
+                                  }
                           }
                   }
 
