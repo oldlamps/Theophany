@@ -58,6 +58,11 @@ pub struct StoreBridge {
     gogAuthUrlReceived: qt_signal!(url: QString),
     gogAuthFinished: qt_signal!(success: bool, message: QString),
     gogLogoutFinished: qt_signal!(success: bool, message: QString),
+    nileLibraryFinished: qt_signal!(results: QString),
+    nileAuthUrlReceived: qt_signal!(url: QString),
+    nileAuthFinished: qt_signal!(success: bool, message: QString),
+    nileLogoutFinished: qt_signal!(success: bool, message: QString),
+    nileAppInfoReceived: qt_signal!(json: QString),
 
     // Methods
     search_store: qt_method!(fn(&self, query: String)),
@@ -99,6 +104,15 @@ pub struct StoreBridge {
     logout_gog: qt_method!(fn(&self)),
     install_gog_game: qt_method!(fn(&self, slug: String, install_path: String, platform: String, no_dependencies: bool)),
     cancel_gog_install: qt_method!(fn(&self, slug: String)),
+    refresh_nile_library: qt_method!(fn(&self)),
+    check_nile_auth: qt_method!(fn(&self) -> bool),
+    get_nile_auth_url: qt_method!(fn(&self)),
+    authenticate_nile: qt_method!(fn(&self, code: String)),
+    logout_nile: qt_method!(fn(&self)),
+    install_nile_game: qt_method!(fn(&self, app_name: String, path: String, with_dlcs: bool)),
+    import_nile_game: qt_method!(fn(&self, app_name: String, path: String)),
+    uninstall_nile_game: qt_method!(fn(&self, app_name: String)),
+    get_nile_app_info: qt_method!(fn(&self, app_name: String)),
 
     // Internal
     tx: RefCell<Option<mpsc::Sender<StoreMsg>>>,
@@ -134,6 +148,11 @@ enum StoreMsg {
     GogAuthUrlReceived(String),
     GogAuthFinished(bool, String),
     GogLogoutFinished(bool, String),
+    NileLibraryFinished(String),
+    NileAuthUrlReceived(String),
+    NileAuthFinished(bool, String),
+    NileLogoutFinished(bool, String),
+    NileAppInfoReceived(String),
 }
 
 #[allow(non_snake_case)]
@@ -198,6 +217,11 @@ impl StoreBridge {
                     StoreMsg::GogAuthUrlReceived(url) => self.gogAuthUrlReceived(url.into()),
                     StoreMsg::GogAuthFinished(s, m) => self.gogAuthFinished(s, m.into()),
                     StoreMsg::GogLogoutFinished(s, m) => self.gogLogoutFinished(s, m.into()),
+                    StoreMsg::NileLibraryFinished(j) => self.nileLibraryFinished(j.into()),
+                    StoreMsg::NileAuthUrlReceived(url) => self.nileAuthUrlReceived(url.into()),
+                    StoreMsg::NileAuthFinished(s, m) => self.nileAuthFinished(s, m.into()),
+                    StoreMsg::NileLogoutFinished(s, m) => self.nileLogoutFinished(s, m.into()),
+                    StoreMsg::NileAppInfoReceived(j) => self.nileAppInfoReceived(j.into()),
                 }
             }
         }
@@ -1700,5 +1724,328 @@ impl StoreBridge {
                 .arg(pid.to_string())
                 .status();
         }
+    }
+
+    fn refresh_nile_library(&self) {
+        log::debug!("Scanning Nile library...");
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            let results = StoreManager::scan_nile_games();
+            let json = serde_json::to_string(&results).unwrap_or_default();
+            let _ = tx.send(StoreMsg::NileLibraryFinished(json));
+        });
+    }
+
+    fn check_nile_auth(&self) -> bool {
+        crate::core::nile::NileWrapper::is_authenticated()
+    }
+
+    fn get_nile_auth_url(&self) {
+        log::debug!("[StoreBridge] get_nile_auth_url() was called from QML!");
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            match crate::core::nile::NileWrapper::get_auth_url() {
+                Ok(url) => {
+                    log::debug!("[StoreBridge] NileWrapper successfully returned URL to Bridge. Sending to tx.");
+                    let _ = tx.send(StoreMsg::NileAuthUrlReceived(url));
+                },
+                Err(e) => {
+                    log::error!("Failed to get Nile auth URL: {}", e);
+                    let _ = tx.send(StoreMsg::NileAuthFinished(false, e.to_string()));
+                }
+            }
+        });
+    }
+
+    fn authenticate_nile(&self, code: String) {
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            match crate::core::nile::NileWrapper::authenticate(&code) {
+                Ok(_) => {
+                    let _ = tx.send(StoreMsg::NileAuthFinished(true, "Authentication successful".into()));
+                },
+                Err(e) => {
+                    log::error!("Nile authentication failed: {}", e);
+                    let _ = tx.send(StoreMsg::NileAuthFinished(false, e.to_string()));
+                }
+            }
+        });
+    }
+
+    fn get_nile_app_info(&self, app_name: String) {
+        log::debug!("[StoreBridge] get_nile_app_info called for: {}", app_name);
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            match crate::core::nile::NileWrapper::get_game_info(&app_name) {
+                Ok(json) => {
+                    let _ = tx.send(StoreMsg::NileAppInfoReceived(json));
+                },
+                Err(e) => {
+                    let error_json = format!(r#"{{"error": "{}"}}"#, e.to_string().replace("\"", "\\\""));
+                    let _ = tx.send(StoreMsg::NileAppInfoReceived(error_json));
+                }
+            }
+        });
+    }
+
+    fn logout_nile(&self) {
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            match crate::core::nile::NileWrapper::logout() {
+                Ok(_) => {
+                    let _ = tx.send(StoreMsg::NileLogoutFinished(true, "Logout successful".into()));
+                },
+                Err(e) => {
+                    log::error!("Nile logout failed: {}", e);
+                    let _ = tx.send(StoreMsg::NileLogoutFinished(false, e.to_string()));
+                }
+            }
+        });
+    }
+
+    fn install_nile_game(&self, app_name: String, path: String, with_dlcs: bool) {
+        log::debug!("[NileBridge] Starting install for: {} at {:?} with_dlcs={}", app_name, path, with_dlcs);
+        self.ensure_channels();
+        let _tx = self.tx.borrow().as_ref().unwrap().clone();
+        let app_name_clone = app_name.clone();
+        let install_path = if path.trim().is_empty() { None } else { Some(path.clone()) };
+
+        std::thread::spawn(move || {
+            let _ = broadcast_msg(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Initializing Nile...".into()));
+            
+            match StoreManager::install_nile_game(app_name_clone.clone(), install_path, with_dlcs) {
+                Ok(mut child) => {
+                    use std::io::{BufReader, Read};
+                    
+                    let _ = broadcast_msg(StoreMsg::InstallStarted(app_name_clone.clone(), child.id()));
+
+                    let stderr = child.stderr.take().unwrap();
+                    let stderr_reader = BufReader::new(stderr);
+                    
+                    let app_id_for_reader = app_name_clone.clone();
+                    
+                    std::thread::spawn(move || {
+                        let mut buf = Vec::new();
+                        let mut last_progress = 0.0;
+                        let mut last_dl = String::new();
+                        let mut last_disk = String::new();
+                        let mut last_eta = String::new();
+                        
+                        for byte_result in stderr_reader.bytes() {
+                            if let Ok(b) = byte_result {
+                                if b == b'\r' || b == b'\n' {
+                                    if !buf.is_empty() {
+                                        if let Ok(line) = String::from_utf8(buf.clone()) {
+                                            let trimmed = line.trim();
+                                            if !trimmed.is_empty() {
+                                                log::debug!("[Nile-CLI] {}", trimmed);
+                                                
+                                                let mut updated = false;
+                                                if let Some(progress) = crate::core::nile::NileWrapper::parse_progress(trimmed) {
+                                                    last_progress = progress;
+                                                    updated = true;
+                                                }
+                                                
+                                                if let Some(val) = crate::core::nile::NileWrapper::extract_value(trimmed, "ETA: ") {
+                                                    last_eta = format!("ETA: {}", val);
+                                                    updated = true;
+                                                }
+
+                                                if let Some(val) = crate::core::nile::NileWrapper::extract_value(trimmed, "Download") {
+                                                    if val.contains("/s") {
+                                                        last_dl = format!("DL: {}", val);
+                                                        updated = true;
+                                                    }
+                                                }
+                                                
+                                                if let Some(val) = crate::core::nile::NileWrapper::extract_value(trimmed, "Disk") {
+                                                    if val.contains("/s") {
+                                                        last_disk = format!("Disk: {}", val);
+                                                        updated = true;
+                                                    }
+                                                }
+                                                
+                                                if updated {
+                                                    let clean = crate::core::nile::NileWrapper::clean_status_line(trimmed);
+                                                    let mut status_map = serde_json::Map::new();
+                                                    status_map.insert("progress".to_string(), serde_json::json!(last_progress));
+                                                    status_map.insert("dl_rate".to_string(), serde_json::json!(last_dl));
+                                                    status_map.insert("disk_rate".to_string(), serde_json::json!(last_disk));
+                                                    status_map.insert("eta".to_string(), serde_json::json!(last_eta));
+                                                    status_map.insert("raw_line".to_string(), serde_json::json!(clean));
+                                                    
+                                                    if let Some(val) = crate::core::nile::NileWrapper::extract_value(trimmed, "Downloaded: ") {
+                                                        status_map.insert("downloaded".to_string(), serde_json::json!(val));
+                                                    }
+                                                    if let Some(val) = crate::core::nile::NileWrapper::extract_value(trimmed, "Written: ") {
+                                                        status_map.insert("written".to_string(), serde_json::json!(val));
+                                                    }
+
+                                                    let status_json = serde_json::Value::Object(status_map).to_string();
+                                                    let _ = broadcast_msg(StoreMsg::InstallProgress(app_id_for_reader.clone(), last_progress, status_json));
+                                                }
+                                            }
+                                        }
+                                        buf.clear();
+                                    }
+                                } else {
+                                    buf.push(b);
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                    });
+
+                    match child.wait() {
+                        Ok(status) if status.success() => {
+                            let db_path = crate::core::paths::get_data_dir().join("games.db");
+                            if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                                let rom_id = format!("amazon-{}", app_name_clone);
+                                let conn = db.get_connection();
+                                let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
+                            }
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, true, "Installed successfully".into()));
+                        },
+                        Ok(status) => {
+                            let msg = if status.signal() == Some(15) {
+                                "Cancelled".to_string()
+                            } else {
+                                format!("Nile exited with status: {}", status)
+                            };
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, false, msg.into()));
+                        },
+                        Err(e) => {
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                        }
+                    }
+                },
+                Err(e) => {
+                    log::error!("Nile install failed to start: {}", e);
+                    let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                }
+            }
+        });
+    }
+
+    fn import_nile_game(&self, app_name: String, path: String) {
+        log::debug!("[NileBridge] Starting import for: {} at {:?}", app_name, path);
+        self.ensure_channels();
+        let app_name_clone = app_name.clone();
+        let import_path = path.clone();
+
+        std::thread::spawn(move || {
+            let _ = broadcast_msg(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Importing to Nile...".into()));
+            
+            match StoreManager::import_nile_game(app_name_clone.clone(), import_path) {
+                Ok(mut child) => {
+                    use std::io::{BufReader, Read};
+                    
+                    let _ = broadcast_msg(StoreMsg::InstallStarted(app_name_clone.clone(), child.id()));
+
+                    let stderr = child.stderr.take().unwrap();
+                    let stderr_reader = BufReader::new(stderr);
+                    
+                    let app_id_for_reader = app_name_clone.clone();
+                    
+                    std::thread::spawn(move || {
+                        let mut buf = Vec::new();
+                        let mut last_progress = 0.0;
+                        let mut last_dl = String::new();
+                        let mut last_disk = String::new();
+                        let mut last_eta = String::new();
+                        
+                        for byte_result in stderr_reader.bytes() {
+                            if let Ok(b) = byte_result {
+                                if b == b'\r' || b == b'\n' {
+                                    if !buf.is_empty() {
+                                        if let Ok(line) = String::from_utf8(buf.clone()) {
+                                            let trimmed = line.trim();
+                                            if !trimmed.is_empty() {
+                                                log::debug!("[Nile-CLI] {}", trimmed);
+                                                
+                                                let mut updated = false;
+                                                if let Some(progress) = crate::core::nile::NileWrapper::parse_progress(trimmed) {
+                                                    last_progress = progress;
+                                                    updated = true;
+                                                }
+                                                
+                                                if updated {
+                                                    let clean = crate::core::nile::NileWrapper::clean_status_line(trimmed);
+                                                    let mut status_map = serde_json::Map::new();
+                                                    status_map.insert("progress".to_string(), serde_json::json!(last_progress));
+                                                    status_map.insert("dl_rate".to_string(), serde_json::json!(last_dl));
+                                                    status_map.insert("disk_rate".to_string(), serde_json::json!(last_disk));
+                                                    status_map.insert("eta".to_string(), serde_json::json!(last_eta));
+                                                    status_map.insert("raw_line".to_string(), serde_json::json!(clean));
+                                                    
+                                                    let status_json = serde_json::Value::Object(status_map).to_string();
+                                                    let _ = broadcast_msg(StoreMsg::InstallProgress(app_id_for_reader.clone(), last_progress, status_json));
+                                                }
+                                            }
+                                        }
+                                        buf.clear();
+                                    }
+                                } else {
+                                    buf.push(b);
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                    });
+
+                    match child.wait() {
+                        Ok(status) if status.success() => {
+                            let db_path = crate::core::paths::get_data_dir().join("games.db");
+                            if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                                let rom_id = format!("amazon-{}", app_name_clone);
+                                let conn = db.get_connection();
+                                let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
+                            }
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, true, "Imported successfully".into()));
+                        },
+                        Ok(status) => {
+                            let msg = if status.signal() == Some(15) {
+                                "Cancelled".to_string()
+                            } else {
+                                format!("Nile exited with status: {}", status)
+                            };
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, false, msg.into()));
+                        },
+                        Err(e) => {
+                            let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                        }
+                    }
+                },
+                Err(e) => {
+                    log::error!("Nile import failed to start: {}", e);
+                    let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, false, e.to_string().into()));
+                }
+            }
+        });
+    }
+
+    fn uninstall_nile_game(&self, app_name: String) {
+        log::debug!("[NileBridge] Starting uninstall for: {}", app_name);
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        
+        std::thread::spawn(move || {
+            match StoreManager::uninstall_nile_game(app_name.clone()) {
+                Ok(_) => {
+                    let _ = tx.send(StoreMsg::InstallFinished(app_name, true, "Uninstalled successfully".into()));
+                },
+                Err(e) => {
+                    log::error!("Nile uninstall failed: {}", e);
+                    let _ = tx.send(StoreMsg::InstallFinished(app_name, false, e.to_string().into()));
+                }
+            }
+        });
     }
 }

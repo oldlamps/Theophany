@@ -1211,19 +1211,12 @@ Dialog {
         
         // Use Platform Type for search if available for better accuracy (e.g. "steam", "heroic")
         // Mapping "steam", "heroic", "lutris", and PC variants to "PC" for better search results
-        var pSearch = ""
-        var tLower = (gPlatformType || "").toLowerCase()
-        var pLower = (gPlatform || "").toLowerCase()
+        var pSearch = (gPlatformType && gPlatformType !== "" && gPlatformType !== "Unknown") ? gPlatformType : gPlatform
+        var pLower = (pSearch || "").toLowerCase()
+        var pcKeywords = ["steam", "heroic", "lutris", "epic", "amazon", "gog"]
         
-        // Use indexOf for broader compatibility/robustness with collection names
-        if (tLower.indexOf("steam") !== -1 || tLower.indexOf("heroic") !== -1 || tLower.indexOf("lutris") !== -1 || tLower.indexOf("epic") !== -1 || 
-            tLower.indexOf("pc (") !== -1 || tLower === "pc" ||
-            pLower.indexOf("steam") !== -1 || pLower.indexOf("heroic") !== -1 || pLower.indexOf("lutris") !== -1 || pLower.indexOf("epic") !== -1) {
+        if (pcKeywords.some(k => pLower.indexOf(k) !== -1) || pLower === "pc" || pLower.indexOf("pc (") !== -1) {
             pSearch = "PC"
-        } else if (gPlatformType && gPlatformType !== "" && gPlatformType !== "Unknown") {
-            pSearch = gPlatformType
-        } else {
-            pSearch = gPlatform
         }
         
         searchField.text = gTitle + " " + pSearch

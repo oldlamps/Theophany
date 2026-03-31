@@ -76,6 +76,8 @@ qrc!(my_resources,
         "src/ui/dialogs/GogInstallDialog.qml" as "dialogs/GogInstallDialog.qml",
         "src/ui/dialogs/EpicImportDialog.qml" as "dialogs/EpicImportDialog.qml",
         "src/ui/dialogs/EpicInstallDialog.qml" as "dialogs/EpicInstallDialog.qml",
+        "src/ui/dialogs/AmazonImportDialog.qml" as "dialogs/AmazonImportDialog.qml",
+        "src/ui/dialogs/AmazonInstallDialog.qml" as "dialogs/AmazonInstallDialog.qml",
         "assets/tray_icon.png" as "tray_icon.png",
         "assets/logo.png" as "assets/logo.png",
         "assets/RA.png" as "assets/RA.png",
@@ -87,6 +89,8 @@ qrc!(my_resources,
         "assets/systems/steam.png" as "assets/systems/steam.png",
         "assets/systems/lutris.png" as "assets/systems/lutris.png",
         "assets/systems/epic.png" as "assets/systems/epic.png",
+        "assets/systems/amazon.png" as "assets/systems/amazon.png",
+        "assets/systems/gog.png" as "assets/systems/gog.png",
     }
 );
 
@@ -250,6 +254,8 @@ fn setup_assets() {
         ("steam.png", include_bytes!("../assets/systems/steam.png").as_slice()),
         ("lutris.png", include_bytes!("../assets/systems/lutris.png").as_slice()),
         ("epic.png", include_bytes!("../assets/systems/epic.png").as_slice()),
+        ("amazon.png", include_bytes!("../assets/systems/amazon.png").as_slice()),
+        ("gog.png", include_bytes!("../assets/systems/gog.png").as_slice()),
         ("exodos.png", include_bytes!("../assets/systems/exodos.png").as_slice()),
     ];
 

@@ -327,6 +327,25 @@ Rectangle {
         // For now, we rely on the backend to populate the resources list.
     }
 
+    function getAmazonAppSize() {
+        if (!root.fullRomPath.startsWith("amazon://")) return
+        var appName = root.fullRomPath.replace("amazon://launch/", "")
+        var appDataStr = storeBridge.get_nile_app_info(appName)
+        if (appDataStr !== "") {
+            var data
+            try { data = JSON.parse(appDataStr) } catch (e) { return }
+            
+            var bytes = 0
+            if (data && data.install_size) {
+                bytes = parseInt(data.install_size) || 0
+            }
+            // nile might output total size in different format depending on the payload
+            root.gameInstallSize = bytes > 0 ? bytesToGigaBytes(bytes) : ""
+        } else {
+            root.gameInstallSize = ""
+        }
+    }
+
     function updateImageList(data) {
         var list = []
         // Defined order for carousel
@@ -1554,12 +1573,14 @@ Rectangle {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     width: 30; height: parent.height
-                    visible: root.emulatorProfiles.length > 0 || root.fullRomPath.startsWith("epic://") || (root.gameResources && root.gameResources.some(r => r.type === "launcher"))
+                    visible: root.emulatorProfiles.length > 0 || root.fullRomPath.startsWith("epic://") || root.fullRomPath.startsWith("amazon://") || (root.gameResources && root.gameResources.some(r => r.type === "launcher"))
                     background: null
                     text: "▼\ufe0e"
                     onClicked: {
                         if (root.fullRomPath.startsWith("epic://")) {
                             epicExtraMenu.popup()
+                        } else if (root.fullRomPath.startsWith("amazon://")) {
+                            amazonExtraMenu.popup()
                         } else {
                             profileMenu.popup()
                         }

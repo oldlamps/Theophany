@@ -32,7 +32,7 @@ Dialog {
         }
     }
 
-    signal settingsApplied(int viewMode, bool showFilter, string defRegion, string themeName, string raUser, string raToken, bool raEnabled, bool showTray, bool closeToTray, bool aiEnabled, string ollamaUrl, string ollamaModel, bool detailsPreferVideo, bool ignoreTheInSort, string aiDescriptionPrompt, bool defaultIgnoreOnDelete, string activeMeta, string activeImage, string geminiKey, string openaiKey, string llmProvider, bool saveHeroicLocally, bool autoRescan, bool confirmQuit, real gridScale, bool gridTitleOverlay, bool useCustomYtdlp, string customYtdlpPath, string defaultProtonRunner, string defaultProtonPrefix, string defaultProtonWrapper, bool defaultProtonUseGamescope, bool defaultProtonUseMangohud, string defaultProtonGamescopeArgs, string defaultProtonGamescopeW, string defaultProtonGamescopeH, string defaultProtonGamescopeOutW, string defaultProtonGamescopeOutH, string defaultProtonGamescopeRefresh, int defaultProtonGamescopeScaling, int defaultProtonGamescopeUpscaler, bool defaultProtonGamescopeFullscreen, bool hidePlatformsSidebar, bool checkUpdates, bool useCustomLegendary, string customLegendaryPath, string defaultInstallLocation)
+    signal settingsApplied(int viewMode, bool showFilter, string defRegion, string themeName, string raUser, string raToken, bool raEnabled, bool showTray, bool closeToTray, bool aiEnabled, string ollamaUrl, string ollamaModel, bool detailsPreferVideo, bool ignoreTheInSort, string aiDescriptionPrompt, bool defaultIgnoreOnDelete, string activeMeta, string activeImage, string geminiKey, string openaiKey, string llmProvider, bool saveHeroicLocally, bool autoRescan, bool confirmQuit, real gridScale, bool gridTitleOverlay, bool useCustomYtdlp, string customYtdlpPath, string defaultProtonRunner, string defaultProtonPrefix, string defaultProtonWrapper, bool defaultProtonUseGamescope, bool defaultProtonUseMangohud, string defaultProtonGamescopeArgs, string defaultProtonGamescopeW, string defaultProtonGamescopeH, string defaultProtonGamescopeOutW, string defaultProtonGamescopeOutH, string defaultProtonGamescopeRefresh, int defaultProtonGamescopeScaling, int defaultProtonGamescopeUpscaler, bool defaultProtonGamescopeFullscreen, bool hidePlatformsSidebar, bool checkUpdates, bool useCustomLegendary, string customLegendaryPath, string defaultInstallLocation, bool useCustomNile, string customNilePath)
 
     property int currentViewMode: 0
     property bool currentShowFilterBar: false
@@ -83,6 +83,8 @@ Dialog {
     property bool currentCheckForUpdatesOnStartup: true
     property bool currentUseCustomLegendary: false
     property string currentCustomLegendaryPath: ""
+    property bool currentUseCustomNile: false
+    property string currentCustomNilePath: ""
     property string currentDefaultInstallLocation: ""
 
     property string ytdlpStatus: ""
@@ -503,6 +505,8 @@ Dialog {
 
         customLegendarySwitch.checked = currentUseCustomLegendary
         legendaryPathField.text = currentCustomLegendaryPath
+        customNileSwitch.checked = currentUseCustomNile
+        nilePathField.text = currentCustomNilePath
         checkLegendary()
         checkEosOverlay()
 
@@ -1321,6 +1325,27 @@ Dialog {
 
                                       Item { Layout.preferredHeight: 15 }
 
+                                      RowLayout {
+                                          spacing: 15
+                                          TheophanySwitch { id: customNileSwitch; checked: root.currentUseCustomNile }
+                                          Label { text: "Use custom Nile binary (Amazon Games)"; color: Theme.text }
+                                      }
+                                      RowLayout {
+                                          spacing: 10
+                                          Layout.fillWidth: true
+                                          enabled: customNileSwitch.checked
+                                          opacity: customNileSwitch.checked ? 1.0 : 0.4
+                                          Label { text: "Path:"; color: Theme.text }
+                                          TheophanyTextField {
+                                              id: nilePathField
+                                              Layout.fillWidth: true
+                                              text: root.currentCustomNilePath
+                                              placeholderText: "/usr/bin/nile"
+                                          }
+                                      }
+
+                                      Item { Layout.preferredHeight: 15 }
+
                                       Label { text: "EOS Overlay (Experimental)"; color: Theme.secondaryText; font.bold: true; font.pixelSize: 13 }
                                       Label {
                                           text: "Epic Online Services overlay provides friends lists, achievements, and cross-play features."
@@ -1738,7 +1763,9 @@ Dialog {
                                     checkUpdatesSwitch.checked,
                                     customLegendarySwitch.checked,
                                     legendaryPathField.text,
-                                    defaultInstallLocationField.text
+                                    defaultInstallLocationField.text,
+                                    customNileSwitch.checked,
+                                    nilePathField.text
                                 )
                                 root.accept()
                             }

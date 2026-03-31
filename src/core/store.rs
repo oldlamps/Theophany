@@ -1626,6 +1626,43 @@ impl StoreManager {
 
         Ok(())
     }
+    pub fn scan_nile_games() -> Vec<Rom> {
+        log::info!("[Nile] Scanning for Amazon Games via Nile CLI...");
+        match crate::core::nile::NileWrapper::list_games() {
+            Ok(games) => {
+                log::info!("[Nile] Found {} games in Nile library", games.len());
+                games.iter()
+                    .map(crate::core::nile::NileWrapper::to_rom)
+                    .collect()
+            },
+            Err(e) => {
+                log::warn!("[Nile] Failed to list games: {}", e);
+                Vec::new()
+            }
+        }
+    }
+
+    pub fn install_nile_game(app_name: String, install_path: Option<String>, with_dlcs: bool) -> anyhow::Result<std::process::Child> {
+        crate::core::nile::NileWrapper::install(&app_name, install_path.as_deref(), with_dlcs)
+    }
+
+    pub fn import_nile_game(app_name: String, path: String) -> anyhow::Result<std::process::Child> {
+        crate::core::nile::NileWrapper::import(&app_name, &path)
+    }
+
+    pub fn uninstall_nile_game(app_name: String) -> anyhow::Result<()> {
+        crate::core::nile::NileWrapper::uninstall(&app_name)?;
+        
+        let db_path = crate::core::paths::get_data_dir().join("games.db");
+        if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+            let rom_id = format!("amazon-{}", app_name);
+            let conn = db.get_connection();
+            let _ = conn.execute("UPDATE roms SET is_installed = 0 WHERE id = ?1", [&rom_id]);
+            let _ = conn.execute("UPDATE metadata SET is_installed = 0 WHERE rom_id = ?1", [&rom_id]);
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone)]

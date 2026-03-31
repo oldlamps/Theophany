@@ -45,8 +45,8 @@ Dialog {
     property var platformDefaults: ({})
     property bool eosOverlayEnabled: false
     property bool advancedCollapsed: true
-    property bool isPc: platformType.includes("PC") || platformId === "epic" || gameId.includes("legendary-")
-    property bool isWindows: platformType === "PC (Windows)" || platformId === "epic" || gameId.includes("legendary-")
+    property bool isPc: (platformType === "PC" || platformType.startsWith("PC (") || platformType === "gog") || platformId === "epic" || platformId === "amazon" || gameId.includes("legendary-") || gameId.indexOf("amazon-") === 0
+    property bool isWindows: (platformType === "PC (Windows)" || platformType === "gog") || platformId === "epic" || platformId === "amazon" || gameId.includes("legendary-") || gameId.indexOf("amazon-") === 0
 
 
 
@@ -101,7 +101,26 @@ Dialog {
                      }
                 }
             } catch (e) {
-
+                console.error("Error parsing Legendary app info:", e)
+            }
+            root.loadingEpicInfo = false
+        }
+        function onNileAppInfoReceived(json) {
+            if (!root.loadingEpicInfo) return
+            try {
+                var data = JSON.parse(json)
+                if (data.game) {
+                    // Nile returns title and disk_size
+                    if (data.install) {
+                        var sizeBytes = data.install.disk_size || 0
+                        if (sizeBytes > 0) {
+                            var gb = sizeBytes / (1024 * 1024 * 1024)
+                            root.epicInstallSize = gb.toFixed(2) + " GB"
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Error parsing Nile app info:", e)
             }
             root.loadingEpicInfo = false
         }
@@ -166,6 +185,15 @@ Dialog {
                         root.epicInstallSize = ""
                         var appName = gameId.replace("legendary-", "")
                         storeBridge.get_legendary_app_info(appName)
+                    }
+                } else if (gameId.indexOf("amazon-") === 0 || platformId === "amazon") {
+                    // Fetch Nile/Amazon install info if installed
+                    if (currentData.is_installed && storeBridge) {
+                        root.loadingEpicInfo = true
+                        root.epicInstallPath = ""
+                        root.epicInstallSize = ""
+                        var appName = gameId.replace("amazon-", "")
+                        storeBridge.get_nile_app_info(appName)
                     }
                 }
             }

@@ -2707,7 +2707,7 @@ impl GameListModel {
                  let mut working_dir = std::path::Path::new(&rom_path).parent().map(|p| p.to_string_lossy().to_string());
 
                   let p_type = platform_type.unwrap_or_default();
-                  let is_pc = p_type.contains("PC") || p_type == "gog" || rom_path.starts_with("epic://");
+                  let is_pc = (p_type == "PC" || p_type.starts_with("PC (")) || p_type == "gog" || rom_path.starts_with("epic://") || rom_path.starts_with("amazon://");
 
                   
                   let mut env_prefix = String::new();
@@ -2767,14 +2767,14 @@ impl GameListModel {
 
                               extra = c.extra_args.clone().unwrap_or_default();
 
-                              if p_type == "PC (Windows)" || p_type == "gog" || rom_path.starts_with("epic://") {
+                              if p_type == "PC (Windows)" || p_type == "gog" || rom_path.starts_with("epic://") || rom_path.starts_with("amazon://") {
                                   env_prefix.push_str("UMU_LOG=1 ");
                                   
                                   if let Some(v) = c.umu_proton_version.as_ref().filter(|s| !s.trim().is_empty()) { 
                                       env_prefix.push_str(&format!("PROTONPATH=\"{}\" ", v)); 
                                   }
                                   
-                                  if rom_path.starts_with("epic://") && !wrapper_cmd.contains("umu-run") {
+                                  if (rom_path.starts_with("epic://") || rom_path.starts_with("amazon://")) && !wrapper_cmd.contains("umu-run") {
                                       wrapper_cmd.push_str("umu-run ");
                                   }
                                   if let Some(s) = c.umu_store.as_ref().filter(|s| !s.trim().is_empty()) { env_prefix.push_str(&format!("UMU_STORE=\"{}\" ", s)); }
@@ -2782,7 +2782,7 @@ impl GameListModel {
                                   
                                   if let Some(uid) = c.umu_id.as_ref().filter(|s| !s.trim().is_empty()) { 
                                       env_prefix.push_str(&format!("GAMEID=\"{}\" ", uid)); 
-                                  } else if rom_path.starts_with("epic://") {
+                                  } else if rom_path.starts_with("epic://") || rom_path.starts_with("amazon://") {
                                       let app_id = rom_path.split('/').last().unwrap_or_default();
                                       if !app_id.is_empty() {
                                           env_prefix.push_str(&format!("GAMEID=\"{}\" ", app_id));
@@ -2837,13 +2837,13 @@ impl GameListModel {
 
                               extra = platform_defaults.as_ref().and_then(|d| d["extra_args"].as_str().map(|s| s.to_string())).unwrap_or_default();
 
-                               if p_type == "PC (Windows)" || p_type == "gog" || rom_path.starts_with("epic://") {
+                               if p_type == "PC (Windows)" || p_type == "gog" || rom_path.starts_with("epic://") || rom_path.starts_with("amazon://") {
                                   env_prefix.push_str("UMU_LOG=1 ");
                                   
                                   let proton = platform_defaults.as_ref().and_then(|d| d["umu_proton_version"].as_str().map(|s| s.to_string())).filter(|s| !s.trim().is_empty());
                                   if let Some(v) = proton { 
                                       env_prefix.push_str(&format!("PROTONPATH=\"{}\" ", v)); 
-                                      if rom_path.starts_with("epic://") && !wrapper_cmd.contains("umu-run") {
+                                      if (rom_path.starts_with("epic://") || rom_path.starts_with("amazon://")) && !wrapper_cmd.contains("umu-run") {
                                           wrapper_cmd.push_str("umu-run ");
                                       }
                                   }
@@ -2857,7 +2857,7 @@ impl GameListModel {
                                   let umu_id = platform_defaults.as_ref().and_then(|d| d["umu_id"].as_str().map(|s| s.to_string())).filter(|s| !s.trim().is_empty());
                                   if let Some(uid) = umu_id { 
                                       env_prefix.push_str(&format!("GAMEID=\"{}\" ", uid)); 
-                                  } else if rom_path.starts_with("epic://") {
+                                  } else if rom_path.starts_with("epic://") || rom_path.starts_with("amazon://") {
                                       let app_id = rom_path.split('/').last().unwrap_or_default();
                                       if !app_id.is_empty() {
                                           env_prefix.push_str(&format!("GAMEID=\"{}\" ", app_id));
@@ -2906,7 +2906,7 @@ impl GameListModel {
                   if rom_path.starts_with("heroic://") || rom_path.starts_with("lutris:") || rom_path.ends_with(".desktop") || rom_path.starts_with("steam://") || rom_path.starts_with("flatpak://") || rom_path.ends_with(".command") {
                       // These still bypass wrappers and use %ROM%
                       command_template = "%ROM%".to_string();
-                  } else if rom_path.starts_with("epic://") {
+                  } else if rom_path.starts_with("epic://") || rom_path.starts_with("amazon://") {
                       command_template = "%ROM%".to_string();
                       // Keep env_prefix and wrapper_cmd to pass to Launcher::launch via options
                   } else if is_pc {
@@ -4335,8 +4335,6 @@ impl GameListModel {
 
                     match cmd.spawn() {
                         Ok(mut child) => {
-                            // We don't want to block the whole UI for this, so we just let it run
-                            // but we could also wait in a separate thread if we wanted to notify completion
                             std::thread::spawn(move || {
                                 let _ : Result<std::process::ExitStatus, std::io::Error> = child.wait();
                                 log::info!("Flatpak uninstall finished for: {}", flatpak_id);
@@ -5222,9 +5220,6 @@ impl GameListModel {
                     let final_id = if !matched_id.is_empty() { matched_id } else { fallback_id };
                     
                     if !final_id.is_empty() {
-                        // If we already have synthesized metadata from the search (e.g. OllamaWeb), use it directly.
-                        // However, for standard scrapers (IGDB, LaunchBox), we ALWAYS fetch_details 
-                        // because search results usually lack screenshots/artworks which causes skipping!
                         if let Some(meta) = cached_metadata {
                             if provider_name.contains("Ollama") || provider_name.contains("LLM") {
                                 log::info!("[AutoScrape] Using cached metadata for '{}' (LLM Provider)", final_id);
@@ -5350,23 +5345,15 @@ impl GameListModel {
         ];
         
         for (a, b) in aliases {
-        // a = alias/shorthand (e.g., "nes")
-        // b = canonical-ish name (e.g., "nintendoentertainmentsystem")
 
-        // 1. Both match the same alias or canonical name exactly
+
         if (l == a && r == a) || (l == b && r == b) { return true; }
 
-        // 2. Cross-match: local is alias, remote is canonical (or vice versa)
         if (l == a && r == b) || (r == a && l == b) { return true; }
-        
-        // 3. Selective containment: 
-        // We only allow 'contains' logic for the canonical name (b) to avoid 
-        // short aliases like "nes" matching inside "genesis".
+
         if (l == a && r.contains(b)) || (r == a && l.contains(b)) { return true; }
         
-        // 4. Double containment for full names (e.g. "nintendosuperfamicom" vs "supernintendo")
-        if l.contains(b) && r.contains(b) { return true; }
-    }
+        if l.contains(b) && r.contains(b) { return true; }    }
     
     false
 }
@@ -5691,7 +5678,6 @@ impl GameListModel {
                 }
 
                 // 4. Aggressive Search-and-Kill (pkill -f on stripped ID)
-                // We strip standard prefixes like 'legendary-' to find the actual ID in the command line
                 let search_id = if rom_id.starts_with("legendary-") {
                     &rom_id[10..]
                 } else if rom_id.starts_with("steam-") {
@@ -5709,7 +5695,6 @@ impl GameListModel {
                 let _ = std::process::Command::new("sh").arg("-c").arg(&search_cmd).stderr(std::process::Stdio::null()).status();
 
                 // 5. Flatpak-Specific Kill (flatpak kill <AppID>)
-                // v6.5: Direct termination for sandboxed apps, avoiding signaling issues.
                 let rom_path_opt = self.roms.borrow().iter().find(|r| r.id == rom_id).map(|r| r.path.clone());
                 if let Some(path) = rom_path_opt {
                     if path.starts_with("flatpak://") {
@@ -5722,8 +5707,6 @@ impl GameListModel {
                         };
                         let _ = std::process::Command::new("sh").arg("-c").arg(&kill_cmd).stderr(std::process::Stdio::null()).status();
                     } else if !path.is_empty() && !path.contains("://") {
-                        // 6. Basename-based Search-and-Kill (pkill -i -f [basename])
-                        // The "Nuclear Option" for Wine/Proton detached processes.
                         let path_obj = std::path::Path::new(&path);
                         if let Some(basename) = path_obj.file_name().and_then(|n| n.to_str()) {
                             log::warn!("[Launcher] Using aggressive case-insensitive search for Basename: {}", basename);
@@ -5798,8 +5781,6 @@ async fn download_game_assets(
                 continue;
             }
 
-            // Extract filename from URL (e.g., "co2abc.jpg")
-            // Fallback to "image.png" if parsing fails, but IGDB usually sends good filenames
             let url_obj = url::Url::parse(&url);
             let filename = if let Ok(u) = url_obj {
                 u.path_segments().and_then(|segments| segments.last()).unwrap_or("image.png").to_string()
@@ -5838,7 +5819,6 @@ async fn download_game_assets(
                     }
                 }
             } else {
-                // Download needed
                 // Emit Progress
                 let msg = format!("Downloading image {}/{} for {}...", i + 1, total, rom_stem);
                 let _ = tx.send(AsyncResponse::AssetDownloadProgress(msg));

@@ -123,6 +123,10 @@ struct SettingsData {
     pub use_custom_legendary: bool,
     #[serde(default)]
     pub custom_legendary_path: String,
+    #[serde(default)]
+    pub use_custom_nile: bool,
+    #[serde(default)]
+    pub custom_nile_path: String,
     #[serde(default = "default_install_location")]
     pub default_install_location: String,
     #[serde(default = "default_true")]
@@ -190,6 +194,8 @@ impl Default for SettingsData {
             details_width: default_details_width(),
             use_custom_legendary: false,
             custom_legendary_path: String::new(),
+            use_custom_nile: false,
+            custom_nile_path: String::new(),
             default_install_location: default_install_location(),
             grid_title_overlay: true,
         }
@@ -322,6 +328,8 @@ pub struct AppSettings {
     detailsWidth: qt_property!(f32; NOTIFY settingsChanged),
     useCustomLegendary: qt_property!(bool; NOTIFY settingsChanged),
     customLegendaryPath: qt_property!(QString; NOTIFY settingsChanged),
+    useCustomNile: qt_property!(bool; NOTIFY settingsChanged),
+    customNilePath: qt_property!(QString; NOTIFY settingsChanged),
     defaultInstallLocation: qt_property!(QString; NOTIFY settingsChanged),
     closeToTrayChanged: qt_signal!(),
     settingsChanged: qt_signal!(),
@@ -457,6 +465,8 @@ impl AppSettings {
             details_width: self.detailsWidth,
             use_custom_legendary: self.useCustomLegendary,
             custom_legendary_path: self.customLegendaryPath.to_string(),
+            use_custom_nile: self.useCustomNile,
+            custom_nile_path: self.customNilePath.to_string(),
             default_install_location: self.defaultInstallLocation.to_string(),
             grid_title_overlay: self.gridTitleOverlay,
         };
@@ -561,6 +571,8 @@ impl AppSettings {
                     self.detailsWidth = data.details_width;
                     self.useCustomLegendary = data.use_custom_legendary;
                     self.customLegendaryPath = QString::from(data.custom_legendary_path);
+                    self.useCustomNile = data.use_custom_nile;
+                    self.customNilePath = QString::from(data.custom_nile_path);
                     self.defaultInstallLocation = QString::from(if data.default_install_location.is_empty() { default_install_location() } else { data.default_install_location });
                     self.gridTitleOverlay = data.grid_title_overlay;
                     
@@ -668,6 +680,8 @@ impl Default for AppSettings {
             detailsWidth: default_details_width(),
             useCustomLegendary: false,
             customLegendaryPath: Default::default(),
+            useCustomNile: false,
+            customNilePath: Default::default(),
             defaultInstallLocation: QString::from(default_install_location()),
             gridTitleOverlay: true,
             
@@ -743,6 +757,8 @@ impl Default for AppSettings {
         s.detailsWidth = s.data.details_width;
         s.useCustomLegendary = s.data.use_custom_legendary;
         s.customLegendaryPath = QString::from(s.data.custom_legendary_path.clone());
+        s.useCustomNile = s.data.use_custom_nile;
+        s.customNilePath = QString::from(s.data.custom_nile_path.clone());
         s.defaultInstallLocation = QString::from(s.data.default_install_location.clone());
         s.gridTitleOverlay = s.data.grid_title_overlay;
  

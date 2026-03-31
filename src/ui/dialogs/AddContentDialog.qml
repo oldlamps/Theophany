@@ -222,6 +222,12 @@ Dialog {
                         onClicked: { root.close(); exodosImportDialog.openImport() }
                     }
                     TheophanyButton {
+                        text: "Amazon"
+                        iconSource: "assets/systems/amazon.png"
+                        width: parent.btnWidth
+                        onClicked: { root.close(); amazonImportDialog.openImport() }
+                    }
+                    TheophanyButton {
                         text: "Local App"
                         iconSource: "assets/systems/linux.png"
                         width: parent.btnWidth

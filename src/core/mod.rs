@@ -19,3 +19,4 @@ pub mod importer;
 pub mod runtime;
 pub mod exodos;
 pub mod gog;
+pub mod nile;

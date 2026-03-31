@@ -98,7 +98,7 @@ Dialog {
         var typeLower = (pType || "").toLowerCase()
         if (typeLower === "steam" || typeLower === "heroic" || typeLower === "lutris" || typeLower === "linux" || typeLower === "pc (linux)") {
             currentCategory = 1 // Native
-        } else if (typeLower === "windows" || typeLower === "pc (windows)" || typeLower === "epic") {
+        } else if (typeLower === "windows" || typeLower === "pc (windows)" || typeLower === "epic" || typeLower === "amazon") {
             currentCategory = 2 // Windows/Proton
         } else {
             currentCategory = 0
@@ -209,7 +209,7 @@ Dialog {
         var typeLower = (pType || "").toLowerCase()
         if (typeLower === "pc (linux)" || typeLower === "linux") {
             currentCategory = 1
-        } else if (typeLower === "pc (windows)" || typeLower === "windows" || typeLower === "epic") {
+        } else if (typeLower === "pc (windows)" || typeLower === "windows" || typeLower === "epic" || typeLower === "amazon") {
             currentCategory = 2
         } else {
             currentCategory = 0
@@ -353,6 +353,9 @@ Dialog {
             if (!hasSteam) list.push({ text: "Steam", value: "steam", icon: "assets/systems/steam.png" });
             if (!hasHeroic) list.push({ text: "Heroic", value: "heroic", icon: "assets/systems/heroic.png" });
             if (!hasLutris) list.push({ text: "Lutris", value: "lutris", icon: "assets/systems/lutris.png" });
+            
+            var hasAmazon = list.some(p => p.value === "amazon");
+            if (!hasAmazon) list.push({ text: "Amazon Games", value: "amazon", icon: "assets/systems/amazon.png" });
             
             list.push({ text: "Other", value: "Other", icon: "" })
         } catch(e) { }

@@ -25,15 +25,20 @@ impl Launcher {
         } else if rom_path.starts_with("steam://") || rom_path.starts_with("heroic://") || rom_path.starts_with("lutris:") {
             let xdg_cmd = if is_flatpak { "flatpak-spawn --host xdg-open" } else { "xdg-open" };
             format!("{} \"{}\"", xdg_cmd, rom_path)
-        } else if rom_path.starts_with("epic://") {
+        } else if rom_path.starts_with("epic://") || rom_path.starts_with("amazon://") {
             let app_id = rom_path.split('/').last().unwrap_or(rom_path);
-            let binary_path = crate::core::legendary::LegendaryWrapper::find_binary();
+            let is_amazon = rom_path.starts_with("amazon://");
+            
+            let binary_path = if is_amazon {
+                crate::core::nile::NileWrapper::find_binary()
+            } else {
+                crate::core::legendary::LegendaryWrapper::find_binary()
+            };
+            
             let binary = binary_path
                 .as_ref()
                 .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| "legendary".to_string());
-            
-
+                .unwrap_or_else(|| if is_amazon { "nile".to_string() } else { "legendary".to_string() });
 
             let mut extra_args = String::new();
             let wrapper_arg = if let Some(w) = wrapper {
@@ -85,7 +90,6 @@ impl Launcher {
                             log::debug!("[Launcher] Generated wrapper script at {:?}:\n{}", wrapper_path, script_content);
                         }
                         
-                        // Make sure to chmod +x just in case
                         #[cfg(unix)]
                         {
                             use std::os::unix::fs::PermissionsExt;
@@ -106,15 +110,23 @@ impl Launcher {
                 } else { String::new() }
             } else { String::new() };
                 
-            let overlay_arg = if eos_overlay { " --eos-overlay" } else { "" };
+            let overlay_arg = if eos_overlay && !is_amazon { " --eos-overlay" } else { "" };
             
-            let config_dir = crate::core::paths::get_config_dir().join("legendary");
-            let config_env = format!("LEGENDARY_CONFIG_PATH=\"{}\"", config_dir.to_string_lossy());
+            let config_env = if is_amazon {
+                let config_dir = crate::core::paths::get_config_dir().join("nile");
+                format!("NILE_CONFIG_PATH=\"{}\"", config_dir.to_string_lossy())
+            } else {
+                let config_dir = crate::core::paths::get_config_dir().join("legendary");
+                format!("LEGENDARY_CONFIG_PATH=\"{}\"", config_dir.to_string_lossy())
+            };
             
-            // Use `env VAR=val binary ...` — the Flatpak runtime's sh doesn't support
-            // inline env assignments with exec, which would try to run the assignment as a path.
-            format!("env {} {} launch \"{}\"{}{}{}", 
-                config_env, binary, app_id, wrapper_arg, extra_args, overlay_arg)
+            if is_amazon {
+                format!("{} {} launch{}{}{} \"{}\"", 
+                    config_env, binary, wrapper_arg, extra_args, overlay_arg, app_id)
+            } else {
+                format!("{} {} launch \"{}\"{}{}{}", 
+                    config_env, binary, app_id, wrapper_arg, extra_args, overlay_arg)
+            }
         } else if rom_path.ends_with(".desktop") {
             Self::parse_desktop_exec(rom_path).unwrap_or_else(|| format!("xdg-open \"{}\"", rom_path))
         } else if rom_path.ends_with(".command") {
@@ -123,31 +135,22 @@ impl Launcher {
             format!("\"{}\"", rom_path)
         };
 
-        // Apply command template if it contains %ROM%
         if command_template.contains("%ROM%") {
             cmd_string = command_template.replace("%ROM%", &cmd_string);
         }
 
-        // 3. Final Command String with Optional Tracking
-        // For epic:// games, legendary runs inside the sandbox. The wrapper (e.g. umu-run)
-        // already handles host-escaping via flatpak-spawn --host internally.
-        // We should NOT wrap the whole command in flatpak-spawn --host again.
-        let is_epic = rom_path.starts_with("epic://");
+        let is_epic_or_amazon = rom_path.starts_with("epic://") || rom_path.starts_with("amazon://");
         let final_cmd = if track {
             let escaped_cmd = cmd_string.replace("'", "'\\''");
-            if is_flatpak && is_epic {
-                // Legendary runs inside sandbox; wrapper already escaped to host.
-                // Use a local PGID marker so we track the legendary process group.
+            if is_flatpak && is_epic_or_amazon {
                 format!("sh -c 'printf \"THEOPHANY_PGID:%s\\n\" \"$(ps -o pgid= -p $$)\"; exec {}'", escaped_cmd)
             } else if is_flatpak && !cmd_string.starts_with("flatpak-spawn") {
-                // Other non-epic commands (e.g. native PC games) need host escape.
                 format!("flatpak-spawn --host sh -c 'printf \"THEOPHANY_HOST_PGID:%s\\n\" \"$(ps -o pgid= -p $$)\"; exec env {}'", escaped_cmd)
             } else {
                 format!("sh -c 'printf \"THEOPHANY_PGID:%s\\n\" \"$(ps -o pgid= -p $$)\"; exec env {}'", escaped_cmd)
             }
         } else {
-            // No tracking: just ensure host escape if needed (not for epic)
-            if is_flatpak && !is_epic && !cmd_string.starts_with("flatpak-spawn") {
+            if is_flatpak && !is_epic_or_amazon && !cmd_string.starts_with("flatpak-spawn") {
                 format!("flatpak-spawn --host sh -c 'exec env {}'", cmd_string.replace("'", "'\\''"))
             } else {
                 cmd_string

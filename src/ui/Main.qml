@@ -797,6 +797,38 @@ ApplicationWindow {
         }
     }
 
+    function importAmazonGame(id) {
+        if (!id) return
+        var path = ""
+        var idx = gameModel.getRowById(id)
+        if (idx >= 0) {
+            path = gameModel.data(gameModel.index(idx, 0), 258) // PathRole
+        }
+        
+        if (path.startsWith("amazon://")) {
+            var appName = path.split("/").pop()
+            if (appName) {
+                amazonImportPathDialog.pendingAppId = appName
+                amazonImportPathDialog.open()
+            }
+        }
+    }
+
+    function uninstallAmazonGame(appName) {
+        confirmDialog.title = "Uninstall Amazon Game"
+        confirmDialog.text = "Are you sure you want to completely uninstall Amazon Game '" + appName + "'?"
+        confirmDialog.onAcceptedOverride = function() {
+            var result = storeBridge.uninstall_nile_app(appName)
+            if (result === "success") {
+                gameModel.removeGameByPath("amazon://launch/" + appName)
+                toast.show("Uninstalled " + appName, "success")
+            } else {
+                toast.show("Failed to uninstall " + appName + ": " + result, "error")
+            }
+        }
+        confirmDialog.open()
+    }
+
     function launchGame(id) {
         if (!id) return
         
@@ -835,6 +867,16 @@ ApplicationWindow {
             gogInstallDialog.gameTitle = gameTitle || gogSlug
             gogInstallDialog.open()
             return
+        }
+
+        // Amazon uninstalled intercept
+        if (path.startsWith("amazon://") && !isInstalled) {
+            var amazonAppName = path.split("/").pop()
+            if (amazonAppName) {
+                amazonInstallDialog.pendingAppId = amazonAppName
+                amazonInstallDialog.open()
+                return
+            }
         }
 
         gameModel.launchGame(id)
@@ -3037,6 +3079,14 @@ ApplicationWindow {
     }
     EpicInstallDialog {
         id: epicInstallPathDialog
+    }
+    
+    AmazonImportDialog {
+        id: amazonImportDialog
+    }
+    
+    AmazonInstallDialog {
+        id: amazonInstallDialog
         appSettings: appSettings
         platformModel: sidebar.platformModel
         storeBridge: storeBridge
@@ -3048,9 +3098,22 @@ ApplicationWindow {
         onAccepted: {
             var pathStr = selectedFolder.toString()
             if (pathStr.startsWith("file://")) {
-                pathStr = pathStr.substring(7)
+                pathStr = pathStr.replace("file://", "")
             }
             storeBridge.import_legendary_game(pendingAppId, pathStr)
+        }
+    }
+    
+    FolderDialog {
+        id: amazonImportPathDialog
+        title: "Select Folder Containing Existing Game Data"
+        property string pendingAppId: ""
+        onAccepted: {
+            var pathStr = selectedFolder.toString()
+            if (pathStr.startsWith("file://")) {
+                pathStr = pathStr.replace("file://", "")
+            }
+            storeBridge.import_nile_game(pendingAppId, pathStr)
         }
     }
     
@@ -3214,13 +3277,15 @@ ApplicationWindow {
         currentGridTitleOverlay: appSettings.gridTitleOverlay
         currentUseCustomLegendary: appSettings.useCustomLegendary
         currentCustomLegendaryPath: appSettings.customLegendaryPath
+        currentUseCustomNile: appSettings.useCustomNile
+        currentCustomNilePath: appSettings.customNilePath
         currentDefaultInstallLocation: appSettings.defaultInstallLocation
         platformModel: sidebar.platformModel
         
         availableRegions: gameModel.getRegions()
         availableScrapers: gameModel.getAvailableScrapers()
         
-        onSettingsApplied: (viewMode, showFilter, defRegion, themeName, raUser, raToken, raEnabled, showTray, closeToTray, aiEnabled, ollamaUrl, ollamaModel, detailsPreferVideo, ignoreTheInSort, aiDescriptionPrompt, defaultIgnoreOnDelete, activeMeta, activeImage, geminiKey, openaiKey, llmProvider, saveHeroicLocally, autoRescan, confirmQuit, gridScale, gridTitleOverlay, useCustomYtdlp, customYtdlpPath, defaultProtonRunner, defaultProtonPrefix, defaultProtonWrapper, defaultProtonUseGamescope, defaultProtonUseMangohud, defaultProtonGamescopeArgs, defaultProtonGamescopeW, defaultProtonGamescopeH, defaultProtonGamescopeOutW, defaultProtonGamescopeOutH, defaultProtonGamescopeRefresh, defaultProtonGamescopeScaling, defaultProtonGamescopeUpscaler, defaultProtonGamescopeFullscreen, hidePlatformsSidebar, checkUpdates, useCustomLegendary, customLegendaryPath, defaultInstallLocation) => {
+        onSettingsApplied: (viewMode, showFilter, defRegion, themeName, raUser, raToken, raEnabled, showTray, closeToTray, aiEnabled, ollamaUrl, ollamaModel, detailsPreferVideo, ignoreTheInSort, aiDescriptionPrompt, defaultIgnoreOnDelete, activeMeta, activeImage, geminiKey, openaiKey, llmProvider, saveHeroicLocally, autoRescan, confirmQuit, gridScale, gridTitleOverlay, useCustomYtdlp, customYtdlpPath, defaultProtonRunner, defaultProtonPrefix, defaultProtonWrapper, defaultProtonUseGamescope, defaultProtonUseMangohud, defaultProtonGamescopeArgs, defaultProtonGamescopeW, defaultProtonGamescopeH, defaultProtonGamescopeOutW, defaultProtonGamescopeOutH, defaultProtonGamescopeRefresh, defaultProtonGamescopeScaling, defaultProtonGamescopeUpscaler, defaultProtonGamescopeFullscreen, hidePlatformsSidebar, checkUpdates, useCustomLegendary, customLegendaryPath, defaultInstallLocation, useCustomNile, customNilePath) => {
              // Update Settings
              appSettings.defaultView = viewMode
              appSettings.showFilterBar = showFilter
@@ -3279,6 +3344,8 @@ ApplicationWindow {
              appSettings.checkForUpdatesOnStartup = checkUpdates
              appSettings.useCustomLegendary = useCustomLegendary
              appSettings.customLegendaryPath = customLegendaryPath
+             appSettings.useCustomNile = useCustomNile
+             appSettings.customNilePath = customNilePath
              appSettings.defaultInstallLocation = defaultInstallLocation
              
              appSettings.save()
