@@ -2269,7 +2269,7 @@ ApplicationWindow {
                                     }
                                 }
 
-                                // Separate Title Area (Visible when setting is OFF)
+                                // Separate Title Area (Variable Font Scale & Centering)
                                 ColumnLayout {
                                     visible: !appSettings.gridTitleOverlay
                                     anchors.top: poster.bottom
@@ -2278,25 +2278,30 @@ ApplicationWindow {
                                     anchors.margins: 10 * window.gridScale
                                     spacing: 4
 
-                                    RowLayout {
+                                    Item {
                                         Layout.fillWidth: true
-                                        spacing: 6
-
+                                        Layout.preferredHeight: Math.max(20 * window.gridScale, titleText.implicitHeight)
+                                        
                                         Image {
+                                            anchors.left: parent.left
+                                            anchors.verticalCenter: parent.verticalCenter
                                             source: (typeof gamePlatformIcon !== "undefined" && gamePlatformIcon !== "") ? gamePlatformIcon : ""
-                                            Layout.preferredWidth: 16 * window.gridScale
-                                            Layout.preferredHeight: 16 * window.gridScale
+                                            width: 16 * window.gridScale
+                                            height: 16 * window.gridScale
                                             visible: source != ""
                                             fillMode: Image.PreserveAspectFit
                                         }
 
                                         Text {
+                                            id: titleText
+                                            anchors.centerIn: parent
+                                            width: parent.width - (40 * window.gridScale)
                                             text: (typeof gameTitle !== "undefined") ? gameTitle : ""
                                             color: Theme.text
-                                            font.pixelSize: 12 * window.gridScale
+                                            font.pixelSize: Math.max(11, 14 * window.gridScale)
                                             font.bold: true
+                                            horizontalAlignment: Text.AlignHCenter
                                             elide: Text.ElideRight
-                                            Layout.fillWidth: true
                                         }
                                     }
                                 }
