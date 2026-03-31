@@ -1654,6 +1654,27 @@ Rectangle {
                         }
                     }
                 }
+
+                TheophanyMenu {
+                    id: amazonExtraMenu
+                    TheophanyMenuItem {
+                        text: "Import Game..."
+                        visible: !root.gameIsInstalled
+                        onTriggered: {
+                            window.importAmazonGame(root.gameId)
+                        }
+                    }
+                    TheophanyMenuItem {
+                        text: "Uninstall Game"
+                        visible: root.gameIsInstalled && root.fullRomPath.startsWith("amazon://")
+                        onTriggered: {
+                            var appName = root.fullRomPath.replace("amazon://launch/", "")
+                            if (confirmUninstallDialog.opened) return
+                            confirmUninstallDialog.appName = appName
+                            confirmUninstallDialog.open()
+                        }
+                    }
+                }
             }
 
 
@@ -2753,9 +2774,12 @@ Rectangle {
                     text: "Uninstall"
                     primary: true
                     onClicked: {
-                        storeBridge.uninstall_legendary_game(confirmUninstallDialog.appName)
+                        if (root.fullRomPath.startsWith("amazon://")) {
+                            storeBridge.uninstall_nile_game(confirmUninstallDialog.appName)
+                        } else {
+                            storeBridge.uninstall_legendary_game(confirmUninstallDialog.appName)
+                        }
                         confirmUninstallDialog.close()
-                        // Signal parent (Main.qml) to refresh once the backend confirms completion
                     }
                 }
             }

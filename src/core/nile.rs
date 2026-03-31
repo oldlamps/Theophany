@@ -198,12 +198,28 @@ impl NileWrapper {
         let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Nile binary not found"))?;
 
         let output = Self::build_command(&binary, "auth")
-            .arg("--delete")
+            .arg("--logout")
             .output()?;
 
         if !output.status.success() {
-            let error = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Logout failed: {}", error));
+            return Err(anyhow::anyhow!("Logout failed"));
+        }
+
+        Ok(())
+    }
+
+    pub fn import_game(id: &str, path: &str) -> anyhow::Result<()> {
+        let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Nile binary not found"))?;
+
+        let output = Self::build_command(&binary, "import")
+            .arg("--path")
+            .arg(path)
+            .arg(id)
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Import failed: {}", stderr));
         }
 
         Ok(())
@@ -343,8 +359,9 @@ impl NileWrapper {
 
         let mut cmd = Self::build_command(&binary, "import");
         cmd.env("PYTHONUNBUFFERED", "1")
-            .arg(app_name)
-            .arg(install_path);
+            .arg("--path")
+            .arg(install_path)
+            .arg(app_name);
 
         #[cfg(unix)]
         {

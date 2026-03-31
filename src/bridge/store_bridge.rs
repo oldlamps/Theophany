@@ -2007,6 +2007,40 @@ impl StoreBridge {
                                 let rom_id = format!("amazon-{}", app_name_clone);
                                 let conn = db.get_connection();
                                 let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
+
+                                // Explicitly inherit PC settings from platform defaults
+                                if let Ok(mut stmt) = conn.prepare("SELECT pc_config_json FROM platforms WHERE id = 'amazon'") {
+                                    if let Ok(pc_json) = stmt.query_row([], |row| row.get::<_, String>(0)) {
+                                        if let Ok(defaults) = serde_json::from_str::<serde_json::Value>(&pc_json) {
+                                            let new_config = crate::core::models::PcConfig {
+                                                rom_id: rom_id.clone(),
+                                                umu_proton_version: defaults.get("umu_proton_version").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                                umu_store: defaults.get("umu_store").and_then(|v| v.as_str()).map(|s| s.to_string()).or(Some("none".to_string())),
+                                                wine_prefix: defaults.get("wine_prefix").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                                working_dir: None,
+                                                umu_id: defaults.get("umu_id").and_then(|v| v.as_str()).map(|s| s.to_string()).or(Some("".to_string())),
+                                                env_vars: None,
+                                                extra_args: defaults.get("extra_args").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                                proton_verb: defaults.get("proton_verb").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                                disable_fixes: defaults.get("disable_fixes").and_then(|v| v.as_bool()),
+                                                no_runtime: defaults.get("no_runtime").and_then(|v| v.as_bool()),
+                                                log_level: defaults.get("log_level").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                                wrapper: defaults.get("wrapper").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                                use_gamescope: defaults.get("use_gamescope").and_then(|v| v.as_bool()),
+                                                gamescope_args: defaults.get("gamescope_args").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                                gs_state: defaults.get("gs_state").cloned(),
+                                                use_mangohud: defaults.get("use_mangohud").and_then(|v| v.as_bool()),
+                                                pre_launch_script: None,
+                                                post_launch_script: None,
+                                                cloud_saves_enabled: None,
+                                                cloud_save_path: None,
+                                                cloud_save_auto_sync: None,
+                                                steam_compat_mode: Some(true),
+                                            };
+                                            let _ = db.insert_pc_config(&new_config);
+                                        }
+                                    }
+                                }
                             }
                             let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, true, "Imported successfully".into()));
                         },

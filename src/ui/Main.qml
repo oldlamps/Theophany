@@ -818,7 +818,7 @@ ApplicationWindow {
         confirmDialog.title = "Uninstall Amazon Game"
         confirmDialog.text = "Are you sure you want to completely uninstall Amazon Game '" + appName + "'?"
         confirmDialog.onAcceptedOverride = function() {
-            var result = storeBridge.uninstall_nile_app(appName)
+            var result = storeBridge.uninstall_nile_game(appName)
             if (result === "success") {
                 gameModel.removeGameByPath("amazon://launch/" + appName)
                 toast.show("Uninstalled " + appName, "success")
