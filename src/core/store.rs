@@ -1585,6 +1585,28 @@ impl StoreManager {
         Ok(updated_count)
     }
 
+    /// Scans for games available via Nile CLI (Amazon Games Store).
+    pub fn scan_nile_games() -> Vec<Rom> {
+        log::info!("[Nile] Syncing Amazon library...");
+        if let Err(e) = crate::core::nile::NileWrapper::library_sync() {
+            log::warn!("[Nile] Library sync failed: {}", e);
+        }
+
+        log::info!("[Nile] Scanning for Amazon games via Nile CLI...");
+        match crate::core::nile::NileWrapper::list_games() {
+            Ok(games) => {
+                log::info!("[Nile] Found {} games in Nile library", games.len());
+                games.iter()
+                    .map(crate::core::nile::NileWrapper::to_rom)
+                    .collect()
+            },
+            Err(e) => {
+                log::warn!("[Nile] Failed to list games: {}", e);
+                Vec::new()
+            }
+        }
+    }
+
     /// Scans for games available via Legendary CLI (Epic Games Store).
     pub fn scan_legendary_games() -> Vec<Rom> {
         log::info!("[Legendary] Scanning for Epic Games via Legendary CLI...");
@@ -1626,22 +1648,6 @@ impl StoreManager {
 
         Ok(())
     }
-    pub fn scan_nile_games() -> Vec<Rom> {
-        log::info!("[Nile] Scanning for Amazon Games via Nile CLI...");
-        match crate::core::nile::NileWrapper::list_games() {
-            Ok(games) => {
-                log::info!("[Nile] Found {} games in Nile library", games.len());
-                games.iter()
-                    .map(crate::core::nile::NileWrapper::to_rom)
-                    .collect()
-            },
-            Err(e) => {
-                log::warn!("[Nile] Failed to list games: {}", e);
-                Vec::new()
-            }
-        }
-    }
-
     pub fn install_nile_game(app_name: String, install_path: Option<String>, with_dlcs: bool) -> anyhow::Result<std::process::Child> {
         crate::core::nile::NileWrapper::install(&app_name, install_path.as_deref(), with_dlcs)
     }

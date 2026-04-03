@@ -77,5 +77,6 @@ pub fn get_default_platforms() -> Vec<PlatformInfo> {
         PlatformInfo { id: 108, name: "Epic Games".to_string(), slug: "epic".to_string(), icon_url: "assets/systems/epic.png".to_string(), is_active: false },
         PlatformInfo { id: 109, name: "Xbox 360".to_string(), slug: "Xbox360".to_string(), icon_url: "assets/systems/xbox360.png".to_string(), is_active: false },
         PlatformInfo { id: 110, name: "GOG".to_string(), slug: "gog".to_string(), icon_url: "assets/systems/gog.png".to_string(), is_active: false },
+        PlatformInfo { id: 111, name: "Nintendo Switch".to_string(), slug: "switch".to_string(), icon_url: "assets/systems/switch.png".to_string(), is_active: false },
     ]
 }

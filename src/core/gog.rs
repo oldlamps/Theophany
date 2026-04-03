@@ -33,6 +33,15 @@ pub struct GogGame {
     pub title: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GogWishlistItem {
+    pub title: String,
+    pub url: String,
+    pub platforms: Vec<String>,
+    pub price: String,
+    pub has_discount: bool,
+}
+
 pub struct GogDownloader;
 
 impl GogDownloader {
@@ -215,6 +224,113 @@ impl GogDownloader {
 
         log::info!("[GogDownloader] Found {} games in library", games.len());
         Ok(games)
+    }
+
+    /// Lists the user's GOG wishlist via `lgogdownloader --list w`.
+    pub fn list_wishlist() -> anyhow::Result<Vec<GogWishlistItem>> {
+        let binary =
+            Self::find_binary().ok_or_else(|| anyhow::anyhow!("lgogdownloader binary not found"))?;
+
+        let output = Self::build_command(&binary)
+            .arg("--list")
+            .arg("w")
+            .output()?;
+
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("lgogdownloader --list w failed: {}", err));
+        }
+
+        let raw = String::from_utf8_lossy(&output.stdout);
+        let items = Self::parse_wishlist_output(&raw);
+
+        log::info!("[GogDownloader] Found {} items in wishlist", items.len());
+        Ok(items)
+    }
+
+    pub fn get_game_info(slug: &str) -> anyhow::Result<String> {
+        let binary =
+            Self::find_binary().ok_or_else(|| anyhow::anyhow!("lgogdownloader binary not found"))?;
+
+        let output = Self::build_command(&binary)
+            .arg("--list")
+            .arg("details")
+            .arg("--game")
+            .arg(slug)
+            .output()?;
+
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("lgogdownloader --list details failed: {}", err));
+        }
+
+        let raw = String::from_utf8_lossy(&output.stdout).to_string();
+        Ok(raw)
+    }
+
+    pub(crate) fn parse_wishlist_output(raw: &str) -> Vec<GogWishlistItem> {
+        let mut items = Vec::new();
+        let mut current_block = Vec::new();
+
+        for line in raw.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                if !current_block.is_empty() {
+                    if let Some(item) = Self::parse_wishlist_block(&current_block) {
+                        items.push(item);
+                    }
+                    current_block.clear();
+                }
+                continue;
+            }
+            current_block.push(line.to_string());
+        }
+
+        if !current_block.is_empty() {
+            if let Some(item) = Self::parse_wishlist_block(&current_block) {
+                items.push(item);
+            }
+        }
+
+        items
+    }
+
+    fn parse_wishlist_block(lines: &[String]) -> Option<GogWishlistItem> {
+        if lines.is_empty() { return None; }
+
+        let title_line = strip_ansi(&lines[0]).trim().to_string();
+        if title_line.is_empty() { return None; }
+
+        let has_discount = title_line.contains("[Discount]");
+        let title = title_line.replace("[Discount]", "").trim().to_string();
+
+        let mut url = String::new();
+        let mut platforms = Vec::new();
+        let mut price = String::new();
+
+        for line in &lines[1..] {
+            let clean = strip_ansi(line).trim().to_string();
+            if clean.starts_with("https://") {
+                url = clean;
+            } else if let Some(p_list) = clean.strip_prefix("Platforms: ") {
+                platforms = p_list.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            } else if let Some(p_val) = clean.strip_prefix("Price: ") {
+                price = p_val.to_string();
+            }
+        }
+
+        if title.is_empty() { return None; }
+
+        Some(GogWishlistItem {
+            title,
+            url,
+            platforms,
+            price,
+            has_discount,
+        })
     }
 
    

@@ -225,6 +225,21 @@ impl NileWrapper {
         Ok(())
     }
 
+    pub fn library_sync() -> anyhow::Result<()> {
+        let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Nile binary not found"))?;
+
+        let output = Self::build_command(&binary, "library")
+            .arg("sync")
+            .output()?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Nile sync failed: {}", error));
+        }
+
+        Ok(())
+    }
+
     pub fn list_games() -> anyhow::Result<Vec<NileGame>> {
         let binary = Self::find_binary().ok_or_else(|| anyhow::anyhow!("Nile binary not found"))?;
 
@@ -453,15 +468,15 @@ impl NileWrapper {
             last_played: None,
             platform_icon: Some("amazon".to_string()),
             is_favorite: Some(false),
-            genre: Some(genre_str),
-            developer: Some(developer),
+            genre: (if !genre_str.is_empty() { Some(genre_str) } else { None }),
+            developer: (if !developer.is_empty() { Some(developer) } else { None }),
             publisher: None,
             rating: None,
             tags: None,
             icon_path: None,
             background_path: None,
             release_date: None,
-            description: None,
+            description: (if !description.is_empty() { Some(description) } else { None }),
             is_installed: Some(game.is_installed),
             cloud_saves_supported: None,
             resources: None,

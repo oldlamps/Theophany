@@ -126,12 +126,19 @@ Dialog {
                 if (info.game && info.game.title) {
                     gameTitleStr = info.game.title;
                     
-                    // Auto-generate a unique prefix folder if still using the fallback default
-                    if (prefixInput.text === defaultPrefixDir) {
-                        var safeTitle = gameTitleStr.replace(/[^a-zA-Z0-9]/g, "");
-                        if (safeTitle.length > 0) {
+                    var safeTitle = gameTitleStr.replace(/[^a-zA-Z0-9]/g, "");
+                    if (safeTitle.length > 0) {
+                        // Auto-generate a unique prefix folder if still using the fallback default
+                        if (prefixInput.text === defaultPrefixDir) {
                             var newPrefix = defaultPrefixDir.replace(/\/default$/, "/" + safeTitle);
                             prefixInput.text = newPrefix;
+                        }
+                        
+                        // Auto-generate a unique install path if still using the fallback default
+                        if (installPathInput.text === defaultInstallDir) {
+                            var newInstall = defaultInstallDir;
+                            if (!newInstall.endsWith("/")) newInstall += "/";
+                            installPathInput.text = newInstall + safeTitle;
                         }
                     }
                 }

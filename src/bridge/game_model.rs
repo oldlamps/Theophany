@@ -2546,7 +2546,7 @@ impl GameListModel {
             if let Ok(Some(platform)) = db.get_platform(&platform_id) {
                 let platform_type = platform.platform_type.clone().unwrap_or_default().to_lowercase();
                 
-                if platform_type == "steam" || platform_type == "heroic" || platform_type == "lutris" || platform_type == "epic" || platform_type == "gog" {
+                if platform_type == "steam" || platform_type == "heroic" || platform_type == "lutris" || platform_type == "epic" || platform_type == "gog" || platform_type == "amazon" {
                     log::debug!("[Rescan] Specialized rescan for store platform: {}", platform_type);
                     
                     let scanned_roms = match platform_type.as_str() {
@@ -2563,6 +2563,7 @@ impl GameListModel {
                         "heroic" => crate::core::store::StoreManager::scan_heroic_games(),
                         "lutris" => crate::core::store::StoreManager::scan_lutris_games(),
                         "epic" => crate::core::store::StoreManager::scan_legendary_games(),
+                        "amazon" => crate::core::store::StoreManager::scan_nile_games(),
                         "gog" => {
                             crate::core::gog::GogDownloader::list_games()
                                 .unwrap_or_default()

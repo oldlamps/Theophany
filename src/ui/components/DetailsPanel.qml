@@ -1632,6 +1632,12 @@ Rectangle {
                             var appName = root.fullRomPath.replace("epic://launch/", "")
                             if (confirmUninstallDialog.opened) return
                             confirmUninstallDialog.appName = appName
+                            confirmUninstallDialog.prefixPath = ""
+                            var configStr = storeBridge.get_epic_config(root.gameId)
+                            try {
+                                var conf = JSON.parse(configStr)
+                                if (conf.prefix) confirmUninstallDialog.prefixPath = conf.prefix
+                            } catch (e) {}
                             confirmUninstallDialog.open()
                         }
                     }
@@ -1671,6 +1677,12 @@ Rectangle {
                             var appName = root.fullRomPath.replace("amazon://launch/", "")
                             if (confirmUninstallDialog.opened) return
                             confirmUninstallDialog.appName = appName
+                            confirmUninstallDialog.prefixPath = ""
+                            var configStr = storeBridge.get_epic_config(root.gameId)
+                            try {
+                                var conf = JSON.parse(configStr)
+                                if (conf.prefix) confirmUninstallDialog.prefixPath = conf.prefix
+                            } catch (e) {}
                             confirmUninstallDialog.open()
                         }
                     }
@@ -2738,6 +2750,7 @@ Rectangle {
         padding: 25
         
         property string appName: ""
+        property string prefixPath: ""
 
         background: Rectangle {
             color: Theme.secondaryBackground
@@ -2755,12 +2768,35 @@ Rectangle {
                 font.bold: true
             }
             Label {
-                text: "Are you sure you want to uninstall <b>" + root.gameTitle + "</b>?<br><br>This will remove the game files from your system via Legendary."
+                text: "Are you sure you want to uninstall <b>" + root.gameTitle + "</b>?<br><br>This will remove the game files from your system via " + (root.fullRomPath.startsWith("amazon://") ? "Nile" : "Legendary") + "."
                 color: Theme.text
                 font.pixelSize: 14
                 wrapMode: Text.WordWrap
                 textFormat: Text.RichText
                 Layout.fillWidth: true
+            }
+            ColumnLayout {
+                spacing: 4
+                Layout.fillWidth: true
+                visible: (root.fullRomPath.startsWith("amazon://") || root.fullRomPath.startsWith("epic://")) && confirmUninstallDialog.prefixPath !== ""
+
+                TheophanyCheckBox {
+                    id: deletePrefixCheck
+                    text: "Delete associated Wine prefix"
+                    checked: false
+                    Layout.fillWidth: true
+                }
+                
+                Label {
+                    text: "Path: " + confirmUninstallDialog.prefixPath
+                    color: Theme.secondaryText
+                    font.pixelSize: 11
+                    font.italic: true
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 32
+                    visible: true // Always visible if prefixPath is not empty
+                }
             }
             RowLayout {
                 Layout.fillWidth: true
@@ -2775,9 +2811,9 @@ Rectangle {
                     primary: true
                     onClicked: {
                         if (root.fullRomPath.startsWith("amazon://")) {
-                            storeBridge.uninstall_nile_game(confirmUninstallDialog.appName)
+                            storeBridge.uninstall_nile_game(confirmUninstallDialog.appName, deletePrefixCheck.checked)
                         } else {
-                            storeBridge.uninstall_legendary_game(confirmUninstallDialog.appName)
+                            storeBridge.uninstall_legendary_game(confirmUninstallDialog.appName, deletePrefixCheck.checked)
                         }
                         confirmUninstallDialog.close()
                     }

@@ -3021,6 +3021,10 @@ ApplicationWindow {
         gogImportDialog.openImport()
     }
 
+    function openGogWishlist() {
+        gogWishlistDialog.openWishlist()
+    }
+
     FirstRunWizard {
         id: firstRunWizard
         raBridge: raBridge
@@ -3069,9 +3073,14 @@ ApplicationWindow {
         id: gogImportDialog
     }
 
+    GogWishlistDialog {
+        id: gogWishlistDialog
+    }
+
     GogInstallDialog {
         id: gogInstallDialog
         appSettings: appSettings
+        platformModel: sidebar.platformModel
         storeBridge: storeBridge
     }
 
@@ -3084,6 +3093,9 @@ ApplicationWindow {
     }
     EpicInstallDialog {
         id: epicInstallPathDialog
+        appSettings: appSettings
+        platformModel: sidebar.platformModel
+        storeBridge: storeBridge
     }
     
     AmazonImportDialog {

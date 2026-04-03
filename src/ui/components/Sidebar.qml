@@ -868,6 +868,14 @@ Rectangle {
             iconSource: "🔄"
             onTriggered: root.rescanRequested(contextMenu.platformId)
         }
+        TheophanyMenuItem {
+            text: "GOG Wishlist"
+            iconSource: "🎁"
+            visible: contextMenu.platformType === "gog"
+            onTriggered: {
+                window.openGogWishlist()
+            }
+        }
         TheophanyMenuSeparator {
             visible: contextMenu.platformType === "PC (Linux)"
         }

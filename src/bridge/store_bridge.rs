@@ -58,6 +58,8 @@ pub struct StoreBridge {
     gogAuthUrlReceived: qt_signal!(url: QString),
     gogAuthFinished: qt_signal!(success: bool, message: QString),
     gogLogoutFinished: qt_signal!(success: bool, message: QString),
+    gogWishlistFinished: qt_signal!(results: QString),
+    gogAppInfoReceived: qt_signal!(json: QString),
     nileLibraryFinished: qt_signal!(results: QString),
     nileAuthUrlReceived: qt_signal!(url: QString),
     nileAuthFinished: qt_signal!(success: bool, message: QString),
@@ -85,7 +87,7 @@ pub struct StoreBridge {
     logout_legendary: qt_method!(fn(&self)),
     install_legendary_game: qt_method!(fn(&self, app_name: String, path: String, with_dlcs: bool)),
     import_legendary_game: qt_method!(fn(&self, app_name: String, path: String)),
-    uninstall_legendary_game: qt_method!(fn(&self, app_name: String)),
+    uninstall_legendary_game: qt_method!(fn(&self, app_name: String, delete_prefix: bool)),
     get_legendary_app_info: qt_method!(fn(&self, app_name: String)),
     get_epic_config: qt_method!(fn(&self, rom_id: String) -> String),
     save_epic_config: qt_method!(fn(&self, rom_id: String, runner: String, prefix: String)),
@@ -102,8 +104,10 @@ pub struct StoreBridge {
     get_gog_auth_url: qt_method!(fn(&self)),
     authenticate_gog: qt_method!(fn(&self, redirect_url: String)),
     logout_gog: qt_method!(fn(&self)),
+    refresh_gog_wishlist: qt_method!(fn(&self)),
     install_gog_game: qt_method!(fn(&self, slug: String, install_path: String, platform: String, no_dependencies: bool)),
     cancel_gog_install: qt_method!(fn(&self, slug: String)),
+    get_gog_app_info: qt_method!(fn(&self, slug: String)),
     refresh_nile_library: qt_method!(fn(&self)),
     check_nile_auth: qt_method!(fn(&self) -> bool),
     get_nile_auth_url: qt_method!(fn(&self)),
@@ -111,7 +115,7 @@ pub struct StoreBridge {
     logout_nile: qt_method!(fn(&self)),
     install_nile_game: qt_method!(fn(&self, app_name: String, path: String, with_dlcs: bool)),
     import_nile_game: qt_method!(fn(&self, app_name: String, path: String)),
-    uninstall_nile_game: qt_method!(fn(&self, app_name: String)),
+    uninstall_nile_game: qt_method!(fn(&self, app_name: String, delete_prefix: bool)),
     get_nile_app_info: qt_method!(fn(&self, app_name: String)),
 
     // Internal
@@ -148,6 +152,8 @@ enum StoreMsg {
     GogAuthUrlReceived(String),
     GogAuthFinished(bool, String),
     GogLogoutFinished(bool, String),
+    GogWishlistFinished(String),
+    GogAppInfoReceived(String),
     NileLibraryFinished(String),
     NileAuthUrlReceived(String),
     NileAuthFinished(bool, String),
@@ -217,6 +223,8 @@ impl StoreBridge {
                     StoreMsg::GogAuthUrlReceived(url) => self.gogAuthUrlReceived(url.into()),
                     StoreMsg::GogAuthFinished(s, m) => self.gogAuthFinished(s, m.into()),
                     StoreMsg::GogLogoutFinished(s, m) => self.gogLogoutFinished(s, m.into()),
+                    StoreMsg::GogWishlistFinished(j) => self.gogWishlistFinished(j.into()),
+                    StoreMsg::GogAppInfoReceived(j) => self.gogAppInfoReceived(j.into()),
                     StoreMsg::NileLibraryFinished(j) => self.nileLibraryFinished(j.into()),
                     StoreMsg::NileAuthUrlReceived(url) => self.nileAuthUrlReceived(url.into()),
                     StoreMsg::NileAuthFinished(s, m) => self.nileAuthFinished(s, m.into()),
@@ -781,8 +789,8 @@ impl StoreBridge {
             let mut rows = stmt.query([&rom_id]).unwrap();
             
             if let Ok(Some(row)) = rows.next() {
-                let runner: Option<String> = row.get(0).unwrap_or(None);
-                let prefix: Option<String> = row.get(1).unwrap_or(None);
+                let runner: Option<String> = row.get(0).ok();
+                let prefix: Option<String> = row.get(1).ok();
                 
                 let mut map = serde_json::Map::new();
                 if let Some(r) = runner { map.insert("runner".to_string(), serde_json::json!(r)); }
@@ -919,13 +927,35 @@ impl StoreBridge {
             }
         });
     }
-    fn uninstall_legendary_game(&self, app_name: String) {
-        log::debug!("[LegendaryBridge] Starting uninstall for: {}", app_name);
+    fn uninstall_legendary_game(&self, app_name: String, delete_prefix: bool) {
+        log::debug!("[LegendaryBridge] Starting uninstall for: {} (delete_prefix={})", app_name, delete_prefix);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         let app_name_clone = app_name.clone();
 
         std::thread::spawn(move || {
+            if delete_prefix {
+                let db_path = crate::core::paths::get_data_dir().join("games.db");
+                let rom_id = format!("legendary-{}", app_name_clone); // Legendary uses the legendary- prefix in the DB
+                if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                    let conn = db.get_connection();
+                    let stmt = conn.prepare("SELECT wine_prefix FROM pc_configurations WHERE rom_id = ?1");
+                    if let Ok(mut stmt) = stmt {
+                        if let Ok(prefix) = stmt.query_row([&rom_id], |row| row.get::<usize, String>(0)) {
+                            if !prefix.is_empty() {
+                                let prefix_path = std::path::Path::new(&prefix);
+                                if prefix_path.exists() && prefix_path.is_dir() {
+                                    log::info!("[StoreBridge] Deleting Legendary prefix: {:?}", prefix_path);
+                                    let _ = std::fs::remove_dir_all(prefix_path);
+                                }
+                            }
+                        }
+                        // Also delete the configuration entry
+                        let _ = conn.execute("DELETE FROM pc_configurations WHERE rom_id = ?1", [&rom_id]);
+                    }
+                }
+            }
+
             match StoreManager::uninstall_legendary_game(app_name_clone.clone()) {
                 Ok(_) => {
                     let _ = tx.send(StoreMsg::InstallFinished(app_name_clone, true, "Uninstalled successfully".into()));
@@ -1466,6 +1496,24 @@ impl StoreBridge {
         });
     }
 
+    fn refresh_gog_wishlist(&self) {
+        log::debug!("Fetching GOG wishlist...");
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            match crate::core::gog::GogDownloader::list_wishlist() {
+                Ok(items) => {
+                    let json = serde_json::to_string(&items).unwrap_or_default();
+                    let _ = tx.send(StoreMsg::GogWishlistFinished(json));
+                },
+                Err(e) => {
+                    log::error!("Failed to fetch GOG wishlist: {}", e);
+                    let _ = tx.send(StoreMsg::GogWishlistFinished("[]".into()));
+                }
+            }
+        });
+    }
+
     fn check_gog_auth(&self) -> bool {
         crate::core::gog::GogDownloader::is_authenticated()
     }
@@ -1724,6 +1772,25 @@ impl StoreBridge {
                 .arg(pid.to_string())
                 .status();
         }
+    }
+
+    fn get_gog_app_info(&self, slug: String) {
+        self.ensure_channels();
+        let tx = self.tx.borrow().as_ref().unwrap().clone();
+        
+        std::thread::spawn(move || {
+            match crate::core::gog::GogDownloader::get_game_info(&slug) {
+                Ok(raw) => {
+                    let _ = tx.send(StoreMsg::GogAppInfoReceived(raw));
+                },
+                Err(e) => {
+                    log::error!("Failed to get gog app info: {}", e);
+                    let mut err_map = serde_json::Map::new();
+                    err_map.insert("error".to_string(), serde_json::json!(e.to_string()));
+                    let _ = tx.send(StoreMsg::GogAppInfoReceived(serde_json::Value::Object(err_map).to_string()));
+                }
+            }
+        });
     }
 
     fn refresh_nile_library(&self) {
@@ -2065,12 +2132,34 @@ impl StoreBridge {
         });
     }
 
-    fn uninstall_nile_game(&self, app_name: String) {
-        log::debug!("[NileBridge] Starting uninstall for: {}", app_name);
+    fn uninstall_nile_game(&self, app_name: String, delete_prefix: bool) {
+        log::debug!("[NileBridge] Starting uninstall for: {} (delete_prefix={})", app_name, delete_prefix);
         self.ensure_channels();
         let tx = self.tx.borrow().as_ref().unwrap().clone();
         
         std::thread::spawn(move || {
+            if delete_prefix {
+                let db_path = crate::core::paths::get_data_dir().join("games.db");
+                let rom_id = format!("amazon-{}", app_name);
+                if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                    let conn = db.get_connection();
+                    let stmt = conn.prepare("SELECT wine_prefix FROM pc_configurations WHERE rom_id = ?1");
+                    if let Ok(mut stmt) = stmt {
+                        if let Ok(prefix) = stmt.query_row([&rom_id], |row| row.get::<usize, String>(0)) {
+                            if !prefix.is_empty() {
+                                let prefix_path = std::path::Path::new(&prefix);
+                                if prefix_path.exists() && prefix_path.is_dir() {
+                                    log::info!("[StoreBridge] Deleting Nile prefix: {:?}", prefix_path);
+                                    let _ = std::fs::remove_dir_all(prefix_path);
+                                }
+                            }
+                        }
+                        // Also delete the configuration entry
+                        let _ = conn.execute("DELETE FROM pc_configurations WHERE rom_id = ?1", [&rom_id]);
+                    }
+                }
+            }
+
             match StoreManager::uninstall_nile_game(app_name.clone()) {
                 Ok(_) => {
                     let _ = tx.send(StoreMsg::InstallFinished(app_name, true, "Uninstalled successfully".into()));

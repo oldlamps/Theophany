@@ -15,6 +15,7 @@ Dialog {
     property string gameTitle: ""
     property var appSettings
     property var storeBridge
+    property var platformModel
 
     property string defaultInstallDir: appSettings
         ? (appSettings.defaultInstallLocation || (Qt.resolvedUrl("~/Games").toString()))
@@ -23,7 +24,10 @@ Dialog {
         ? (appSettings.defaultProtonPrefix || "~/Games/theophany/default")
         : "~/Games/theophany/default"
 
+    property string defaultRunner: ""
     property bool isInstalling: false
+    property bool loading: false
+    property string installSizeStr: ""
 
     modal: true
     width: 620
@@ -35,11 +39,32 @@ Dialog {
 
     onOpened: {
         isInstalling = false
+        loading = true
+        installSizeStr = ""
         installPathInput.text = defaultInstallDir
         var safeTitle = root.gameTitle.replace(/[^a-zA-Z0-9]/g, "")
         prefixInput.text = defaultPrefixDir.replace(/\/default$/, "/") + (safeTitle || root.slug)
         platformCombo.currentIndex = 0
         noDepsCheck.checked = false
+
+        storeBridge.get_gog_app_info(root.slug);
+
+        // Fetch existing runner/prefix if already set in Database
+        var configStr = storeBridge.get_epic_config("gog-" + root.slug);
+        try {
+            var conf = JSON.parse(configStr);
+            if (conf.prefix) prefixInput.text = conf.prefix;
+            if (conf.runner) {
+                defaultRunner = conf.runner;
+                runnerCombo.currentIndex = runnerCombo.indexOfValue(conf.runner);
+            } else {
+                 if (appSettings && appSettings.defaultProtonRunner) {
+                     runnerCombo.currentIndex = runnerCombo.indexOfValue(appSettings.defaultProtonRunner);
+                 } else {
+                     runnerCombo.currentIndex = 0;
+                 }
+            }
+        } catch(e) { }
     }
 
     background: Rectangle {
@@ -53,6 +78,31 @@ Dialog {
             color: Qt.rgba(0, 0, 0, 0.25)
             radius: 20
             samples: 41
+        }
+    }
+
+    Connections {
+        target: storeBridge
+        
+        function onGogAppInfoReceived(text) {
+            loading = false;
+            // Extract raw byte size e.g. "size: 984612864"
+            var sizeMatch = text.match(/size:\s*(\d+)/i);
+            if (sizeMatch && sizeMatch.length >= 2) {
+                var bytes = parseInt(sizeMatch[1]);
+                if (!isNaN(bytes)) {
+                    var mb = bytes / (1024 * 1024);
+                    if (mb >= 1024) {
+                        installSizeStr = (mb / 1024).toFixed(2) + " GB";
+                    } else {
+                        installSizeStr = mb.toFixed(2) + " MB";
+                    }
+                } else {
+                    installSizeStr = "Unknown";
+                }
+            } else {
+                installSizeStr = "Unknown";
+            }
         }
     }
 
@@ -82,10 +132,23 @@ Dialog {
         }
     }
 
-    ListModel { id: platformModel }
+    ListModel { id: osPlatformModel }
+    ListModel { id: protonVersionsModel }
     Component.onCompleted: {
-        platformModel.append({ "name": "Windows (Galaxy)",  "value": "windows" })
-        platformModel.append({ "name": "Linux (Galaxy)",    "value": "linux"   })
+        osPlatformModel.append({ "name": "Windows (Galaxy)",  "value": "windows" })
+        osPlatformModel.append({ "name": "Linux (Galaxy)",    "value": "linux"   })
+        
+        protonVersionsModel.clear()
+        protonVersionsModel.append({ "name": "Default (umu-run choice)", "path": "" })
+        protonVersionsModel.append({ "name": "Auto (GE-Proton)", "path": "GE-Proton" })
+        if (root.platformModel) {
+            try {
+                var versions = JSON.parse(root.platformModel.getProtonVersions())
+                for (var i = 0; i < versions.length; i++) {
+                    protonVersionsModel.append(versions[i])
+                }
+            } catch(e) {}
+        }
     }
 
     FolderDialog {
@@ -124,7 +187,7 @@ Dialog {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    height: 70
+                    height: 90
                     color: Theme.background
                     radius: 10
                     border.color: Theme.border
@@ -132,7 +195,20 @@ Dialog {
 
                     ColumnLayout {
                         anchors.centerIn: parent
-                        spacing: 4
+                        spacing: 8
+
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 30
+                            visible: root.loading
+
+                            BusyIndicator {
+                                anchors.centerIn: parent
+                                running: root.loading
+                                width: 24
+                                height: 24
+                            }
+                        }
 
                         Text {
                             text: root.gameTitle || root.slug
@@ -142,14 +218,51 @@ Dialog {
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                             horizontalAlignment: Text.AlignHCenter
+                            visible: !root.loading
                         }
 
-                        Text {
-                            text: "GOG · DRM Free"
-                            color: Theme.accent
-                            font.pixelSize: 11
-                            horizontalAlignment: Text.AlignHCenter
+                        RowLayout {
+                            visible: !root.loading
                             Layout.alignment: Qt.AlignHCenter
+                            spacing: 30
+                            
+                            ColumnLayout {
+                                spacing: 4
+                                Layout.alignment: Qt.AlignHCenter
+                                Text { 
+                                    text: "STORE"
+                                    color: Theme.secondaryText
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    Layout.alignment: Qt.AlignHCenter
+                                }
+                                Text { 
+                                    text: "GOG (DRM-Free)"
+                                    color: Theme.text
+                                    font.pixelSize: 12
+                                    Layout.alignment: Qt.AlignHCenter
+                                    font.bold: true
+                                }
+                            }
+
+                            ColumnLayout {
+                                spacing: 4
+                                Layout.alignment: Qt.AlignHCenter
+                                Text { 
+                                    text: "SIZE"
+                                    color: Theme.secondaryText
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    Layout.alignment: Qt.AlignHCenter
+                                }
+                                Text { 
+                                    text: root.installSizeStr !== "" ? root.installSizeStr : "..."
+                                    color: Theme.text
+                                    font.pixelSize: 12
+                                    Layout.alignment: Qt.AlignHCenter
+                                    font.bold: true
+                                }
+                            }
                         }
                     }
                 }
@@ -204,9 +317,28 @@ Dialog {
                         id: platformCombo
                         Layout.columnSpan: 2
                         Layout.fillWidth: true
-                        model: platformModel
+                        model: osPlatformModel
                         textRole: "name"
                         valueRole: "value"
+                    }
+
+                    // Runner (only relevant for Windows builds)
+                    Label {
+                        text: "Runner"
+                        color: Theme.secondaryText
+                        font.bold: true
+                        font.pixelSize: 11
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: platformCombo.currentIndex === 0
+                    }
+                    TheophanyComboBox {
+                        id: runnerCombo
+                        Layout.columnSpan: 2
+                        Layout.fillWidth: true
+                        model: protonVersionsModel
+                        textRole: "name"
+                        valueRole: "path"
+                        visible: platformCombo.currentIndex === 0
                     }
 
                     // Wine Prefix (only relevant for Windows builds)
@@ -264,16 +396,18 @@ Dialog {
                         var path = installPathInput.text.trim()
                         if (path === "") path = defaultInstallDir
 
-                        var platform = platformModel.get(platformCombo.currentIndex).value
+                        var platform = osPlatformModel.get(platformCombo.currentIndex).value
 
-                        // Save prefix to pc_config for this ROM if Windows
+                        // Save prefix and runner to pc_config for this ROM if Windows
                         if (platformCombo.currentIndex === 0) {
+                            var runner = runnerCombo.currentValue;
+                            if (runner === undefined) runner = "";
                             var prefix = prefixInput.text.trim()
-                            if (prefix !== "") {
+                            if (prefix !== "" || runner !== "") {
                                 // Reuse store_bridge's save_epic_config pattern
                                 var romId = "gog-" + root.slug
                                 if (typeof storeBridge !== "undefined")
-                                    storeBridge.save_epic_config(romId, "", prefix)
+                                    storeBridge.save_epic_config(romId, runner, prefix)
                             }
                         }
 
