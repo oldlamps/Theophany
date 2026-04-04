@@ -1323,7 +1323,6 @@ impl StoreBridge {
 
                 let total = roms.len();
                 
-                // --- Phase 1: Immediate Batch Insertion ---
                 // We do a fast pass to get games into the library immediately.
                 if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
                     // VERIFY PLATFORM EXISTS (due to FK constraints)
@@ -1345,8 +1344,7 @@ impl StoreBridge {
                         let mut final_rom = rom.clone();
                         final_rom.platform_id = platform_id.clone();
                         
-                        // Phase 1: fast insert — no disk I/O (no sidecar), use ROM data directly
-                        final_rom.is_installed = Some(false); // default; Phase 2 will fix from sidecars
+                        final_rom.is_installed = Some(false);
                         
                         log::debug!("[StoreBridge] Inserting ROM: {} ({})", final_rom.title.as_deref().unwrap_or("Unknown"), final_rom.id);
                         if let Err(e) = db.insert_rom(&final_rom) {
@@ -1525,8 +1523,6 @@ impl StoreBridge {
         std::thread::spawn(move || {
             match crate::core::gog::GogDownloader::list_games() {
                 Ok(games) => {
-                    // Convert to ROM-like JSON the same way legendary does, so QML sees the
-                    // same fields as the Epic import dialog.
                     let roms: Vec<serde_json::Value> = games
                         .iter()
                         .map(|g| {

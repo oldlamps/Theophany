@@ -399,7 +399,7 @@ Dialog {
                         id: spinMaxDelay
                         from: 1
                         to: 60
-                        value: 5
+                        value: 4
                     }
                 }
             }

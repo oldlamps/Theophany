@@ -3884,21 +3884,7 @@ impl GameListModel {
                     ));
 
                     let title = job.title.clone();
-                    let query_title = {
-                        let mut t = title.to_lowercase();
-                        // Handle ", the" pattern for search
-                        if t.ends_with(", the") {
-                            t = format!("the {}", &t[..t.len() - 5].trim());
-                        }
-                        // Replace trademark/etc symbols and hyphens with spaces to avoid word merging
-                        t = t.replace("™", " ").replace("®", " ").replace("©", " ").replace("-", " ");
-                        // Clean edges and non-alphanumeric (except spaces)
-                        let re_clean = regex::Regex::new(r"[^a-z0-9 ]").unwrap();
-                        t = re_clean.replace_all(&t, " ").to_string();
-                        // Standardize whitespace
-                        t = t.split_whitespace().collect::<Vec<_>>().join(" ");
-                        if t.is_empty() { title.clone() } else { t }
-                    };
+                    let query_title = GameListModel::prepare_search_query(&title);
         
 
                     // Platform Detection
@@ -5098,24 +5084,7 @@ impl GameListModel {
              return;
         }
 
-        let query_title = {
-            let mut t = title.to_lowercase();
-            // Handle ", the" pattern for search
-            if t.ends_with(", the") {
-                t = format!("the {}", &t[..t.len() - 5].trim());
-            }
-            // Replace trademark/etc symbols and hyphens with spaces to avoid word merging
-            t = t.replace("™", " ")
-         .replace("®", " ")
-         .replace("©", " ")
-         .replace("-", " ");
-            // Clean non-alphanumeric (except spaces)
-            let re_clean = regex::Regex::new(r"[^a-z0-9 ]").unwrap();
-            t = re_clean.replace_all(&t, " ").to_string();
-            // Standardize whitespace
-            t = t.split_whitespace().collect::<Vec<_>>().join(" ");
-            if t.is_empty() { title.clone() } else { t }
-        };
+        let query_title = GameListModel::prepare_search_query(&title);
         
 
 
@@ -5419,39 +5388,86 @@ impl GameListModel {
         }
     }
 
-    fn normalize_title(title: &str) -> String {
-    // 1. To Lowercase
-    let mut t = title.to_lowercase();
+    fn prepare_search_query(title: &str) -> String {
+        let mut t = title.to_lowercase();
+        
+        // 1. Remove Parenthesized content: "Game Name (Region) (Tags)" -> "Game Name"
+        let re_paren = regex::Regex::new(r"\(.*?\)").unwrap();
+        t = re_paren.replace_all(&t, "").to_string();
     
-    // 2. Remove Parenthesized content: "Game Name (Region) (Tags)" -> "Game Name"
-    let re_paren = regex::Regex::new(r"\(.*?\)").unwrap();
-    t = re_paren.replace_all(&t, "").to_string();
+        // 2. Remove Brackets: "Game Name [Region] [Tags]" -> "Game Name"
+        let re_bracket = regex::Regex::new(r"\[.*?\]").unwrap();
+        t = re_bracket.replace_all(&t, "").to_string();
 
-    // 3. Remove Brackets: "Game Name [Region] [Tags]" -> "Game Name"
-    let re_bracket = regex::Regex::new(r"\[.*?\]").unwrap();
-    t = re_bracket.replace_all(&t, "").to_string();
+        // 3. Handle ", the" pattern: "Game, The" -> "the Game", "Game, The: Subtitle" -> "the Game Subtitle"
+        if let Some(pos) = t.find(", the") {
+            let prefix = &t[..pos].trim();
+            let suffix = &t[pos + 5..].trim();
+            if suffix.is_empty() {
+                t = format!("the {}", prefix);
+            } else {
+                // If there's a subtitle, we just space it out for search
+                t = format!("the {} {}", prefix, suffix);
+            }
+        }
 
-    // 4. Handle ", the" pattern: "Game, The" -> "The Game"
-    if t.ends_with(", the") {
-        t = format!("the {}", &t[..t.len() - 5].trim());
+        // 4. Replace common symbols and hyphens with spaces
+        t = t.replace("™", " ")
+             .replace("®", " ")
+             .replace("©", " ")
+             .replace("-", " ")
+             .replace(":", " ")
+             .replace(".", " ")
+             .replace("_", " ");
+        
+        // 5. Clean non-alphanumeric (keep spaces)
+        let re_clean = regex::Regex::new(r"[^a-z0-9 ]").unwrap();
+        t = re_clean.replace_all(&t, " ").to_string();
+        
+        // 6. Standardize whitespace
+        let result = t.split_whitespace().collect::<Vec<_>>().join(" ");
+        if result.is_empty() { title.to_lowercase() } else { result }
     }
 
-    // 5. Replace common symbols and hyphens with spaces
-    t = t.replace("™", " ")
-         .replace("®", " ")
-         .replace("©", " ")
-         .replace("-", " ")
-         .replace(":", " ")
-         .replace(".", " ")
-         .replace("_", " ");
+    fn normalize_title(title: &str) -> String {
+        // 1. To Lowercase
+        let mut t = title.to_lowercase();
+        
+        // 2. Remove Parenthesized content: "Game Name (Region) (Tags)" -> "Game Name"
+        let re_paren = regex::Regex::new(r"\(.*?\)").unwrap();
+        t = re_paren.replace_all(&t, "").to_string();
     
-    // 6. Remove non-alphanumeric (keep spaces)
-    let re_clean = regex::Regex::new(r"[^a-z0-9 ]").unwrap();
-    t = re_clean.replace_all(&t, "").to_string();
+        // 3. Remove Brackets: "Game Name [Region] [Tags]" -> "Game Name"
+        let re_bracket = regex::Regex::new(r"\[.*?\]").unwrap();
+        t = re_bracket.replace_all(&t, "").to_string();
     
-    // 7. Standardize whitespace
-    t.split_whitespace().collect::<Vec<_>>().join(" ")
-}
+        // 4. Handle ", the" pattern: "Game, The" -> "the Game", "Game, The Subtitle" -> "the Game Subtitle"
+        if let Some(pos) = t.find(", the") {
+            let prefix = &t[..pos].trim();
+            let suffix = &t[pos + 5..].trim();
+            if suffix.is_empty() {
+                t = format!("the {}", prefix);
+            } else {
+                t = format!("the {} {}", prefix, suffix);
+            }
+        }
+    
+        // 5. Replace common symbols and hyphens with spaces
+        t = t.replace("™", " ")
+             .replace("®", " ")
+             .replace("©", " ")
+             .replace("-", " ")
+             .replace(":", " ")
+             .replace(".", " ")
+             .replace("_", " ");
+        
+        // 6. Remove non-alphanumeric (keep spaces)
+        let re_clean = regex::Regex::new(r"[^a-z0-9 ]").unwrap();
+        t = re_clean.replace_all(&t, "").to_string();
+        
+        // 7. Standardize whitespace
+        t.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
 
     fn update_row_by_id(&mut self, rom_id: &str) {
         let db_path = self.db_path.borrow().clone();
