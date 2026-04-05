@@ -35,6 +35,7 @@ Dialog {
     property real playerVolume: 1.0
     property string notificationText: ""
     property bool showNotification: false
+    property string gameBackground: ""
     
     x: (parent.width - width) / 2
     y: (parent.height - height) / 2
@@ -117,12 +118,33 @@ Dialog {
         onTriggered: root.showNotification = false
     }
 
-    background: Rectangle {
-        color: Theme.secondaryBackground
-        radius: 12
-        border.color: Theme.border
-        border.width: 1
-        
+    background: Item {
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.secondaryBackground
+            radius: 12
+            border.color: Theme.border
+            border.width: 1
+            clip: true
+
+            Image {
+                anchors.fill: parent
+                source: root.gameBackground
+                fillMode: Image.PreserveAspectCrop
+                opacity: 0.25
+                visible: source !== ""
+                asynchronous: true
+            }
+
+            // Subtle Tint / Darkening Overlay
+            Rectangle {
+                anchors.fill: parent
+                color: Qt.rgba(Theme.secondaryBackground.r, Theme.secondaryBackground.g, Theme.secondaryBackground.b, 0.7)
+                radius: 12
+                visible: root.gameBackground !== ""
+            }
+        }
+
         layer.enabled: true
         layer.effect: DropShadow {
             transparentBorder: true
@@ -1208,6 +1230,30 @@ Dialog {
         root.gameTitle = gTitle
         root.gamePlatform = gPlatform
         root.platformFolder = pFolder
+
+        // Discovery background/banner from metadata
+        root.gameBackground = ""
+        if (typeof gameModel !== "undefined") {
+            try {
+                var json = gameModel.getGameMetadata(gId)
+                if (json !== "") {
+                    var data = JSON.parse(json)
+                    if (data && data.assets) {
+                        var bg = ""
+                        // Priority order: Background -> Banner -> Screenshot
+                        if (data.assets["Background"] && data.assets["Background"].length > 0) bg = data.assets["Background"][0]
+                        else if (data.assets["Banner"] && data.assets["Banner"].length > 0) bg = data.assets["Banner"][0]
+                        else if (data.assets["Screenshot"] && data.assets["Screenshot"].length > 0) bg = data.assets["Screenshot"][0]
+                        
+                        if (bg !== "") {
+                            root.gameBackground = "file://" + bg
+                        }
+                    }
+                }
+            } catch (e) {
+                // Silently fail if metadata is not found or malformed
+            }
+        }
         
         // Use Platform Type for search if available for better accuracy (e.g. "steam", "heroic")
         // Mapping "steam", "heroic", "lutris", and PC variants to "PC" for better search results
