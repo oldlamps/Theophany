@@ -2105,6 +2105,13 @@ impl GameListModel {
 
                   // Handle Resources
                   if let Some(resources) = json.get("resources").and_then(|v| v.as_array()) {
+                      let mut current_max = db.get_resources(&rom_id)
+                          .unwrap_or_default()
+                          .iter()
+                          .map(|r| r.sort_order)
+                          .max()
+                          .unwrap_or(-1);
+
                       for res in resources {
                           if let (Some(url), Some(label), Some(type_)) = (
                               res.get("url").and_then(|v| v.as_str()),
@@ -2115,13 +2122,14 @@ impl GameListModel {
                               if let Ok(existing_resources) = db.get_resources(&rom_id) {
                                   let exists = existing_resources.iter().any(|r| normalize_url(&r.url) == normalized_url);
                                   if !exists {
+                                      current_max += 1;
                                       let new_res = crate::core::models::GameResource {
                                           id: uuid::Uuid::new_v4().to_string(),
                                           rom_id: rom_id.clone(),
                                           type_: type_.to_string(),
                                           url: url.to_string(),
                                           label: Some(label.to_string()),
-                                          sort_order: 0,
+                                          sort_order: current_max,
                                       };
                                       let _ = db.insert_resource(&new_res);
                                   }
@@ -2768,7 +2776,8 @@ impl GameListModel {
 
                               extra = c.extra_args.clone().unwrap_or_default();
 
-                              if p_type == "PC (Windows)" || p_type == "gog" || rom_path.starts_with("epic://") || rom_path.starts_with("amazon://") {
+                              let is_windows_pc = p_type == "PC (Windows)" || (p_type == "gog" && !rom_path.to_lowercase().ends_with(".sh")) || rom_path.starts_with("epic://") || rom_path.starts_with("amazon://");
+                              if is_windows_pc {
                                   env_prefix.push_str("UMU_LOG=1 ");
                                   
                                   if let Some(v) = c.umu_proton_version.as_ref().filter(|s| !s.trim().is_empty()) { 
@@ -2838,7 +2847,8 @@ impl GameListModel {
 
                               extra = platform_defaults.as_ref().and_then(|d| d["extra_args"].as_str().map(|s| s.to_string())).unwrap_or_default();
 
-                               if p_type == "PC (Windows)" || p_type == "gog" || rom_path.starts_with("epic://") || rom_path.starts_with("amazon://") {
+                               let is_windows_pc = p_type == "PC (Windows)" || (p_type == "gog" && !rom_path.to_lowercase().ends_with(".sh")) || rom_path.starts_with("epic://") || rom_path.starts_with("amazon://");
+                               if is_windows_pc {
                                   env_prefix.push_str("UMU_LOG=1 ");
                                   
                                   let proton = platform_defaults.as_ref().and_then(|d| d["umu_proton_version"].as_str().map(|s| s.to_string())).filter(|s| !s.trim().is_empty());
@@ -4074,6 +4084,13 @@ impl GameListModel {
                                                 }
                                                                                                 // Save Resources (Filtered)
                                                  if field_config.resources {
+                                                     let mut current_max = db.get_resources(&r_id)
+                                                         .unwrap_or_default()
+                                                         .iter()
+                                                         .map(|r_obj| r_obj.sort_order)
+                                                         .max()
+                                                         .unwrap_or(-1);
+
                                                      for r in &m.resources {
                                                          // If it's a video resource, check video_trailers toggle
                                                          if r.type_ == "video" && !field_config.video_trailers {
@@ -4081,13 +4098,14 @@ impl GameListModel {
                                                          }
                                                          if let Ok(exists) = db.resource_exists(&r_id, &r.url) {
                                                              if !exists {
+                                                                  current_max += 1;
                                                                   let res = crate::core::models::GameResource {
                                                                       id: uuid::Uuid::new_v4().to_string(),
                                                                       rom_id: r_id.clone(),
                                                                       type_: r.type_.clone(),
                                                                       url: r.url.clone(),
                                                                       label: Some(r.label.clone()),
-                                                                      sort_order: 0,
+                                                                      sort_order: current_max,
                                                                  };
                                                                  let _ = db.insert_resource(&res);
                                                              }
@@ -4901,6 +4919,7 @@ impl GameListModel {
         if let Ok(db) = DbManager::open(&db_path) {
             let mut added = false;
             let existing_resources = db.get_resources(&rom_id).unwrap_or_default();
+            let mut current_max = existing_resources.iter().map(|r| r.sort_order).max().unwrap_or(-1);
             
             for res_val in resources {
                 let url = res_val["url"].as_str().unwrap_or_default().to_string();
@@ -4913,6 +4932,7 @@ impl GameListModel {
 
                 let type_ = res_val["type"].as_str().unwrap_or("Link").to_string();
                 let label = res_val["label"].as_str().map(|s| s.to_string());
+                current_max += 1;
 
                 let res = GameResource {
                     id: Uuid::new_v4().to_string(),
@@ -4920,7 +4940,7 @@ impl GameListModel {
                     type_,
                     url,
                     label,
-                    sort_order: 0,
+                    sort_order: current_max,
                 };
                 if let Ok(_) = db.insert_resource(&res) {
                     added = true;
@@ -5011,8 +5031,17 @@ impl GameListModel {
                     if let Some(game_dir) = Path::new(&rom_path).parent() {
                         let resources = crate::core::exodos::ExoDosManager::scan_resources(game_dir, &rom_id);
                         let mut added = 0;
-                        for resource in resources {
+                        let mut current_max = db.get_resources(&rom_id)
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|r_obj| r_obj.sort_order)
+                            .max()
+                            .unwrap_or(-1);
+
+                        for mut resource in resources {
                             if let Ok(false) = db.resource_exists(&rom_id, &resource.url) {
+                                current_max += 1;
+                                resource.sort_order = current_max;
                                 if let Ok(_) = db.insert_resource(&resource) {
                                     added += 1;
                                 }
@@ -5027,13 +5056,14 @@ impl GameListModel {
                                 if pdf.exists() {
                                     let url = pdf.to_string_lossy().to_string();
                                     if let Ok(false) = db.resource_exists(&rom_id, &url) {
+                                        current_max += 1;
                                         let resource = crate::core::models::GameResource {
                                             id: uuid::Uuid::new_v4().to_string(),
                                             rom_id: rom_id.clone(),
                                             type_: "manual".to_string(),
                                             url,
                                             label: Some(stem.to_string()),
-                                            sort_order: 0,
+                                            sort_order: current_max,
                                         };
                                         if let Ok(_) = db.insert_resource(&resource) {
                                             added += 1;

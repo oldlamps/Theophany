@@ -106,8 +106,10 @@ pub struct StoreBridge {
     logout_gog: qt_method!(fn(&self)),
     refresh_gog_wishlist: qt_method!(fn(&self)),
     install_gog_game: qt_method!(fn(&self, slug: String, install_path: String, platform: String, no_dependencies: bool)),
+    uninstall_gog_game: qt_method!(fn(&self, rom_id: String, delete_prefix: bool)),
     cancel_gog_install: qt_method!(fn(&self, slug: String)),
     get_gog_app_info: qt_method!(fn(&self, slug: String)),
+    import_gog_game: qt_method!(fn(&self, slug: String, path: String)),
     refresh_nile_library: qt_method!(fn(&self)),
     check_nile_auth: qt_method!(fn(&self) -> bool),
     get_nile_auth_url: qt_method!(fn(&self)),
@@ -1612,6 +1614,98 @@ impl StoreBridge {
         });
     }
 
+    fn uninstall_gog_game(&self, rom_id: String, delete_prefix: bool) {
+        log::info!("[StoreBridge] uninstall_gog_game() called for {}", rom_id);
+        self.ensure_channels();
+
+        std::thread::spawn(move || {
+            let slug = rom_id.strip_prefix("gog-").unwrap_or(&rom_id).to_string();
+            let mut current_path = String::new();
+
+            let db_path = crate::core::paths::get_data_dir().join("games.db");
+            if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                let conn = db.get_connection();
+                if let Ok(mut stmt) = conn.prepare("SELECT path FROM roms WHERE id = ?1") {
+                    if let Ok(p) = stmt.query_row([&rom_id], |row| row.get::<_, String>(0)) {
+                        current_path = p;
+                    }
+                }
+            }
+
+            if current_path.is_empty() {
+                let _ = broadcast_msg(StoreMsg::InstallFinished(rom_id, false, "Game not found in database".into()));
+                return;
+            }
+
+            // Detect root folder by searching for .info file
+            let mut detected_root = None;
+            let mut p = std::path::Path::new(&current_path).to_path_buf();
+            
+            // Heuristic: Check up to 4 levels up for a .info file
+            for _ in 0..4 {
+                if let Ok(entries) = std::fs::read_dir(&p) {
+                    for entry in entries.filter_map(|e| e.ok()) {
+                        if entry.path().is_file() && entry.path().extension().is_some_and(|e| e == "info") {
+                            detected_root = Some(p.clone());
+                            break;
+                        }
+                    }
+                }
+                if detected_root.is_some() { break; }
+                if let Some(parent) = p.parent() {
+                    p = parent.to_path_buf();
+                } else {
+                    break;
+                }
+            }
+
+            if let Some(root) = detected_root {
+                log::info!("[StoreBridge] Deleting GOG game folder: {:?}", root);
+                let _ = std::fs::remove_dir_all(&root);
+            } else {
+                log::warn!("[StoreBridge] Could not detect root folder for GOG game {}, deleting executable if it exists", rom_id);
+                let _ = std::fs::remove_file(&current_path);
+            }
+
+            // Delete prefix if requested
+            if delete_prefix {
+                if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                    let conn = db.get_connection();
+                    if let Ok(mut stmt) = conn.prepare("SELECT wine_prefix FROM pc_configurations WHERE rom_id = ?1") {
+                         if let Ok(prefix_opt) = stmt.query_row([&rom_id], |row| row.get::<_, Option<String>>(0)) {
+                             if let Some(prefix) = prefix_opt {
+                                 if !prefix.is_empty() {
+                                     log::info!("[StoreBridge] Deleting Wine prefix: {}", prefix);
+                                     let _ = std::fs::remove_dir_all(std::path::Path::new(&prefix));
+                                 }
+                             }
+                         }
+                    }
+                    // Clear the prefix in the database
+                    let _ = conn.execute("UPDATE pc_configurations SET wine_prefix = NULL WHERE rom_id = ?1", [&rom_id]);
+                }
+            }
+
+            // Update database to uninstalled state
+            if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                let conn = db.get_connection();
+                let uninstalled_path = format!("/gog/{}", slug);
+                let uninstalled_filename = format!("{}.gog", slug);
+                
+                let _ = conn.execute(
+                    "UPDATE roms SET path = ?1, filename = ?2 WHERE id = ?3",
+                    [&uninstalled_path, &uninstalled_filename, &rom_id],
+                );
+                let _ = conn.execute(
+                    "UPDATE metadata SET is_installed = 0 WHERE rom_id = ?1",
+                    [&rom_id],
+                );
+            }
+
+            let _ = broadcast_msg(StoreMsg::InstallFinished(rom_id, true, "Uninstallation completed".into()));
+        });
+    }
+
     fn install_gog_game(&self, slug: String, install_path: String, platform: String, no_dependencies: bool) {
         log::info!("[GogBridge] Starting install: slug={} path={} platform={}", slug, install_path, platform);
         self.ensure_channels();
@@ -1785,6 +1879,61 @@ impl StoreBridge {
                     err_map.insert("error".to_string(), serde_json::json!(e.to_string()));
                     let _ = tx.send(StoreMsg::GogAppInfoReceived(serde_json::Value::Object(err_map).to_string()));
                 }
+            }
+        });
+    }
+
+    fn import_gog_game(&self, slug: String, path: String) {
+        log::info!("[GogBridge] Importing existing data for: slug={} path={}", slug, path);
+        self.ensure_channels();
+        
+        std::thread::spawn(move || {
+            let rom_id = format!("gog-{}", slug);
+            let _ = broadcast_msg(StoreMsg::InstallProgress(
+                rom_id.clone(), 0.0, "{\"raw_line\":\"Analyzing import directory...\"}".into()
+            ));
+
+            if let Some(exe_path) = crate::core::gog::GogDownloader::find_exe_from_info_dir(&path) {
+                log::info!("[GogBridge] Found executable through .info: {}", exe_path);
+                
+                // Update the ROM record
+                let db_path = crate::core::paths::get_data_dir().join("games.db");
+                if let Ok(db) = crate::core::db::DbManager::open(&db_path) {
+                    let conn = db.get_connection();
+                    
+                    let exe_filename = std::path::Path::new(&exe_path)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+
+                    let result = conn.execute(
+                        "UPDATE roms SET path = ?1, filename = ?2 WHERE id = ?3",
+                        [&exe_path, &exe_filename, &rom_id],
+                    );
+                    
+                    if let Err(e) = result {
+                        log::error!("[GogBridge] Failed to update ROM path: {}", e);
+                        let _ = broadcast_msg(StoreMsg::InstallFinished(rom_id, false, format!("Database error: {}", e)));
+                        return;
+                    }
+
+                    let _ = conn.execute(
+                        "UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1",
+                        [&rom_id],
+                    );
+
+                    let _ = broadcast_msg(StoreMsg::InstallFinished(
+                        rom_id, true, "Imported successfully".into()
+                    ));
+                } else {
+                    let _ = broadcast_msg(StoreMsg::InstallFinished(rom_id, false, "Could not open database".into()));
+                }
+            } else {
+                log::warn!("[GogBridge] Could not find GOG info file or executable at: {}", path);
+                let _ = broadcast_msg(StoreMsg::InstallFinished(
+                    rom_id, false, "Could not find GOG .info file or valid executable in the selected folder.".into()
+                ));
             }
         });
     }

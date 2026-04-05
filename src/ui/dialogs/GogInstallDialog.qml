@@ -163,6 +163,16 @@ Dialog {
         onAccepted: prefixInput.text = prefixPathDialog.selectedFolder.toString().replace("file://", "")
     }
 
+    FolderDialog {
+        id: importPathDialog
+        title: "Select Existing GOG Game Folder (containing .info file)"
+        onAccepted: {
+            var path = importPathDialog.selectedFolder.toString().replace("file://", "")
+            storeBridge.import_gog_game(root.slug, path)
+            root.close()
+        }
+    }
+
     contentItem: Item {
         implicitHeight: mainLayout.implicitHeight + 40
 
@@ -385,6 +395,26 @@ Dialog {
                 }
 
                 Item { Layout.fillWidth: true }
+
+                TheophanyButton {
+                    text: "Import Existing"
+                    Layout.preferredHeight: 45
+                    enabled: !root.isInstalling
+                    onClicked: {
+                        // Save prefix and runner to pc_config for this ROM if Windows
+                        if (platformCombo.currentIndex === 0) {
+                            var runner = runnerCombo.currentValue;
+                            if (runner === undefined) runner = "";
+                            var prefix = prefixInput.text.trim()
+                            if (prefix !== "" || runner !== "") {
+                                var romId = "gog-" + root.slug
+                                if (typeof storeBridge !== "undefined")
+                                    storeBridge.save_epic_config(romId, runner, prefix)
+                            }
+                        }
+                        importPathDialog.open()
+                    }
+                }
 
                 TheophanyButton {
                     text: "Install Now"

@@ -1,5 +1,6 @@
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::path::PathBuf;
+use std::io::{BufRead, BufReader, Write};
 use crate::core::models::Rom;
 
 /// Strips ANSI escape codes from a string (e.g. colour codes emitted by lgogdownloader --list).
@@ -115,28 +116,35 @@ impl GogDownloader {
         let binary =
             Self::find_binary().ok_or_else(|| anyhow::anyhow!("lgogdownloader binary not found"))?;
 
-        let output = Self::build_command(&binary)
-            .arg("--browser-login")
-            .output()?;
+        // Merge stderr into stdout to capture the URL prompt regardless of which stream it uses.
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg(format!("\"{}\" --browser-login 2>&1", binary.to_string_lossy()))
+            .stdout(Stdio::piped())
+            .spawn()?;
 
-        let combined = format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let stdout = child.stdout.take().unwrap();
+        let reader = BufReader::new(stdout);
 
-        for line in combined.lines() {
-            let clean = strip_ansi(line);
-            if clean.contains("https://") {
-                if let Some(start) = clean.find("https://") {
-                    return Ok(clean[start..].trim().to_string());
+        let mut auth_url = None;
+        for line in reader.lines() {
+            if let Ok(l) = line {
+                let clean = strip_ansi(&l);
+                log::debug!("[GogAuth] Output: {}", clean);
+                if clean.contains("https://") {
+                    if let Some(start) = clean.find("https://") {
+                        auth_url = Some(clean[start..].trim().to_string());
+                        break;
+                    }
                 }
+            } else {
+                break;
             }
         }
 
-        Err(anyhow::anyhow!(
-            "Could not find authentication URL in lgogdownloader output"
-        ))
+        let _ = child.kill();
+
+        auth_url.ok_or_else(|| anyhow::anyhow!("Could not find authentication URL in lgogdownloader output"))
     }
 
 
@@ -144,11 +152,18 @@ impl GogDownloader {
         let binary =
             Self::find_binary().ok_or_else(|| anyhow::anyhow!("lgogdownloader binary not found"))?;
 
-        let output = Self::build_command(&binary)
+        let mut child = Self::build_command(&binary)
             .arg("--browser-login")
-            .arg(format!("--browser-login-redirect-url={}", redirect_url))
-            .output()?;
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
 
+        if let Some(mut stdin) = child.stdin.take() {
+            writeln!(stdin, "{}", redirect_url)?;
+        }
+
+        let output = child.wait_with_output()?;
         let combined = format!(
             "{}{}",
             String::from_utf8_lossy(&output.stdout),
@@ -385,11 +400,9 @@ impl GogDownloader {
             };
 
             if slug.is_empty() || slug.contains(' ') && !slug.contains('_') {
-                // Likely not a slug — skip free-text lines
                 continue;
             }
 
-            // Convert slug to a display title: "the_witcher_3" → "The Witcher 3"
             let title = Self::slug_to_title(&slug);
 
             games.push(GogGame {

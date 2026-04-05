@@ -1573,7 +1573,7 @@ Rectangle {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     width: 30; height: parent.height
-                    visible: root.emulatorProfiles.length > 0 || root.fullRomPath.startsWith("epic://") || root.fullRomPath.startsWith("amazon://") || (root.gameResources && root.gameResources.some(r => r.type === "launcher"))
+                    visible: root.emulatorProfiles.length > 0 || root.fullRomPath.startsWith("epic://") || root.fullRomPath.startsWith("amazon://") || root.gamePlatformType === "gog" || (root.gameResources && root.gameResources.some(r => r.type === "launcher"))
                     background: null
                     text: "▼\ufe0e"
                     onClicked: {
@@ -1581,6 +1581,8 @@ Rectangle {
                             epicExtraMenu.popup()
                         } else if (root.fullRomPath.startsWith("amazon://")) {
                             amazonExtraMenu.popup()
+                        } else if (root.gamePlatformType === "gog") {
+                            gogExtraMenu.popup()
                         } else {
                             profileMenu.popup()
                         }
@@ -1677,6 +1679,25 @@ Rectangle {
                             var appName = root.fullRomPath.replace("amazon://launch/", "")
                             if (confirmUninstallDialog.opened) return
                             confirmUninstallDialog.appName = appName
+                            confirmUninstallDialog.prefixPath = ""
+                            var configStr = storeBridge.get_epic_config(root.gameId)
+                            try {
+                                var conf = JSON.parse(configStr)
+                                if (conf.prefix) confirmUninstallDialog.prefixPath = conf.prefix
+                            } catch (e) {}
+                            confirmUninstallDialog.open()
+                        }
+                    }
+                }
+
+                TheophanyMenu {
+                    id: gogExtraMenu
+                    TheophanyMenuItem {
+                        text: "Uninstall Game"
+                        visible: root.gameIsInstalled && root.gamePlatformType === "gog"
+                        onTriggered: {
+                            if (confirmUninstallDialog.opened) return
+                            confirmUninstallDialog.appName = root.gameTitle
                             confirmUninstallDialog.prefixPath = ""
                             var configStr = storeBridge.get_epic_config(root.gameId)
                             try {
@@ -2106,73 +2127,111 @@ Rectangle {
                     Item {
                         id: flowWrapper
                         Layout.fillWidth: true
-                        Layout.preferredHeight: (root.resourcesExpanded || resourceFlow.implicitHeight <= 100) ? resourceFlow.implicitHeight : 100
+                        Layout.preferredHeight: (root.resourcesExpanded || (resourceContent.implicitHeight > 0 && resourceContent.implicitHeight <= 100)) ? resourceContent.implicitHeight : 100
                         clip: true
                         Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.InOutQuad } }
                         
-                        Flow {
-                            id: resourceFlow
+                        ColumnLayout {
+                            id: resourceContent
                             width: parent.width
-                            spacing: 8
+                            spacing: 12
                             visible: root.gameResources.length > 0
-                            
-                            Repeater {
-                                model: root.gameResources ? root.gameResources.filter(r => r.type !== "launcher") : []
+
+                            property var links: root.gameResources ? root.gameResources.filter(r => r.type !== "launcher" && !r.type.toLowerCase().includes("video") && !r.type.toLowerCase().includes("trailer")) : []
+                            property var videos: root.gameResources ? root.gameResources.filter(r => r.type.toLowerCase().includes("video") || r.type.toLowerCase().includes("trailer")) : []
+
+                            Flow {
+                                Layout.fillWidth: true
+                                spacing: 8
+                                visible: resourceContent.links.length > 0
                                 
-                                Label {
-                                    height: 28
-                                    // Automatic width from text + padding
-                                    leftPadding: 16
-                                    rightPadding: 16
-                                    verticalAlignment: Text.AlignVCenter
-                                    
-                                    text: {
-                                        var t = modelData.type.toLowerCase()
-                                        var icon = "🔗"
-                                        if (t.includes("wikipedia")) icon = "🌐"
-                                        else if (t.includes("mobygames")) icon = "🎮"
-                                        else if (t.includes("manual")) icon = "📖"
-                                        else if (t.includes("magazine")) icon = "🗞️"
-                                        else if (t.includes("video") || t.includes("trailer")) icon = "🎬"
-                                        else if (modelData.url.startsWith("file://")) icon = "📁"
-                                        
-                                        var lbl = modelData.label ? modelData.label : (modelData.type.charAt(0).toUpperCase() + modelData.type.slice(1))
-                                        return icon + "  " + lbl
-                                    }
-                                    
-                                    color: Theme.text
-                                    font.pixelSize: 12
+                                Repeater {
+                                    model: resourceContent.links
+                                    delegate: resourceButtonDelegate
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                visible: resourceContent.videos.length > 0
+
+                                Text {
+                                    text: "🎥 VIDEOS & TRAILERS"
+                                    font.pixelSize: 9
                                     font.bold: true
+                                    color: Theme.secondaryText
+                                    opacity: 0.8
+                                    font.letterSpacing: 0.5
+                                    Layout.leftMargin: 2
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 8
                                     
-                                    background: Rectangle {
-                                        radius: 14
-                                        color: resHoverItem.containsMouse ? Theme.accent : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.1)
-                                        border.color: Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.2)
-                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                    Repeater {
+                                        model: resourceContent.videos
+                                        delegate: resourceButtonDelegate
                                     }
+                                }
+                            }
+                        }
+
+                        Component {
+                            id: resourceButtonDelegate
+                            Label {
+                                height: 28
+                                leftPadding: 14
+                                rightPadding: 14
+                                verticalAlignment: Text.AlignVCenter
+                                
+                                text: {
+                                    var t = modelData.type.toLowerCase()
+                                    var icon = "🔗"
+                                    if (t.includes("wikipedia")) icon = "🌐"
+                                    else if (t.includes("mobygames")) icon = "🎮"
+                                    else if (t.includes("manual")) icon = "📖"
+                                    else if (t.includes("magazine")) icon = "🗞️"
+                                    else if (t.includes("video") || t.includes("trailer")) icon = "🎬"
+                                    else if (modelData.url.startsWith("file://")) icon = "📁"
                                     
-                                    MouseArea {
-                                        id: resHoverItem
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            var t = modelData.type.toLowerCase()
-                                            if (t.includes("video") || t.includes("trailer")) {
-                                                if (typeof window !== "undefined" && window.openVideoDownload) {
-                                                    window.openVideoDownload(
-                                                        root.gameId, 
-                                                        root.gameTitle, 
-                                                        root.gamePlatform, 
-                                                        root.gamePlatformType,
-                                                        root.platformFolder,
-                                                        modelData.url,
-                                                        modelData.label || "Remote Resource"
-                                                    )
-                                                }
-                                            } else {
-                                                gameModel.launchResource(root.gameId, modelData.url)
+                                    var lbl = modelData.label ? modelData.label : (modelData.type.charAt(0).toUpperCase() + modelData.type.slice(1))
+                                    return icon + "  " + lbl
+                                }
+                                
+                                color: Theme.text
+                                font.pixelSize: 11
+                                font.bold: true
+                                
+                                background: Rectangle {
+                                    radius: 14
+                                    color: resHoverItem.containsMouse ? Theme.accent : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.08)
+                                    border.color: resHoverItem.containsMouse ? Qt.lighter(Theme.accent, 1.2) : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.15)
+                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                }
+                                
+                                MouseArea {
+                                    id: resHoverItem
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        var t = modelData.type.toLowerCase()
+                                        if (t.includes("video") || t.includes("trailer")) {
+                                            if (typeof window !== "undefined" && window.openVideoDownload) {
+                                                window.openVideoDownload(
+                                                    root.gameId, 
+                                                    root.gameTitle, 
+                                                    root.gamePlatform, 
+                                                    root.gamePlatformType,
+                                                    root.platformFolder,
+                                                    modelData.url,
+                                                    modelData.label || "Remote Resource"
+                                                )
                                             }
+                                        } else {
+                                            gameModel.launchResource(root.gameId, modelData.url)
                                         }
                                     }
                                 }
@@ -2187,7 +2246,7 @@ Rectangle {
                         height: 24
                         radius: 12
                         color: expandMouse.containsMouse ? Theme.accent : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.05)
-                        visible: resourceFlow.implicitHeight > 100
+                        visible: resourceContent.implicitHeight > 100
                         
                         Text {
                             id: expandText
@@ -2768,7 +2827,7 @@ Rectangle {
                 font.bold: true
             }
             Label {
-                text: "Are you sure you want to uninstall <b>" + root.gameTitle + "</b>?<br><br>This will remove the game files from your system via " + (root.fullRomPath.startsWith("amazon://") ? "Nile" : "Legendary") + "."
+                text: "Are you sure you want to uninstall <b>" + root.gameTitle + "</b>?<br><br>This will remove the game files from your system."
                 color: Theme.text
                 font.pixelSize: 14
                 wrapMode: Text.WordWrap
@@ -2778,7 +2837,7 @@ Rectangle {
             ColumnLayout {
                 spacing: 4
                 Layout.fillWidth: true
-                visible: (root.fullRomPath.startsWith("amazon://") || root.fullRomPath.startsWith("epic://")) && confirmUninstallDialog.prefixPath !== ""
+                visible: (root.fullRomPath.startsWith("amazon://") || root.fullRomPath.startsWith("epic://") || root.gamePlatformType === "gog") && confirmUninstallDialog.prefixPath !== ""
 
                 TheophanyCheckBox {
                     id: deletePrefixCheck
@@ -2812,6 +2871,8 @@ Rectangle {
                     onClicked: {
                         if (root.fullRomPath.startsWith("amazon://")) {
                             storeBridge.uninstall_nile_game(confirmUninstallDialog.appName, deletePrefixCheck.checked)
+                        } else if (root.gamePlatformType === "gog") {
+                            storeBridge.uninstall_gog_game(root.gameId, deletePrefixCheck.checked)
                         } else {
                             storeBridge.uninstall_legendary_game(confirmUninstallDialog.appName, deletePrefixCheck.checked)
                         }

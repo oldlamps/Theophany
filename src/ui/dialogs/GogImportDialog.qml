@@ -65,12 +65,13 @@ Dialog {
         }
 
         onGogAuthFinished: (success, message) => {
-            loading = false
             if (success) {
+                loading = true
                 isLoggedIn = true
                 waitingForAuth = false
                 storeBridge.refresh_gog_library()
             } else {
+                loading = false
                 if (message.indexOf("lgogdownloader binary not found") !== -1) {
                     errorDialog.text = "Login Failed: " + message + ". Please ensure lgogdownloader is installed."
                     root.redirectAfterError = true
