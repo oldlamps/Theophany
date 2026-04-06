@@ -84,80 +84,82 @@ FocusScope {
         listView.forceActiveFocus()
     }
 
-    // --- Column Width State ---
-    QtObject {
-        id: colWidths
-        property int icon: 30
-        property int title: 265
-        property int platform: 150
-        property int region: 80
-        property int genre: 150
-        property int developer: 150
-        property int publisher: 150
-        property int year: 60
-        property int rating: 60
-        property int tags: 200
-        // Path fills remaining space
+    property int iconWidth: 30
+    property int titleWidth: 265
+    property int platformWidth: 150
+    property int regionWidth: 80
+    property int genreWidth: 150
+    property int developerWidth: 150
+    property int publisherWidth: 150
+    property int yearWidth: 60
+    property int ratingWidth: 60
+    property int tagsWidth: 200
+    property int dateAddedWidth: 150
+    property int pathWidth: 300
+    property int columnGap: 10
+
+    function setColumnWidth(name, val) {
+        if (name === "icon") iconWidth = val
+        else if (name === "title") titleWidth = val
+        else if (name === "platform") platformWidth = val
+        else if (name === "region") regionWidth = val
+        else if (name === "genre") genreWidth = val
+        else if (name === "developer") developerWidth = val
+        else if (name === "publisher") publisherWidth = val
+        else if (name === "year") yearWidth = val
+        else if (name === "rating") ratingWidth = val
+        else if (name === "tags") tagsWidth = val
+        else if (name === "dateAdded") dateAddedWidth = val
+        else if (name === "path") pathWidth = val
     }
-    
+
     function getX(colName) {
-        // Base start X (matches header leftMargin)
         var x = 5; 
-        var gap = 10;
+        var gap = rootRoot.columnGap;
 
-        // 1. Icon (Always first, fixed structural column)
         if (colName === "icon") return x;
-        x += colWidths.icon + gap;
+        x += iconWidth + gap;
 
-        // 2. Title
         if (colName === "title") return x;
-        x += colWidths.title + gap;
+        x += titleWidth + gap;
 
-        // 3. Platform
         if (colName === "platform") return x;
-        x += colWidths.platform + gap;
+        x += platformWidth + gap;
 
-        // 4. Region
         if (colName === "region") return x;
-        x += colWidths.region + gap;
+        x += regionWidth + gap;
 
-        // 5. Genre
         if (colName === "genre") return x;
-        x += colWidths.genre + gap;
+        x += genreWidth + gap;
 
-        // 6. Developer
         if (colName === "developer") return x;
-        x += colWidths.developer + gap;
+        x += developerWidth + gap;
 
-        // 7. Publisher
         if (colName === "publisher") return x;
-        x += colWidths.publisher + gap;
+        x += publisherWidth + gap;
 
-        // 8. Year
         if (colName === "year") return x;
-        x += colWidths.year + gap;
+        x += yearWidth + gap;
 
-        // 9. Rating
         if (colName === "rating") return x;
-        x += colWidths.rating + gap;
+        x += ratingWidth + gap;
 
-        // 10. Tags
         if (colName === "tags") return x;
-        x += colWidths.tags + gap;
+        x += tagsWidth + gap;
 
-        // 11. Path
+        if (colName === "dateAdded") return x;
+        x += dateAddedWidth + gap;
+
         if (colName === "path") return x;
         
         return x;
     }
 
-    // Horizontal Scroll Wrapper
     Flickable {
         id: horizontalFlick
         anchors.fill: parent
         
-        // Calculate total content width dynamically
-        contentWidth: Math.max(parent.width, getX("path") + 200) // Ensure some space for path
+        contentWidth: Math.max(parent.width, getX("path") + pathWidth + 100)
         contentHeight: parent.height
         clip: true
         flickableDirection: Flickable.HorizontalFlick
@@ -172,7 +174,6 @@ FocusScope {
             width: horizontalFlick.contentWidth
             height: parent.height
 
-            // Header
             Rectangle {
                 width: parent.width
                 height: 35
@@ -184,20 +185,32 @@ FocusScope {
                     anchors.leftMargin: 5
                     spacing: 10
                     
-                    // Component for Header Button with Resize Handle
                     component HeaderButton: Item {
                         id: hbRoot
                         property string text
                         property string sortId
-                        property string widthProp // Name of property in colWidths
+                        property string widthProp 
                         
-                        width: colWidths[widthProp]
+                        width: {
+                            if (widthProp === "icon") return rootRoot.iconWidth
+                            if (widthProp === "title") return rootRoot.titleWidth
+                            if (widthProp === "platform") return rootRoot.platformWidth
+                            if (widthProp === "region") return rootRoot.regionWidth
+                            if (widthProp === "genre") return rootRoot.genreWidth
+                            if (widthProp === "developer") return rootRoot.developerWidth
+                            if (widthProp === "publisher") return rootRoot.publisherWidth
+                            if (widthProp === "year") return rootRoot.yearWidth
+                            if (widthProp === "rating") return rootRoot.ratingWidth
+                            if (widthProp === "tags") return rootRoot.tagsWidth
+                            if (widthProp === "dateAdded") return rootRoot.dateAddedWidth
+                            if (widthProp === "path") return rootRoot.pathWidth
+                            return 100
+                        }
                         height: parent.height
 
-                        // Sort Interaction
                         MouseArea {
                             anchors.fill: parent
-                            anchors.rightMargin: 5 // Leave room for resize handle
+                            anchors.rightMargin: 5
                             cursorShape: Qt.PointingHandCursor
                             onClicked: rootRoot.toggleSort(sortId)
                             
@@ -222,12 +235,11 @@ FocusScope {
                             }
                         }
 
-                        // Resize Handle
                         MouseArea {
-                            width: 10 // Hit area
+                            width: 10
                             height: parent.height
                             anchors.right: parent.right
-                            anchors.rightMargin: -5 // Center over the gap
+                            anchors.rightMargin: -5 
                             cursorShape: Qt.SplitHCursor
                             preventStealing: true
                             z: 10
@@ -236,26 +248,24 @@ FocusScope {
                             property int startWidth: 0
                             
                             onPressed: (mouse) => {
-                                // Use global/root coordinates to avoid feedback loop when parent resizes
                                 var p = mapToItem(rootRoot, mouse.x, mouse.y)
                                 startX = p.x
-                                startWidth = colWidths[widthProp]
+                                startWidth = hbRoot.width
                             }
                             
                             onPositionChanged: (mouse) => {
                                 var p = mapToItem(rootRoot, mouse.x, mouse.y)
                                 var delta = p.x - startX
                                 var newWidth = Math.max(30, startWidth + delta)
-                                colWidths[widthProp] = newWidth
+                                rootRoot.setColumnWidth(widthProp, newWidth)
                                 rootRoot.triggerSave()
                             }
                         }
                     }
 
                     Item { 
-                        width: colWidths.icon
+                        width: rootRoot.iconWidth
                         height: parent.height 
-                        // No text, just spacer
                     }
 
                     HeaderButton { text: "TITLE"; sortId: "Title"; widthProp: "title" }
@@ -276,15 +286,9 @@ FocusScope {
                     
                     HeaderButton { text: "Tags"; sortId: "Tags"; widthProp: "tags" }
                     
-                    Item {
-                        width: 100 // Minimum width for label
-                        height: parent.height
-                        Label { 
-                            text: "Path"; color: Theme.secondaryText; font.bold: true; 
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.left: parent.left
-                        }
-                    }
+                    HeaderButton { text: "Date Added"; sortId: "DateAdded"; widthProp: "dateAdded" }
+                    
+                    HeaderButton { text: "Path"; sortId: "Path"; widthProp: "path" }
                 }
 
                 Rectangle {
@@ -295,7 +299,6 @@ FocusScope {
                 }
             }
 
-            // List
             ListView {
                 id: listView
                 width: parent.width
@@ -305,11 +308,18 @@ FocusScope {
                 highlightMoveDuration: 0
                 flickableDirection: Flickable.VerticalFlick
                 
-                // Performance optimizations for large lists (4500+ items)
-                cacheBuffer: 500 // Increase cache buffer to pre-render more items off-screen
-                reuseItems: true // Reuse delegate items instead of creating/destroying
-                displayMarginBeginning: 100 // Reduce overdraw at the beginning
-                displayMarginEnd: 100 // Reduce overdraw at the end
+                function formatDate(timestamp) {
+                    if (!timestamp || timestamp <= 0) return ""
+                    var d = new Date(timestamp * 1000)
+                    return d.getFullYear() + "-" + 
+                           String(d.getMonth() + 1).padStart(2, '0') + "-" + 
+                           String(d.getDate()).padStart(2, '0')
+                }
+                
+                cacheBuffer: 500
+                reuseItems: true
+                displayMarginBeginning: 100
+                displayMarginEnd: 100
                 
                 // Key handling reused
                 Keys.onReturnPressed: {
@@ -342,7 +352,6 @@ FocusScope {
 
                 onCurrentIndexChanged: { 
                     if (currentIndex >= 0 && focus) {
-                        // Reset selection if not in a multi-selection state (manual movement without Shift/Ctrl)
                         if (!rootRoot.ignoreNextReset) {
                             rootRoot.selectedIndices = [currentIndex]
                             rootRoot.selectionAnchor = currentIndex
@@ -356,11 +365,8 @@ FocusScope {
                     width: listView.width
                     height: 30
                     
-                    // --- Optimized Static Layout using calculated X positions ---
-                    
-                    // Icon
                     Item {
-                        x: rootRoot.getX("icon"); width: colWidths.icon; height: parent.height
+                        x: rootRoot.getX("icon"); width: rootRoot.iconWidth; height: parent.height
                         Image {
                             id: listGameIcon
                             anchors.centerIn: parent
@@ -374,7 +380,6 @@ FocusScope {
                             opacity: (typeof gameIsInstalled !== "undefined" && !gameIsInstalled) ? 0.5 : 1.0
                         }
 
-                        // Cloud badge for uninstalled games
                         Rectangle {
                             visible: typeof gameIsInstalled !== "undefined" && !gameIsInstalled
                             anchors.bottom: parent.bottom
@@ -398,7 +403,6 @@ FocusScope {
                             }
                         }
 
-                        // Running indicator badge
                         Rectangle {
                             visible: (typeof gameIsRunning !== "undefined") && gameIsRunning
                             anchors.bottom: parent.bottom
@@ -420,18 +424,16 @@ FocusScope {
                         }
                     }
 
-                    // Title
                     Text { 
-                        x: rootRoot.getX("title"); width: colWidths.title
+                        x: rootRoot.getX("title"); width: rootRoot.titleWidth
                         anchors.verticalCenter: parent.verticalCenter
                         text: gameTitle 
                         color: Theme.text 
                         elide: Text.ElideRight
                     }
                     
-                    // Platform (Icon + Name)
                     Item {
-                        x: rootRoot.getX("platform"); width: colWidths.platform; height: parent.height
+                        x: rootRoot.getX("platform"); width: rootRoot.platformWidth; height: parent.height
                         Image {
                             id: pIcon
                             width: 16; height: 16
@@ -455,81 +457,79 @@ FocusScope {
                         }
                     }
                     
-                    // Region
                     Text { 
-                        x: rootRoot.getX("region"); width: colWidths.region
+                        x: rootRoot.getX("region"); width: rootRoot.regionWidth
                         anchors.verticalCenter: parent.verticalCenter
                         text: gameRegion ? gameRegion : ""
                         color: Theme.secondaryText
                         elide: Text.ElideRight
                     }
 
-                    // Genre
                     Text {
-                        x: rootRoot.getX("genre"); width: colWidths.genre
+                        x: rootRoot.getX("genre"); width: rootRoot.genreWidth
                         anchors.verticalCenter: parent.verticalCenter
                         text: gameGenre ? gameGenre : ""
                         color: Theme.secondaryText
                         elide: Text.ElideRight
                     }
 
-                    // Developer
                     Text {
-                        x: rootRoot.getX("developer"); width: colWidths.developer
+                        x: rootRoot.getX("developer"); width: rootRoot.developerWidth
                         anchors.verticalCenter: parent.verticalCenter
                         text: gameDeveloper ? gameDeveloper : ""
                         color: Theme.secondaryText
                         elide: Text.ElideRight
                     }
 
-                    // Publisher
                     Text {
-                        x: rootRoot.getX("publisher"); width: colWidths.publisher
+                        x: rootRoot.getX("publisher"); width: rootRoot.publisherWidth
                         anchors.verticalCenter: parent.verticalCenter
                         text: gamePublisher ? gamePublisher : ""
                         color: Theme.secondaryText
                         elide: Text.ElideRight
                     }
 
-                    // Year
                     Text {
-                        x: rootRoot.getX("year"); width: colWidths.year
+                        x: rootRoot.getX("year"); width: rootRoot.yearWidth
                         anchors.verticalCenter: parent.verticalCenter
                         text: gameReleaseYear && gameReleaseYear > 0 ? gameReleaseYear : ""
                         color: Theme.secondaryText
                         elide: Text.ElideRight
                     }
 
-                    // Rating
                     Text {
-                        x: rootRoot.getX("rating"); width: colWidths.rating
+                        x: rootRoot.getX("rating"); width: rootRoot.ratingWidth
                         anchors.verticalCenter: parent.verticalCenter
                         text: gameRating && gameRating > 0 ? gameRating.toFixed(1) : ""
                         color: Theme.secondaryText
                         elide: Text.ElideRight
                     }
 
-                    // Tags
                     Text {
-                        x: rootRoot.getX("tags"); width: colWidths.tags
+                        x: rootRoot.getX("tags"); width: rootRoot.tagsWidth
                         anchors.verticalCenter: parent.verticalCenter
                         text: gameTags ? gameTags : ""
                         color: Theme.secondaryText
                         elide: Text.ElideRight
                     }
 
-                    // Path
+                    Text {
+                        x: rootRoot.getX("dateAdded"); width: rootRoot.dateAddedWidth
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: listView.formatDate(gameDateAdded)
+                        color: Theme.secondaryText
+                        elide: Text.ElideRight
+                    }
+
                     Text { 
                         x: rootRoot.getX("path"); 
-                        width: parent.width - x - 5
+                        width: rootRoot.pathWidth
                         anchors.verticalCenter: parent.verticalCenter
                         text: gamePath
                         color: Theme.secondaryText
                         elide: Text.ElideLeft
                     }
                     
-                    // Selection/Hover state
-                    // Check if index is in selectedIndices array OR if it's the current keyboard focus
                     readonly property bool isSelected: rootRoot.selectedIndices.indexOf(index) !== -1 || (index === listView.currentIndex && listView.activeFocus)
                     color: isSelected ? Qt.alpha(Theme.accent, 0.4) : (ma.containsMouse ? Theme.hover : (index % 2 === 0 ? Qt.alpha(Theme.text, 0.05) : "transparent"))
 
@@ -538,15 +538,13 @@ FocusScope {
                         anchors.fill: parent; 
                         hoverEnabled: true; 
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
-                        propagateComposedEvents: true // Allow flick gestures to propagate to ListView
+                        propagateComposedEvents: true 
                         onClicked: (mouse) => { 
                             listView.forceActiveFocus()
                             
-                            // Multi-Selection Logic
                             if (mouse.button === Qt.LeftButton) {
                                 if (mouse.modifiers & Qt.ControlModifier) {
-                                    // Toggle selection
-                                    var current = rootRoot.selectedIndices.slice() // Clone
+                                    var current = rootRoot.selectedIndices.slice() 
                                     var idx = current.indexOf(index)
                                     rootRoot.ignoreNextReset = true
                                     if (idx !== -1) {
@@ -555,20 +553,17 @@ FocusScope {
                                     } else {
                                         current.push(index)
                                         rootRoot.selectedIndices = current
-                                        listView.currentIndex = index // Primary focus
+                                        listView.currentIndex = index 
                                         rootRoot.selectionAnchor = index
                                     }
                                 } else if (mouse.modifiers & Qt.ShiftModifier) {
-                                    // Range selection using anchor
                                     rootRoot.updateRangeSelection(index)
                                 } else {
-                                    // Single selection
                                     listView.currentIndex = index
                                     rootRoot.selectedIndices = [index]
                                     rootRoot.selectionAnchor = index
                                 }
                             } else if (mouse.button === Qt.RightButton) {
-                                // If right clicking on an item NOT in selection, select it solely
                                 if (rootRoot.selectedIndices.indexOf(index) === -1) {
                                     listView.currentIndex = index
                                     rootRoot.selectedIndices = [index]
@@ -582,7 +577,6 @@ FocusScope {
                         TheophanyMenu {
                             id: contextMenu
                             
-                            // Mass Edit Option
                             TheophanyMenuItem {
                                 text: "Mass Edit (" + rootRoot.selectedIndices.length + ")"
                                 iconSource: "📝"
@@ -833,16 +827,18 @@ FocusScope {
         repeat: false
         onTriggered: {
             var widths = {
-                icon: colWidths.icon,
-                title: colWidths.title,
-                platform: colWidths.platform,
-                region: colWidths.region,
-                genre: colWidths.genre,
-                developer: colWidths.developer,
-                publisher: colWidths.publisher,
-                year: colWidths.year,
-                rating: colWidths.rating,
-                tags: colWidths.tags
+                icon: iconWidth,
+                title: titleWidth,
+                platform: platformWidth,
+                region: regionWidth,
+                genre: genreWidth,
+                developer: developerWidth,
+                publisher: publisherWidth,
+                year: yearWidth,
+                rating: ratingWidth,
+                tags: tagsWidth,
+                dateAdded: dateAddedWidth,
+                path: pathWidth
             };
             appSettings.columnWidths = JSON.stringify(widths);
             appSettings.save();
@@ -858,16 +854,18 @@ FocusScope {
         if (appSettings.columnWidths && appSettings.columnWidths !== "") {
             try {
                 var saved = JSON.parse(appSettings.columnWidths);
-                if (saved.icon) colWidths.icon = saved.icon;
-                if (saved.title) colWidths.title = saved.title;
-                if (saved.platform) colWidths.platform = saved.platform;
-                if (saved.region) colWidths.region = saved.region;
-                if (saved.genre) colWidths.genre = saved.genre;
-                if (saved.developer) colWidths.developer = saved.developer;
-                if (saved.publisher) colWidths.publisher = saved.publisher;
-                if (saved.year) colWidths.year = saved.year;
-                if (saved.rating) colWidths.rating = saved.rating;
-                if (saved.tags) colWidths.tags = saved.tags;
+                if (saved.icon) iconWidth = saved.icon;
+                if (saved.title) titleWidth = saved.title;
+                if (saved.platform) platformWidth = saved.platform;
+                if (saved.region) regionWidth = saved.region;
+                if (saved.genre) genreWidth = saved.genre;
+                if (saved.developer) developerWidth = saved.developer;
+                if (saved.publisher) publisherWidth = saved.publisher;
+                if (saved.year) yearWidth = saved.year;
+                if (saved.rating) ratingWidth = saved.rating;
+                if (saved.tags) tagsWidth = saved.tags;
+                if (saved.dateAdded) dateAddedWidth = saved.dateAdded;
+                if (saved.path) pathWidth = saved.path;
 
             } catch (e) {
 

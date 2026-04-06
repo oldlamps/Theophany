@@ -10,6 +10,7 @@ Dialog {
     id: root
     title: "Import Heroic Games"
     modal: true
+    closePolicy: Popup.NoAutoClose
     width: Overlay.overlay ? Math.min(Overlay.overlay.width * 0.75, 850) : 800
     height: Overlay.overlay ? Math.min(Overlay.overlay.height * 0.85, 750) : 650
     x: (parent.width - width) / 2

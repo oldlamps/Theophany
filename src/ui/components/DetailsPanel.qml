@@ -2137,20 +2137,74 @@ Rectangle {
                             spacing: 12
                             visible: root.gameResources.length > 0
 
-                            property var links: root.gameResources ? root.gameResources.filter(r => r.type !== "launcher" && !r.type.toLowerCase().includes("video") && !r.type.toLowerCase().includes("trailer")) : []
+                            property var docs: root.gameResources ? root.gameResources.filter(r => {
+                                var t = r.type.toLowerCase()
+                                return t.includes("manual") || t.includes("magazine") || r.url.toLowerCase().endsWith(".pdf")
+                            }) : []
+
+                            property var links: root.gameResources ? root.gameResources.filter(r => {
+                                var t = r.type.toLowerCase()
+                                return t !== "launcher" && !t.includes("video") && !t.includes("trailer") && 
+                                       !t.includes("manual") && !t.includes("magazine") && !r.url.toLowerCase().endsWith(".pdf")
+                            }) : []
+
                             property var videos: root.gameResources ? root.gameResources.filter(r => r.type.toLowerCase().includes("video") || r.type.toLowerCase().includes("trailer")) : []
 
-                            Flow {
+                            // 1. Documentation Section
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                spacing: 8
-                                visible: resourceContent.links.length > 0
-                                
-                                Repeater {
-                                    model: resourceContent.links
-                                    delegate: resourceButtonDelegate
+                                spacing: 6
+                                visible: resourceContent.docs.length > 0
+
+                                Text {
+                                    text: "📖 MANUALS & DOCUMENTATION"
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                    color: Theme.secondaryText
+                                    opacity: 0.8
+                                    font.letterSpacing: 0.5
+                                    Layout.leftMargin: 2
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    
+                                    Repeater {
+                                        model: resourceContent.docs
+                                        delegate: resourceButtonDelegate
+                                    }
                                 }
                             }
 
+                            // 2. Links Section
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                visible: resourceContent.links.length > 0
+
+                                Text {
+                                    text: "🔗 LINKS & WEB RESOURCES"
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                    color: Theme.secondaryText
+                                    opacity: 0.8
+                                    font.letterSpacing: 0.5
+                                    Layout.leftMargin: 2
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    
+                                    Repeater {
+                                        model: resourceContent.links
+                                        delegate: resourceButtonDelegate
+                                    }
+                                }
+                            }
+
+                            // 3. Videos Section
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 spacing: 6

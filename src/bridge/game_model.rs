@@ -402,6 +402,7 @@ impl QAbstractListModel for GameListModel {
             })), // gameIsInstalled role
             277 => QVariant::from(rom.cloud_saves_supported.unwrap_or(false)), // gameCloudSavesSupported role
             278 => QVariant::from(self.running_games.borrow().contains_key(&rom.id)), // gameIsRunning role
+            279 => QVariant::from(rom.date_added.unwrap_or(0)), // gameDateAdded Role
             _ => QVariant::default(),
         }
     }
@@ -431,6 +432,7 @@ impl QAbstractListModel for GameListModel {
         roles.insert(276, QByteArray::from("gameIsInstalled"));
         roles.insert(277, QByteArray::from("gameCloudSavesSupported"));
         roles.insert(278, QByteArray::from("gameIsRunning"));
+        roles.insert(279, QByteArray::from("gameDateAdded"));
         roles
     }
 }
@@ -647,8 +649,11 @@ impl GameListModel {
                 query.push_str(" GROUP BY r.id");
 
                 match sort_method.as_str() {
-                    "Recent" => {
+                    "Recent" | "DateAddedDESC" => {
                         query.push_str(" ORDER BY r.date_added DESC");
+                    },
+                    "DateAdded" => {
+                        query.push_str(" ORDER BY r.date_added ASC");
                     },
                     "LastPlayed" => {
                         query.push_str(" ORDER BY m.last_played DESC");

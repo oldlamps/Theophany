@@ -1658,9 +1658,7 @@ Dialog {
         onAccepted: {
             var path = file.toString().replace("file://", "")
             gameModel.updateGameAsset(root.gameId, targetType, path)
-            // Note: updateGameAsset calls update_row_by_id on backend, but we might need a refresh here if UI doesn't auto-update currentData
-            // Actually root.load is better for full metadata sync
-            root.load(root.gameId, root.activeTab)
+            refreshAssetsOnly()
         }
         function openFor(type) {
             targetType = type
@@ -1849,8 +1847,7 @@ Dialog {
         }
 
         function onAssetDownloadFinished(category, path) {
-            // No-op to prevent UI resets/freezing while editing metadata.
-            // Ticker notifications provide background progress feedback.
+            refreshAssetsOnly()
         }
 
         function onAutoScrapeFailed(rom_id, message) {
@@ -1917,6 +1914,16 @@ Dialog {
                     protonVersionsModel.append(versions[i])
                 }
             } catch(e) {}
+        }
+    }
+
+    function refreshAssetsOnly() {
+        if (!root.visible) return;
+        var json = gameModel.getGameMetadata(root.gameId)
+        try {
+            root.currentData = JSON.parse(json)
+        } catch (e) {
+            console.error("Error refreshing assets:", e)
         }
     }
 
