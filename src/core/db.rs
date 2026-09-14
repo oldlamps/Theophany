@@ -1003,14 +1003,14 @@ impl DbManager {
         Ok(())
     }
 
-    pub fn get_ignore_list(&self, platform_id: &str) -> Result<Vec<String>> {
+    pub fn get_ignore_list(&self, platform_id: &str) -> Result<std::collections::HashSet<String>> {
         let mut stmt = self.conn.prepare("SELECT path FROM ignore_list WHERE platform_id = ?1")?;
         let rows = stmt.query_map(params![platform_id], |row| row.get::<_, String>(0))?;
-        let mut list = Vec::new();
+        let mut set = std::collections::HashSet::new();
         for row in rows {
-            list.push(row?);
+            set.insert(row?);
         }
-        Ok(list)
+        Ok(set)
     }
 
     pub fn resource_exists(&self, rom_id: &str, url: &str) -> Result<bool> {

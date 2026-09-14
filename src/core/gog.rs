@@ -480,7 +480,8 @@ impl GogDownloader {
         cmd.arg("--galaxy-platform").arg(platform)
            .arg("--galaxy-install").arg(format!("{}/0", slug))
            .arg("--directory").arg(install_path)
-           .arg("--no-color");
+           .arg("--no-color")
+           .arg("--save-icon");
 
         if no_dependencies {
             cmd.arg("--galaxy-no-dependencies");
@@ -619,5 +620,55 @@ impl GogDownloader {
             }
         }
         None
+    }
+
+    pub fn sync_saves(
+        slug: &str,
+        prefix: &str,
+        is_upload: bool,
+        force: bool,
+    ) -> anyhow::Result<String> {
+        let binary = Self::find_binary()
+            .ok_or_else(|| anyhow::anyhow!("lgogdownloader binary not found"))?;
+
+        let mut cmd = Self::build_command(&binary);
+        if is_upload {
+            cmd.arg("--galaxy-upload-cloud-saves");
+        } else {
+            cmd.arg("--galaxy-download-cloud-saves");
+        }
+        cmd.arg(slug);
+        cmd.arg("--wine-prefix").arg(prefix);
+        if force {
+            cmd.arg("--cloud-force");
+        }
+
+        let output = cmd.output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let combined = format!("{}\n{}", stdout, stderr);
+
+        if !output.status.success() {
+            let mut error_msg = "Sync failed".to_string();
+            for line in combined.lines() {
+                if line.to_lowercase().contains("error") {
+                    error_msg = line.to_string();
+                    break;
+                }
+            }
+            return Err(anyhow::anyhow!("{}: {}", error_msg, combined));
+        }
+
+        if is_upload {
+            if combined.contains("Successfully committed cloud sync changes") {
+                return Ok("Upload successful".to_string());
+            }
+        } else {
+            if combined.contains("Finished") {
+                return Ok("Download successful".to_string());
+            }
+        }
+
+        Ok("Sync finished".to_string())
     }
 }

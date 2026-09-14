@@ -233,6 +233,8 @@ pub struct GameListModel {
     getAllYears: qt_method!(fn(&mut self) -> QVariantList),
     getAllTags: qt_method!(fn(&mut self) -> QVariantList),
     getGameMetadata: qt_method!(fn(&mut self, rom_id: String) -> QString),
+    getBulkMetadata: qt_method!(fn(&mut self, json_ids: String) -> QString),
+    checkBulkSupport: qt_method!(fn(&mut self, json_ids: String) -> QString),
     getGameComments: qt_method!(fn(&mut self, rom_id: String) -> QString),
     updateGameMetadata: qt_method!(fn(&mut self, rom_id: String, json_data: String)),
     updateGameAchievements: qt_method!(fn(&mut self, rom_id: String, count: i32, unlocked: i32, badges: String)), // New method
@@ -243,6 +245,8 @@ pub struct GameListModel {
     getGameId: qt_method!(fn(&mut self, row: i32) -> QString),
     getRowById: qt_method!(fn(&mut self, rom_id: String) -> i32),
     launchGame: qt_method!(fn(&mut self, rom_id: String)),
+    createDesktopShortcut: qt_method!(fn(&mut self, rom_id: String) -> QString),
+    createApplicationShortcut: qt_method!(fn(&mut self, rom_id: String) -> QString),
     uninstallSteamGame: qt_method!(fn(&mut self, rom_id: String)),
     getEmulatorProfiles: qt_method!(fn(&mut self, platform_id: String) -> QString),
     launchWithProfile: qt_method!(fn(&mut self, rom_id: String, profile_id: String)),
@@ -1839,6 +1843,91 @@ impl GameListModel {
     }
 
     #[allow(non_snake_case)]
+    fn checkBulkSupport(&mut self, json_ids: String) -> QString {
+        let ids: Vec<String> = serde_json::from_str(&json_ids).unwrap_or_default();
+        if ids.is_empty() { return QString::from(serde_json::json!({"steam": false, "ra_platforms": []}).to_string()); }
+
+        let db_path = self.db_path.borrow().clone();
+        if let Ok(db) = DbManager::open(&db_path) {
+            let conn = db.get_connection();
+            let mut steam = false;
+            let mut ra_platforms = std::collections::HashSet::new();
+
+            let chunks = ids.chunks(500);
+            for chunk in chunks {
+                let id_list = chunk.iter().map(|id| format!("'{}'", id.replace("'", "''"))).collect::<Vec<_>>().join(",");
+                let query = format!(
+                    "SELECT DISTINCT r.id, p.platform_type, p.name FROM roms r LEFT JOIN platforms p ON r.platform_id = p.id WHERE r.id IN ({})",
+                    id_list
+                );
+
+                if let Ok(mut stmt) = conn.prepare(&query) {
+                    if let Ok(mut rows) = stmt.query([]) {
+                        while let Ok(Some(row)) = rows.next() {
+                            let rid: String = row.get(0).unwrap_or_default();
+                            let ptype: String = row.get::<_, Option<String>>(1).unwrap_or_default().unwrap_or_default();
+                            let pname: String = row.get::<_, Option<String>>(2).unwrap_or_default().unwrap_or_default();
+
+                            if rid.starts_with("steam-") || ptype.to_lowercase() == "steam" || pname.to_lowercase() == "steam" {
+                                steam = true;
+                            }
+                            if !ptype.is_empty() { ra_platforms.insert(ptype); }
+                            if !pname.is_empty() { ra_platforms.insert(pname); }
+                        }
+                    }
+                }
+            }
+            
+            let result = serde_json::json!({
+                "steam": steam,
+                "ra_platforms": ra_platforms.into_iter().collect::<Vec<_>>()
+            });
+            return QString::from(result.to_string());
+        }
+        QString::from("{}")
+    }
+
+    fn getBulkMetadata(&mut self, json_ids: String) -> QString {
+        let ids: Vec<String> = serde_json::from_str(&json_ids).unwrap_or_default();
+        if ids.is_empty() { return QString::from("[]"); }
+
+        let db_path = self.db_path.borrow().clone();
+        let mut results_map = std::collections::HashMap::new();
+
+        if let Ok(db) = DbManager::open(&db_path) {
+            let conn = db.get_connection();
+            let chunks = ids.chunks(500);
+            for chunk in chunks {
+                let id_list = chunk.iter().map(|id| format!("'{}'", id.replace("'", "''"))).collect::<Vec<_>>().join(",");
+                let query = format!(
+                    "SELECT r.id, COALESCE(m.title, r.filename) FROM roms r LEFT JOIN metadata m ON r.id = m.rom_id WHERE r.id IN ({})",
+                    id_list
+                );
+
+                if let Ok(mut stmt) = conn.prepare(&query) {
+                    if let Ok(mut rows) = stmt.query([]) {
+                        while let Ok(Some(row)) = rows.next() {
+                            let id: String = row.get(0).unwrap_or_default();
+                            let title: String = row.get(1).unwrap_or_default();
+                            results_map.insert(id, title);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut final_results = Vec::new();
+        for id in ids {
+            if let Some(title) = results_map.get(&id) {
+                final_results.push(serde_json::json!({
+                    "id": id,
+                    "title": title
+                }));
+            }
+        }
+        QString::from(serde_json::to_string(&final_results).unwrap_or_else(|_| "[]".to_string()))
+    }
+
     fn getGameMetadata(&mut self, rom_id: String) -> QString {
         let db_path = self.db_path.borrow().clone();
         if db_path.is_empty() {
@@ -2639,8 +2728,8 @@ impl GameListModel {
                     return;
                 }
 
-                // --- Standard Rescan Logic (Directory Based) ---
-                // 2. Get all source paths
+
+
                 let mut source_paths = db.get_platform_sources(&platform_id).unwrap_or_default();
                 
                 // Fallback to legacy behavior: infer from existing ROMs if no sources stored
@@ -2676,7 +2765,8 @@ impl GameListModel {
                     let scanned_roms = Scanner::scan_directory(&platform_id, Path::new(&source_path), &ext_list, true);
                     
                     for rom in scanned_roms {
-                        if !existing_paths.contains(&rom.path) && !ignored_paths.contains(&rom.path) {
+                        let path_match = rom.path.clone();
+                        if !existing_paths.contains(&path_match) && !ignored_paths.contains(&path_match) {
                             // New game found and not ignored!
                             if let Ok(_) = db.insert_rom(&rom) {
                                 // Parse metadata
@@ -2745,7 +2835,7 @@ impl GameListModel {
                           // Defaults are only used if NO PC Config exists at all.
 
                           if let Some(c) = &pc_config {
-                              // --- LOCAL CONFIG EXISTS: USE ONLY LOCAL VALUES ---
+
                               // Extract cloud save settings while pc_config is in scope
                               cloud_saves_enabled = c.cloud_saves_enabled.unwrap_or(false);
                               cloud_save_auto_sync = c.cloud_save_auto_sync.unwrap_or(false);
@@ -2834,7 +2924,7 @@ impl GameListModel {
                                   }
 
                           } else {
-                              // --- NO LOCAL CONFIG: FALLBACK TO DEFAULTS ---
+
                               
                               let use_mangohud = platform_defaults.as_ref().and_then(|d| d["use_mangohud"].as_bool()).unwrap_or(false);
                               if use_mangohud { env_prefix.push_str("MANGOHUD=1 "); }
@@ -3162,10 +3252,13 @@ impl GameListModel {
                          let db_path_thread = path_str.clone();
                          let rom_id_thread = rom_id_clone.clone();
                          let tx = self.tx.borrow().clone();
-                         // Clone cloud save info for the exit thread
                          let cloud_app_name: Option<String> = if rom_path.starts_with("epic://") {
                              Some(rom_path.trim_start_matches("epic://launch/").to_string())
                          } else { None };
+                         let cloud_gog_slug: Option<String> = if rom_id_clone.starts_with("gog-") {
+                             Some(rom_id_clone.strip_prefix("gog-").unwrap().to_string())
+                         } else { None };
+                         let cloud_wine_prefix_captured = cloud_wine_prefix_opt.clone();
                          let cloud_save_path_for_push: Option<std::path::PathBuf> = if cloud_saves_enabled && cloud_save_auto_sync {
                              cloud_save_path_opt.as_deref().map(|p| std::path::PathBuf::from(p))
                              .or_else(|| {
@@ -3226,6 +3319,18 @@ impl GameListModel {
                                    match LegendaryWrapper::sync_saves(app_name, sp, SyncDirection::Push, false) {
                                        Ok(res) => log::debug!("[cloud-save] Push complete for {}: {:?}", app_name, res),
                                        Err(e) => log::warn!("[cloud-save] Push failed: {}", e),
+                                   }
+                              }
+
+                              // ── GOG Cloud Save: Push after game exits ──────────
+                              if let (Some(slug), Some(prefix)) = (&cloud_gog_slug, &cloud_wine_prefix_captured) {
+                                   if cloud_saves_enabled && cloud_save_auto_sync {
+                                       use crate::core::gog::GogDownloader;
+                                       log::debug!("[cloud-save] GOG Pushing saves after exit for {}", slug);
+                                       match GogDownloader::sync_saves(slug, prefix, true, false) {
+                                           Ok(msg) => log::debug!("[cloud-save] GOG Push complete for {}: {}", slug, msg),
+                                           Err(e) => log::warn!("[cloud-save] GOG Push failed: {}", e),
+                                       }
                                    }
                               }
 
@@ -3534,8 +3639,6 @@ impl GameListModel {
         }
     }
 
-    /// Resolves the full host-side save path for an Epic game using legendary info.
-    /// `wine_prefix` is passed directly from QML so unsaved prefix values work.
     /// Returns the resolved path string, or a string starting with "error:" on failure.
     #[allow(non_snake_case)]
     fn resolveCloudSavePath(&mut self, rom_id: String, wine_prefix: String) -> QString {
@@ -3686,6 +3789,85 @@ impl GameListModel {
             }
         });
     }
+
+    #[allow(non_snake_case)]
+    fn syncGogCloudSaves(&mut self, rom_id: String, direction: String, force: bool) {
+        use crate::core::gog::GogDownloader;
+
+        let slug = match rom_id.strip_prefix("gog-") {
+            Some(s) => s.to_string(),
+            None => {
+                self.cloudSaveSyncFinished(
+                    rom_id.clone().into(),
+                    false,
+                    "error:not a gog game".into(),
+                );
+                return;
+            }
+        };
+
+        let db_path = self.db_path.borrow().clone();
+
+        // Fetch prefix from DB
+        let prefix_opt = if let Ok(db) = DbManager::open(&db_path) {
+            let config = db.get_pc_config(&rom_id).ok().flatten();
+            config.as_ref().and_then(|c| c.wine_prefix.clone()).filter(|s| !s.trim().is_empty())
+        } else {
+            None
+        };
+
+        let prefix = match prefix_opt {
+            Some(p) => p,
+            None => {
+                self.cloudSaveSyncFinished(
+                    rom_id.clone().into(),
+                    false,
+                    "error:no wine prefix configured".into(),
+                );
+                return;
+            }
+        };
+
+        let tx = self.tx.borrow().clone();
+        let rom_id_clone = rom_id.clone();
+
+        std::thread::spawn(move || {
+            let mut sync_errors = Vec::new();
+            let mut sync_successes = Vec::new();
+
+            let directions = match direction.to_lowercase().as_str() {
+                "pull" => vec![false],
+                "push" => vec![true],
+                "both" => vec![false, true],
+                _ => vec![false],
+            };
+
+            for is_upload in directions {
+                let op_name = if is_upload { "push" } else { "pull" };
+                match GogDownloader::sync_saves(&slug, &prefix, is_upload, force) {
+                    Ok(msg) => sync_successes.push(msg),
+                    Err(e) => sync_errors.push(format!("{}: {}", op_name, e)),
+                }
+            }
+
+            if let Some(tx) = tx {
+                if !sync_errors.is_empty() {
+                    let _ = tx.send(AsyncResponse::CloudSaveSyncFinished(
+                        rom_id_clone,
+                        false,
+                        sync_errors.join("; "),
+                    ));
+                } else {
+                    let _ = tx.send(AsyncResponse::CloudSaveSyncFinished(
+                        rom_id_clone,
+                        true,
+                        sync_successes.last().cloned().unwrap_or("Sync complete".into()),
+                    ));
+                }
+            }
+        });
+    }
+
     #[allow(non_snake_case)]
     fn getRomPath(&mut self, rom_id: String) -> QString {
         let db_path = self.db_path.borrow().clone();
@@ -4420,6 +4602,24 @@ impl GameListModel {
     }
 
     #[allow(non_snake_case)]
+    fn createDesktopShortcut(&mut self, rom_id: String) -> QString {
+        let db_path = self.db_path.borrow().clone();
+        match crate::core::shortcut::create_desktop_shortcut(&db_path, &rom_id) {
+            Ok(msg) => QString::from(msg),
+            Err(err) => QString::from(format!("Error: {}", err)),
+        }
+    }
+
+    #[allow(non_snake_case)]
+    fn createApplicationShortcut(&mut self, rom_id: String) -> QString {
+        let db_path = self.db_path.borrow().clone();
+        match crate::core::shortcut::create_application_shortcut(&db_path, &rom_id) {
+            Ok(msg) => QString::from(msg),
+            Err(err) => QString::from(format!("Error: {}", err)),
+        }
+    }
+
+    #[allow(non_snake_case)]
     fn getIgnoreList(&mut self) -> String {
         let db_path = self.db_path.borrow().clone();
         if db_path.is_empty() { return "[]".to_string(); }
@@ -4779,6 +4979,11 @@ impl GameListModel {
 
     #[allow(non_snake_case)]
     fn checkAsyncResponses(&mut self) {
+        while let Some(rom_id) = crate::core::ipc::pop_pending_launch() {
+            log::info!("[IPC/CLI] Processing pending launch for ROM ID: {}", rom_id);
+            self.launchGame(rom_id);
+        }
+
         // Collect responses first to drop the immutable borrow of self.rx
         let mut responses = Vec::new();
         {
@@ -5455,28 +5660,28 @@ impl GameListModel {
              .replace(".", " ")
              .replace("_", " ");
         
-        // 5. Clean non-alphanumeric (keep spaces)
+
         let re_clean = regex::Regex::new(r"[^a-z0-9 ]").unwrap();
         t = re_clean.replace_all(&t, " ").to_string();
         
-        // 6. Standardize whitespace
+
         let result = t.split_whitespace().collect::<Vec<_>>().join(" ");
         if result.is_empty() { title.to_lowercase() } else { result }
     }
 
     fn normalize_title(title: &str) -> String {
-        // 1. To Lowercase
+
         let mut t = title.to_lowercase();
         
-        // 2. Remove Parenthesized content: "Game Name (Region) (Tags)" -> "Game Name"
+
         let re_paren = regex::Regex::new(r"\(.*?\)").unwrap();
         t = re_paren.replace_all(&t, "").to_string();
     
-        // 3. Remove Brackets: "Game Name [Region] [Tags]" -> "Game Name"
+
         let re_bracket = regex::Regex::new(r"\[.*?\]").unwrap();
         t = re_bracket.replace_all(&t, "").to_string();
     
-        // 4. Handle ", the" pattern: "Game, The" -> "the Game", "Game, The Subtitle" -> "the Game Subtitle"
+
         if let Some(pos) = t.find(", the") {
             let prefix = &t[..pos].trim();
             let suffix = &t[pos + 5..].trim();
@@ -5487,7 +5692,7 @@ impl GameListModel {
             }
         }
     
-        // 5. Replace common symbols and hyphens with spaces
+
         t = t.replace("™", " ")
              .replace("®", " ")
              .replace("©", " ")
@@ -5496,11 +5701,11 @@ impl GameListModel {
              .replace(".", " ")
              .replace("_", " ");
         
-        // 6. Remove non-alphanumeric (keep spaces)
+
         let re_clean = regex::Regex::new(r"[^a-z0-9 ]").unwrap();
         t = re_clean.replace_all(&t, "").to_string();
         
-        // 7. Standardize whitespace
+
         t.split_whitespace().collect::<Vec<_>>().join(" ")
     }
 
@@ -5683,7 +5888,7 @@ impl GameListModel {
                 // Multi-stage termination
                 let mut killed = false;
 
-                // 1. Try Group Signal (kills all children/grandchildren)
+
                 if !killed && pgid > 0 {
                     let res = if is_flatpak && is_host {
                         std::process::Command::new("flatpak-spawn")
@@ -5706,7 +5911,7 @@ impl GameListModel {
                     }
                 }
 
-                // 2. Try individual PID (fallback if group was reaped but process lives)
+
                 if !killed && pgid > 0 {
                     let res = if is_flatpak && is_host {
                         std::process::Command::new("flatpak-spawn").arg("--host").arg("kill").arg("-9").arg(pgid.to_string()).stderr(std::process::Stdio::null()).status()
@@ -5719,7 +5924,7 @@ impl GameListModel {
                     }
                 }
 
-                // 3. Try pkill -g ( targets anything in the group even if leader is gone)
+
                 if !killed && pgid > 0 {
                     let cmd = if is_flatpak && is_host {
                         format!("flatpak-spawn --host pkill -9 -g {}", pgid)
@@ -5729,7 +5934,7 @@ impl GameListModel {
                     let _ = std::process::Command::new("sh").arg("-c").arg(&cmd).stderr(std::process::Stdio::null()).status();
                 }
 
-                // 4. Aggressive Search-and-Kill (pkill -f on stripped ID)
+
                 let search_id = if rom_id.starts_with("legendary-") {
                     &rom_id[10..]
                 } else if rom_id.starts_with("steam-") {
@@ -5746,7 +5951,7 @@ impl GameListModel {
                 };
                 let _ = std::process::Command::new("sh").arg("-c").arg(&search_cmd).stderr(std::process::Stdio::null()).status();
 
-                // 5. Flatpak-Specific Kill (flatpak kill <AppID>)
+
                 let rom_path_opt = self.roms.borrow().iter().find(|r| r.id == rom_id).map(|r| r.path.clone());
                 if let Some(path) = rom_path_opt {
                     if path.starts_with("flatpak://") {
@@ -5770,7 +5975,7 @@ impl GameListModel {
                             let _ = std::process::Command::new("sh").arg("-c").arg(&basename_cmd).stderr(std::process::Stdio::null()).status();
                         }
                          
-                        // 7. Path-based Search-and-Kill (pkill -f [path])
+
                         log::warn!("[Launcher] Using aggressive search-and-kill for Path: {}", path);
                         let path_cmd = if is_flatpak {
                             format!("flatpak-spawn --host pkill -9 -f \"{}\"", path)

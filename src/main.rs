@@ -95,6 +95,25 @@ qrc!(my_resources,
     }
 );
 
+fn parse_cli_launch_arg() -> Option<String> {
+    let args: Vec<String> = std::env::args().collect();
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "--launch" || arg == "-g" || arg == "--game-id" {
+            if i + 1 < args.len() {
+                return Some(args[i + 1].clone());
+            }
+        } else if arg.starts_with("--launch=") {
+            return Some(arg.trim_start_matches("--launch=").to_string());
+        } else if arg.starts_with("-g=") {
+            return Some(arg.trim_start_matches("-g=").to_string());
+        }
+        i += 1;
+    }
+    None
+}
+
 fn main() {
     // Force Basic style to avoid platform-specific QML bugs (like KDE's ComboBox positionToRectangle error)
     std::env::set_var("QT_QUICK_CONTROLS_STYLE", "Basic");
@@ -108,6 +127,20 @@ fn main() {
 
     // Enable logging with default level 'info' if RUST_LOG is not set
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    let launch_arg = parse_cli_launch_arg();
+    let sock_path = crate::core::paths::get_config_dir().join("ipc.sock");
+
+    if crate::core::ipc::send_to_existing_instance(&sock_path, launch_arg.as_deref()) {
+        log::info!("Handled by existing instance. Exiting.");
+        return;
+    }
+
+    crate::core::ipc::start_ipc_server(sock_path);
+
+    if let Some(rom_id) = launch_arg {
+        crate::core::ipc::push_pending_launch(rom_id);
+    }
 
     // Register struct with QML
     qml_register_type::<crate::bridge::game_model::GameListModel>(

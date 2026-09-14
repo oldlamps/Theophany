@@ -2548,6 +2548,26 @@ ApplicationWindow {
                                             }
                                         }
                                         TheophanyMenuItem {
+                                            text: "Create Application Shortcut"
+                                            iconSource: "📌"
+                                            visible: rootViewStack.sharedSelectedIndices.length === 1
+                                            onTriggered: {
+                                                var res = gameModel.createApplicationShortcut(gameId)
+                                                shortcutStatusDialog.text = res
+                                                shortcutStatusDialog.open()
+                                            }
+                                        }
+                                        TheophanyMenuItem {
+                                            text: "Create Desktop Shortcut"
+                                            iconSource: "🖥️"
+                                            visible: rootViewStack.sharedSelectedIndices.length === 1
+                                            onTriggered: {
+                                                var res = gameModel.createDesktopShortcut(gameId)
+                                                shortcutStatusDialog.text = res
+                                                shortcutStatusDialog.open()
+                                            }
+                                        }
+                                        TheophanyMenuItem {
                                             text: "Game Properties"
                                             iconSource: "📝"
                                             visible: rootViewStack.sharedSelectedIndices.length === 1
@@ -2660,7 +2680,7 @@ ApplicationWindow {
                         anchors.rightMargin: 15
                         spacing: 12
                         
-                        // --- Left Group: Statistics ---
+        
                         Text { text: "Games: <font color='" + Theme.text + "'>" + window.statTotalGames + "</font>"; color: Theme.secondaryText; font.pixelSize: 12; textFormat: Text.StyledText }
                         Text { text: "|"; color: Theme.border }
                         
@@ -2722,10 +2742,10 @@ ApplicationWindow {
                             }
                         }
 
-                        // --- Spacer to push notifications to the right ---
+        
                         Item { Layout.fillWidth: true }
 
-                        // --- Right Group: Notifications & Progress ---
+        
                         
                         // Asset Download Status
                         Row {
@@ -3032,15 +3052,15 @@ ApplicationWindow {
         
         onLoginRequested: (username, key) => {
               
-             // 1. Update Settings Immediately
+         
              appSettings.retroAchievementsUser = username
              appSettings.retroAchievementsToken = key
              appSettings.retroAchievementsEnabled = true
              
-             // 2. Persist Settings
+         
               appSettings.save()
              
-             // 3. Trigger Login
+         
               raBridge.login(username, key)
         }
     }
@@ -3136,6 +3156,7 @@ ApplicationWindow {
     
     function openBulkScrape(ids, mode) {
         if (!ids || ids.length === 0) return
+        bulkScrapeDialog.open()
         bulkScrapeDialog.gameIds = ids
         
         if (mode === "Metadata") {
@@ -4030,6 +4051,12 @@ ApplicationWindow {
         }
     }
 
+
+    Platform.MessageDialog {
+        id: shortcutStatusDialog
+        title: "Desktop Shortcut"
+        buttons: Platform.MessageDialog.Ok
+    }
 
     Platform.MessageDialog {
         id: mainAutoScrapeErrorDialog

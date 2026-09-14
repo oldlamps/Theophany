@@ -1,6 +1,8 @@
 #![allow(non_snake_case)]
 use qmetaobject::prelude::*;
 use crate::core::store::StoreManager;
+use crate::core::models::GameResource;
+use uuid::Uuid;
 use std::sync::mpsc;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -8,6 +10,7 @@ use crate::core::metadata_manager::MetadataManager;
 use std::path::Path;
 use std::os::unix::process::ExitStatusExt;
 use std::sync::{Mutex, OnceLock};
+use walkdir::WalkDir;
 
 struct GlobalStoreState {
     active_processes: HashMap<String, u32>,
@@ -1792,7 +1795,7 @@ impl StoreBridge {
                             let _ = stdout_handle.join();
                             
                             let captured_dir = info_path_mutex.lock().unwrap().clone();
-                            let exe_path = if let Some(game_dir) = captured_dir {
+                            let exe_path = if let Some(ref game_dir) = captured_dir {
                                 log::info!("[GogBridge] Extracted Exact Game Directory: {}", game_dir);
                                 crate::core::gog::GogDownloader::find_exe_from_info_dir(&game_dir)
                                     .unwrap_or_else(|| game_dir.clone())
@@ -1822,6 +1825,73 @@ impl StoreBridge {
                                     "UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1",
                                     [&rom_id],
                                 );
+
+                                // Post-install artwork: Try to extract icon from the game folder
+                                if let Some(ref game_dir) = captured_dir {
+                                    log::info!("[GogBridge] Scanning for .ico in {}", game_dir);
+                                    let mut icon_found = None;
+                                    for entry in WalkDir::new(&game_dir)
+                                        .max_depth(5)
+                                        .into_iter()
+                                        .filter_map(|e| e.ok())
+                                    {
+                                        let p = entry.path();
+                                        if p.is_file() && p.extension().is_some_and(|e| e == "ico") {
+                                            icon_found = Some(p.to_path_buf());
+                                            break;
+                                        }
+                                    }
+
+                                    if let Some(src_icon) = icon_found {
+                                        let data_dir = crate::core::paths::get_data_dir();
+                                        let slug = rom_id.replace("gog-", "");
+                                        let target_dir = data_dir.join("Images").join("gog").join(&slug).join("Icon");
+                                        
+                                        if let Ok(_) = std::fs::create_dir_all(&target_dir) {
+                                            if let Some(fname) = src_icon.file_name() {
+                                                let target_path = target_dir.join(fname);
+                                                if let Ok(_) = std::fs::copy(&src_icon, &target_path) {
+                                                    log::info!("[GogBridge] Auto-imported icon to {:?}", target_path);
+                                                    // Refresh assets in DB to pick up the new icon
+                                                    let _ = crate::core::asset_scanner::scan_game_assets(&db, &rom_id);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Scan for PDFs (Manuals/Guides)
+                                    log::info!("[GogBridge] Scanning for .pdf in {}", game_dir);
+                                    for entry in WalkDir::new(&game_dir)
+                                        .max_depth(5)
+                                        .into_iter()
+                                        .filter_map(|e| e.ok())
+                                    {
+                                        let p = entry.path();
+                                        if p.is_file() && p.extension().is_some_and(|e| e == "pdf") {
+                                            let label = p.file_stem()
+                                                .map(|s| s.to_string_lossy().to_string())
+                                                .unwrap_or_else(|| "Manual".to_string());
+                                            
+                                            let url = p.to_string_lossy().to_string();
+                                            
+                                            // Check if resource already exists
+                                            if let Ok(exists) = db.resource_exists(&rom_id, &url) {
+                                                if !exists {
+                                                    let res = GameResource {
+                                                        id: Uuid::new_v4().to_string(),
+                                                        rom_id: rom_id.clone(),
+                                                        type_: "manual".to_string(),
+                                                        url,
+                                                        label: Some(label),
+                                                        sort_order: 0,
+                                                    };
+                                                    let _ = db.insert_resource(&res);
+                                                    log::info!("[GogBridge] Auto-added PDF resource: {}", res.url);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
                             let _ = broadcast_msg(StoreMsg::InstallFinished(

@@ -14,6 +14,27 @@ pub fn get_data_dir() -> PathBuf {
     path
 }
 
+pub fn get_applications_dir() -> PathBuf {
+    let base = std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        format!("{}/.local/share", home)
+    });
+    let path = PathBuf::from(base).join("applications");
+    if !path.exists() {
+        let _ = std::fs::create_dir_all(&path);
+    }
+    path
+}
+
+pub fn get_desktop_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let path = PathBuf::from(home).join("Desktop");
+    if !path.exists() {
+        let _ = std::fs::create_dir_all(&path);
+    }
+    path
+}
+
 pub fn get_default_prefix_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let path = PathBuf::from(home).join("Games").join("theophany").join("default");

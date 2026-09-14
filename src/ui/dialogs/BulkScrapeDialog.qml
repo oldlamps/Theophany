@@ -59,37 +59,42 @@ Dialog {
     property var gameIds: [] // IDs to scrape
     property bool hasSteamGames: false
     property bool hasRaGames: false
+    property bool isInitializing: false
     
     onGameIdsChanged: updatePlatformSupport()
     
     function updatePlatformSupport() {
-        var steam = false
-        var ra = false
-        for (var i = 0; i < gameIds.length; i++) {
-            var metaStr = gameModel.getGameMetadata(gameIds[i])
-            if (metaStr) {
-                try {
-                    var meta = JSON.parse(metaStr)
-                    var pId = meta.platform_id || ""
-                    var pType = meta.platform_type || ""
-                    var pName = meta.platform_name || ""
-                    
-                    if (pId === "steam" || pName === "Steam" || gameIds[i].startsWith("steam-")) {
-                        steam = true
-                    } 
-                    
-                    if (appSettings.isPlatformRaActive(pType) || appSettings.isPlatformRaActive(pName)) {
-                        ra = true
-                    }
-                } catch(e) {}
-            }
-        }
-        hasSteamGames = steam
-        hasRaGames = ra
+        if (gameIds.length === 0) return
+        isInitializing = true
         
-        // Auto-check defaults if credentials exist
-        checkSteamAchievements.checked = steam && appSettings.steamId !== "" && appSettings.steamApiKey !== ""
-        checkRa.checked = ra && appSettings.retroAchievementsUser !== "" && appSettings.retroAchievementsToken !== ""
+        Qt.callLater(function() {
+            try {
+                var supportJson = gameModel.checkBulkSupport(JSON.stringify(gameIds))
+                var support = JSON.parse(supportJson)
+                
+                var steam = support.steam || false
+                var ra = false
+                if (support.ra_platforms) {
+                    for (var i = 0; i < support.ra_platforms.length; i++) {
+                        if (appSettings.isPlatformRaActive(support.ra_platforms[i])) {
+                            ra = true
+                            break
+                        }
+                    }
+                }
+                
+                hasSteamGames = steam
+                hasRaGames = ra
+                
+                // Auto-check defaults if credentials exist
+                checkSteamAchievements.checked = steam && appSettings.steamId !== "" && appSettings.steamApiKey !== ""
+                checkRa.checked = ra && appSettings.retroAchievementsUser !== "" && appSettings.retroAchievementsToken !== ""
+            } catch(e) {
+                console.error("Error checking bulk support:", e)
+            } finally {
+                isInitializing = false
+            }
+        })
     }
     
     // Close Policy: Don't allow closing if scraping is active (unless cancelled via button)
@@ -234,7 +239,6 @@ Dialog {
         anchors.margins: 25
         spacing: 20
         
-        // --- Header ---
         RowLayout {
             Layout.fillWidth: true
             
@@ -251,13 +255,11 @@ Dialog {
 
         Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
 
-        // --- Settings Section ---
         ColumnLayout {
-            visible: !gameModel.bulkScraping
+            visible: !gameModel.bulkScraping && !isInitializing
             spacing: 15
             Layout.fillWidth: true
             
-            // Categories
             ColumnLayout {
                 spacing: 8
                 Label {
@@ -290,7 +292,6 @@ Dialog {
                     }
                 }
 
-                // Granular Fields
                 GridLayout {
                     visible: checkMetadata.checked
                     columns: 2
@@ -309,15 +310,6 @@ Dialog {
                     StyledCheckBox { id: checkRating; text: "Rating"; checked: true }
                     StyledCheckBox { id: checkRes; text: "Links (Resources)"; checked: true }
                     StyledCheckBox { id: checkVideoTrailers; text: "Video Trailers"; checked: true }
-                }
-
-                Label {
-                    visible: checkMetadata.checked
-                    text: "Select Images"
-                    color: Theme.accent
-                    font.bold: true
-                    font.pixelSize: 12
-                    Layout.topMargin: 5
                 }
 
                 GridLayout {
@@ -350,7 +342,6 @@ Dialog {
                 }
             }
 
-            // Priority (Conditional)
             ColumnLayout {
                 visible: (checkMetadata.checked && checkRa.checked && checkRa.visible) || (checkMetadata.checked && checkSteamAchievements.checked && checkSteamAchievements.visible)
                 spacing: 8
@@ -371,7 +362,6 @@ Dialog {
                 }
             }
             
-            // Pacing (Hidden, using defaults 2-5s)
             ColumnLayout {
                 visible: false
                 spacing: 8
@@ -413,8 +403,39 @@ Dialog {
                 Layout.fillWidth: true
             }
         }
+
+        ColumnLayout {
+            visible: isInitializing
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 20
+            
+            Item { Layout.fillHeight: true }
+            
+            BusyIndicator {
+                id: busyInit
+                Layout.alignment: Qt.AlignHCenter
+                running: isInitializing
+                palette.dark: Theme.accent
+            }
+            
+            Label {
+                text: "Initializing Game List..."
+                color: Theme.text
+                font.pixelSize: 16
+                font.bold: true
+                Layout.alignment: Qt.AlignHCenter
+            }
+            
+            Label {
+                text: "Analyzing " + root.gameIds.length + " games for compatibility"
+                color: Theme.secondaryText
+                Layout.alignment: Qt.AlignHCenter
+            }
+            
+            Item { Layout.fillHeight: true }
+        }
         
-        // --- Progress Section ---
         ColumnLayout {
             visible: gameModel.bulkScraping
             spacing: 15
@@ -460,7 +481,6 @@ Dialog {
                 Layout.alignment: Qt.AlignRight
             }
 
-            // --- Item List ---
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
@@ -558,7 +578,6 @@ Dialog {
             Layout.topMargin: 10
             spacing: 15
             
-            // Minimalist Controls
             TheophanyButton {
                 text: "Minimize"
                 onClicked: root.close()
@@ -566,7 +585,6 @@ Dialog {
 
             Item { Layout.fillWidth: true } // Spacer to push action buttons right
             
-            // Start Button
             TheophanyButton {
                 text: "Start Scrape"
                 visible: !gameModel.bulkScraping
@@ -601,33 +619,18 @@ Dialog {
                         "asset_background": checkAssetBackground.checked
                     }
                     
-                    // Populate Progress Model
                     bulkScrapeModel.clear()
-                    for (var i = 0; i < root.gameIds.length; i++) {
-                        var gid = root.gameIds[i]
-                        var gtitle = "Unknown Game"
-                        // Find title from gameModel if possible
-                        var row = gameModel.getRowById(gid)
-                        if (row >= 0) {
-                            gtitle = gameModel.getGameId(row) // Wait, getGameId returns ID. I need title.
-                            // Actually search in gameModel's data is better in QML if we have a way.
-                            // For now, let's just use the ID or placeholder, or I can fetch it.
-                            // Better: gameModel has a lot of data. 
+                    try {
+                        var gamesMetadata = JSON.parse(gameModel.getBulkMetadata(JSON.stringify(root.gameIds)))
+                        for (var i = 0; i < gamesMetadata.length; i++) {
+                            bulkScrapeModel.append({
+                                "romId": gamesMetadata[i].id,
+                                "title": gamesMetadata[i].title,
+                                "status": "waiting"
+                            })
                         }
-                        
-                        bulkScrapeModel.append({
-                            "romId": gid,
-                            "title": gid, // Fallback
-                            "status": "waiting"
-                        })
-                    }
-                    // Refined title fetch:
-                    for (var j = 0; j < bulkScrapeModel.count; j++) {
-                        var metaStr = gameModel.getGameMetadata(bulkScrapeModel.get(j).romId)
-                        if (metaStr) {
-                            var meta = JSON.parse(metaStr)
-                            bulkScrapeModel.setProperty(j, "title", meta.title || bulkScrapeModel.get(j).romId)
-                        }
+                    } catch(e) {
+                        console.error("Error populating bulk scrape model:", e)
                     }
                     
                     gameModel.startBulkScrape(
@@ -649,7 +652,6 @@ Dialog {
                 }
             }
             
-            // Running Controls
             RowLayout {
                 visible: gameModel.bulkScraping
                 spacing: 10

@@ -20,3 +20,5 @@ pub mod runtime;
 pub mod exodos;
 pub mod gog;
 pub mod nile;
+pub mod shortcut;
+pub mod ipc;

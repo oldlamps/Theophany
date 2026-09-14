@@ -71,16 +71,17 @@ Dialog {
             }
         }
         function onCloudSaveSyncFinished(romId, success, message) {
-
             var sId = romId.toString()
             var targetId = root.gameId.toString()
             if (sId === targetId || sId.indexOf(targetId) >= 0 || targetId.indexOf(sId) >= 0) {
+                var isGog = sId.indexOf("gog-") === 0 || root.platformId === "gog";
+                var statusLabel = isGog ? gogCloudSaveStatusLabel : cloudSaveStatusLabel;
                 if (success) {
-                    cloudSaveStatusLabel.text = "✅ " + message
-                    cloudSaveStatusLabel.color = Theme.accent
+                    statusLabel.text = "✅ " + message
+                    statusLabel.color = Theme.accent
                 } else {
-                    cloudSaveStatusLabel.text = "❌ " + message
-                    cloudSaveStatusLabel.color = Theme.danger || "#ff4444"
+                    statusLabel.text = "❌ " + message
+                    statusLabel.color = Theme.danger || "#ff4444"
                 }
             }
         }
@@ -247,6 +248,9 @@ Dialog {
             cloudSavesCheck.checked = !!currentConfig.cloud_saves_enabled
             cloudSavePathField.text = currentConfig.cloud_save_path || ""
             cloudSaveAutoSyncCheck.checked = !!currentConfig.cloud_save_auto_sync
+            
+            gogCloudSavesCheck.checked = !!currentConfig.cloud_saves_enabled
+            gogCloudSaveAutoSyncCheck.checked = !!currentConfig.cloud_save_auto_sync
 
             // Gamescope
             gamescopeCheck.checked = (currentConfig.use_gamescope !== undefined) ? !!currentConfig.use_gamescope : !!platformDefaults.use_gamescope
@@ -1270,6 +1274,86 @@ Dialog {
 
                                     Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border; visible: root.gameId.toString().indexOf("legendary-") === 0 || root.platformId === "epic" }
 
+                                    // SECTION: GOG CLOUD SAVES (via lgogdownloader)
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 15
+                                        visible: root.gameId.toString().indexOf("gog-") === 0 || root.platformId === "gog"
+
+                                        Text { text: "GOG CLOUD SAVES (via lgogdownloader)"; color: Theme.accent; font.pixelSize: 11; font.bold: true }
+
+                                        TheophanyCheckBox {
+                                            id: gogCloudSavesCheck
+                                            text: "Enable Cloud Saves"
+                                        }
+
+                                        TheophanyCheckBox {
+                                            id: gogCloudSaveAutoSyncCheck
+                                            text: "Auto Sync on Launch / Close (pull before launch, push on exit)"
+                                            enabled: gogCloudSavesCheck.checked
+                                            opacity: enabled ? 1.0 : 0.4
+                                        }
+
+                                        Label {
+                                            id: gogCloudSaveStatusLabel
+                                            text: ""
+                                            color: Theme.secondaryText
+                                            font.pixelSize: 12
+                                            wrapMode: Text.Wrap
+                                            Layout.fillWidth: true
+                                            visible: text !== ""
+                                        }
+
+                                        RowLayout {
+                                            Layout.topMargin: 5
+                                            spacing: 10
+                                            enabled: gogCloudSavesCheck.checked
+                                            opacity: enabled ? 1.0 : 0.4
+
+                                            Label { text: "Manual Sync:"; color: Theme.secondaryText; font.pixelSize: 13 }
+
+                                            TheophanyCheckBox {
+                                                id: gogForceSyncCheck
+                                                text: "Force"
+                                                font.pixelSize: 12
+                                            }
+
+                                            TheophanyButton {
+                                                text: "⬇ Pull from GOG"
+                                                enabled: gogCloudSavesCheck.checked
+                                                tooltipText: "Download saves from GOG cloud"
+                                                onClicked: {
+                                                    gogCloudSaveStatusLabel.text = "⏳ Pulling from GOG cloud…"
+                                                    gogCloudSaveStatusLabel.color = Theme.secondaryText
+                                                    savePcConfig()
+                                                    gameModel.syncGogCloudSaves(root.gameId, "pull", gogForceSyncCheck.checked)
+                                                }
+                                            }
+                                            TheophanyButton {
+                                                text: "⬆ Push to GOG"
+                                                enabled: gogCloudSavesCheck.checked
+                                                tooltipText: "Upload saves to GOG cloud"
+                                                onClicked: {
+                                                    gogCloudSaveStatusLabel.text = "⏳ Pushing to GOG cloud…"
+                                                    gogCloudSaveStatusLabel.color = Theme.secondaryText
+                                                    savePcConfig()
+                                                    gameModel.syncGogCloudSaves(root.gameId, "push", gogForceSyncCheck.checked)
+                                                }
+                                            }
+                                        }
+                                        
+                                        Label {
+                                            text: "Note: GOG cloud saves are synced to the configured Wine prefix. Ensure it is set correctly in the Proton section above."
+                                            color: Theme.secondaryText
+                                            font.pixelSize: 11
+                                            font.italic: true
+                                            wrapMode: Text.Wrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border; visible: root.gameId.toString().indexOf("gog-") === 0 || root.platformId === "gog" }
+
                                     // SECTION: EOS OVERLAY (Epic/Legendary only)
                                     ColumnLayout {
                                         Layout.fillWidth: true
@@ -1644,9 +1728,15 @@ Dialog {
         }
 
         // Cloud Saves
-        config["cloud_saves_enabled"] = cloudSavesCheck.checked
-        config["cloud_save_path"] = cloudSavePathField.text
-        config["cloud_save_auto_sync"] = cloudSaveAutoSyncCheck.checked
+        if (root.gameId.toString().indexOf("gog-") === 0 || root.platformId === "gog") {
+            config["cloud_saves_enabled"] = gogCloudSavesCheck.checked
+            config["cloud_save_auto_sync"] = gogCloudSaveAutoSyncCheck.checked
+            config["cloud_save_path"] = "" // Not used for GOG
+        } else {
+            config["cloud_saves_enabled"] = cloudSavesCheck.checked
+            config["cloud_save_path"] = cloudSavePathField.text
+            config["cloud_save_auto_sync"] = cloudSaveAutoSyncCheck.checked
+        }
 
         gameModel.savePcConfig(JSON.stringify(config))
         gameModel.updateRomPath(gameId, exePathField.text)
