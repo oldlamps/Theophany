@@ -2723,12 +2723,15 @@ ApplicationWindow {
 
                         Row {
                             spacing: 5
+                            visible: window.statLastPlayed !== ""
                             Text { text: "Last Played: "; color: Theme.secondaryText; font.pixelSize: 12 }
                             Text {
                                 text: window.statLastPlayed
                                 color: lpMa.containsMouse ? Theme.accent : Theme.text
                                 font.pixelSize: 12
                                 font.bold: true
+                                elide: Text.ElideRight
+                                width: Math.min(implicitWidth, Math.max(80, window.width * 0.14))
                                 MouseArea {
                                     id: lpMa
                                     anchors.fill: parent
@@ -2755,17 +2758,19 @@ ApplicationWindow {
                             }
                         }
                         
-                        Text { text: "|"; color: Theme.border; visible: window.upNextId !== "" }
+                        Text { text: "|"; color: Theme.border; visible: window.upNextId !== "" && window.width > 950 }
 
                         Row {
                             spacing: 5
-                            visible: window.upNextId !== ""
+                            visible: window.upNextId !== "" && window.width > 950
                             Text { text: "Next Up? "; color: Theme.secondaryText; font.pixelSize: 12 }
                             Text {
                                 text: window.upNextTitle
                                 color: unMa.containsMouse ? Theme.accent : Theme.text
                                 font.pixelSize: 12
                                 font.italic: true
+                                elide: Text.ElideRight
+                                width: Math.min(implicitWidth, Math.max(80, window.width * 0.12))
                                 MouseArea {
                                     id: unMa
                                     anchors.fill: parent
@@ -2776,108 +2781,152 @@ ApplicationWindow {
                             }
                         }
 
-        
                         Item { Layout.fillWidth: true }
 
-        
-                        
-                        // Asset Download Status
-                        Row {
-                            spacing: 12
-                            visible: window.assetDownloadStatus !== ""
-                            Text { 
-                                text: window.assetDownloadStatus
-                                color: Theme.accent
-                                font.pixelSize: 12
-                                font.bold: true
-                            }
-                            Text { text: "|"; color: Theme.border; visible: gameModel.bulkScraping || window.isStoreInstalling }
-                        }
-
-                        // Universal Progress Indicator (Scraping, Store Install, or Background Activity)
-                        RowLayout {
-                            id: universalProgressRow
-                            visible: gameModel.bulkScraping || window.isStoreInstalling || window.hasBackgroundActivity
-                            spacing: 10
-                            
-                            Text {
-                                text: window.isStoreInstalling ? 
-                                      "Installing " + window.storeInstallAppId + ": " + Math.round(window.storeInstallProgress * 100) + "%" :
-                                      (window.hasBackgroundActivity ? 
-                                       window.backgroundActivityStatus + " (" + Math.round(window.backgroundActivityProgress * 100) + "%)" :
-                                       "Scraping: " + Math.round(gameModel.bulkProgress * 100) + "%")
-                                color: Theme.accent
-                                font.pixelSize: 12
-                                font.bold: true
-                            }
-                            
-                            ProgressBar {
-                                Layout.preferredWidth: 100
-                                Layout.preferredHeight: 4
-                                value: window.isStoreInstalling ? window.storeInstallProgress : 
-                                       (window.hasBackgroundActivity ? window.backgroundActivityProgress : gameModel.bulkProgress)
-                                background: Rectangle {
-                                    implicitWidth: 100
-                                    implicitHeight: 4
-                                    color: Theme.secondaryBackground
-                                    radius: 2
-                                }
-                                contentItem: Item {
-                                    implicitWidth: 100
-                                    implicitHeight: 4
-                                    Rectangle {
-                                        width: parent.visualPosition * parent.width
-                                        height: parent.height
-                                        radius: 2
-                                        color: Theme.accent
-                                    }
-                                }
-                            }
-
-                            // Restore Icon/Button
-                            Text {
-                                text: "⤢"
-                                color: navMa.containsMouse ? Theme.accent : Theme.text
-                                font.pixelSize: 14
-                                verticalAlignment: Text.AlignVCenter
-                                MouseArea {
-                                    id: navMa
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        if (window.isStoreInstalling && window.storeInstallAppId.includes(".")) flatpakStoreDialog.open()
-                                        else bulkScrapeDialog.open()
-                                    }
-                                }
-                            }
-                        }
-
-                        // Background Activity Indicator
+                        // Activity Status Pill (Interactive Trigger for Activity Center)
                         Rectangle {
-                            id: loadingBar
-                            Layout.preferredWidth: 120
-                            Layout.preferredHeight: 6
-                            color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.1)
-                            radius: 3
-                            visible: gameModel.loading
-                            clip: true
-                            Layout.rightMargin: 10
+                            id: activityPill
+                            Layout.preferredHeight: 22
+                            Layout.alignment: Qt.AlignVCenter
+                            radius: 11
 
-                            Rectangle {
-                                width: 40
-                                height: parent.height
-                                color: Theme.accent
-                                radius: 3
-                                
-                                NumberAnimation on x {
-                                    from: -40
-                                    to: 120
-                                    duration: 1200
-                                    loops: Animation.Infinite
-                                    running: loadingBar.visible
-                                    easing.type: Easing.InOutSine
+                            readonly property bool isScraping: gameModel ? gameModel.bulkScraping : false
+                            readonly property bool isPaused: gameModel ? gameModel.bulkPaused : false
+                            readonly property real scrapeProgress: gameModel ? gameModel.bulkProgress : 0.0
+                            readonly property bool isDbLoading: gameModel ? gameModel.loading : false
+                            readonly property bool hasActive: isScraping ||
+                                                              window.isStoreInstalling ||
+                                                              window.hasBackgroundActivity ||
+                                                              window.assetDownloadStatus !== "" ||
+                                                              isDbLoading
+
+                            readonly property real activeProgress: window.isStoreInstalling ? window.storeInstallProgress :
+                                                                  (window.hasBackgroundActivity ? window.backgroundActivityProgress :
+                                                                   (isScraping ? scrapeProgress : 0.0))
+
+                            implicitWidth: pillLayout.implicitWidth + 18
+                            color: hasActive ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, pillMa.containsMouse ? 0.25 : 0.14) :
+                                               (pillMa.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+                            border.color: hasActive ? (isPaused ? "#ffaa00" : Theme.accent) : (pillMa.containsMouse ? Theme.border : Qt.rgba(1, 1, 1, 0.1))
+                            border.width: 1
+
+                            RowLayout {
+                                id: pillLayout
+                                anchors.centerIn: parent
+                                spacing: 6
+
+                                // Animated Pulse Dot / Icon
+                                Item {
+                                    width: 10
+                                    height: 10
+                                    Layout.alignment: Qt.AlignVCenter
+
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        width: 7
+                                        height: 7
+                                        radius: 3.5
+                                        visible: activityPill.hasActive
+                                        color: activityPill.isPaused ? "#ffaa00" : Theme.accent
+
+                                        SequentialAnimation on opacity {
+                                            running: activityPill.hasActive && !activityPill.isPaused
+                                            loops: Animation.Infinite
+                                            NumberAnimation { from: 1.0; to: 0.25; duration: 750; easing.type: Easing.InOutSine }
+                                            NumberAnimation { from: 0.25; to: 1.0; duration: 750; easing.type: Easing.InOutSine }
+                                        }
+                                    }
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: !activityPill.hasActive
+                                        text: "⚡"
+                                        font.pixelSize: 9
+                                        color: pillMa.containsMouse ? Theme.accent : Theme.secondaryText
+                                    }
                                 }
+
+                                Text {
+                                    text: {
+                                        if (activityPill.isScraping) {
+                                            return activityPill.isPaused ? "Scraping (Paused)" : "Scraping: " + Math.round(activityPill.scrapeProgress * 100) + "%"
+                                        } else if (window.isStoreInstalling) {
+                                            return "Installing: " + Math.round(window.storeInstallProgress * 100) + "%"
+                                        } else if (window.hasBackgroundActivity) {
+                                            return window.backgroundActivityId + ": " + Math.round(window.backgroundActivityProgress * 100) + "%"
+                                        } else if (window.assetDownloadStatus !== "") {
+                                            return window.assetDownloadStatus
+                                        } else if (activityPill.isDbLoading) {
+                                            return "Loading..."
+                                        }
+                                        return "Activity"
+                                    }
+                                    color: activityPill.hasActive ? Theme.text : (pillMa.containsMouse ? Theme.text : Theme.secondaryText)
+                                    font.pixelSize: 11
+                                    font.bold: activityPill.hasActive
+                                    elide: Text.ElideRight
+                                    Layout.maximumWidth: 150
+                                }
+
+                                // Mini Progress Indicator when active with percentage
+                                Rectangle {
+                                    visible: activityPill.hasActive && activityPill.activeProgress > 0
+                                    Layout.preferredWidth: 28
+                                    Layout.preferredHeight: 3
+                                    Layout.alignment: Qt.AlignVCenter
+                                    color: Qt.rgba(1, 1, 1, 0.15)
+                                    radius: 1.5
+
+                                    Rectangle {
+                                        width: Math.max(2, parent.width * Math.min(1.0, activityPill.activeProgress))
+                                        height: parent.height
+                                        radius: 1.5
+                                        color: activityPill.isPaused ? "#ffaa00" : Theme.accent
+                                    }
+                                }
+
+                                // Expand indicator chevron
+                                Text {
+                                    text: activityPopup.visible ? "▼" : "▲"
+                                    font.pixelSize: 7
+                                    color: activityPill.hasActive ? Theme.accent : Theme.secondaryText
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+                            }
+
+                            MouseArea {
+                                id: pillMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (activityPopup.visible) activityPopup.close()
+                                    else activityPopup.open()
+                                }
+                            }
+
+                            TheophanyTooltip {
+                                visible: pillMa.containsMouse && !activityPopup.visible
+                                text: activityPill.hasActive ? "Click to view background activity details" : "Click to view Activity Center"
+                            }
+
+                            ActivityCenterPopup {
+                                id: activityPopup
+                                gameModel: gameModel
+                                assetDownloadStatus: window.assetDownloadStatus
+                                isStoreInstalling: window.isStoreInstalling
+                                storeInstallAppId: window.storeInstallAppId
+                                storeInstallProgress: window.storeInstallProgress
+                                hasBackgroundActivity: window.hasBackgroundActivity
+                                backgroundActivityId: window.backgroundActivityId
+                                backgroundActivityStatus: window.backgroundActivityStatus
+                                backgroundActivityProgress: window.backgroundActivityProgress
+
+                                onOpenBulkScrapeRequested: bulkScrapeDialog.open()
+                                onOpenStoreRequested: {
+                                    if (window.isStoreInstalling && window.storeInstallAppId.includes(".")) flatpakStoreDialog.open()
+                                }
+                                onOpenImportProgressRequested: importProgressDialog.open()
                             }
                         }
                     }
