@@ -322,6 +322,7 @@ impl BulkImporter {
                                 "wrapper": data.get("default_proton_wrapper"),
                                 "use_gamescope": data.get("default_proton_use_gamescope"),
                                 "use_mangohud": data.get("default_proton_use_mangohud"),
+                                "enable_wayland": data.get("default_proton_use_wayland"),
                                 "gamescope_args": data.get("default_proton_gamescope_args"),
                                 "gs_state": {
                                     "w": data.get("default_proton_gamescope_w"),
@@ -369,6 +370,7 @@ impl BulkImporter {
                                     cloud_save_path: defaults.get("cloud_save_path").and_then(|v| v.as_str()).map(|s| s.to_string()),
                                     cloud_save_auto_sync: defaults.get("cloud_save_auto_sync").and_then(|v| v.as_bool()),
                                     steam_compat_mode: defaults.get("steam_compat_mode").and_then(|v| v.as_bool()).or(Some(true)),
+                                    enable_wayland: defaults.get("enable_wayland").and_then(|v| v.as_bool()),
                                 };
                                 let _ = db.insert_pc_config(&new_config);
                             }

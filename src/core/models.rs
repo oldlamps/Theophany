@@ -187,4 +187,5 @@ pub struct PcConfig {
     pub cloud_save_path: Option<String>,    // resolved host path or user override
     pub cloud_save_auto_sync: Option<bool>, // pull before launch, push after exit
     pub steam_compat_mode: Option<bool>,
+    pub enable_wayland: Option<bool>,
 }

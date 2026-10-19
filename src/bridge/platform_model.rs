@@ -307,7 +307,7 @@ impl PlatformListModel {
             
             // If this is a PC (Windows) platform and no config was provided, pull global defaults
             if (normalized_type == "PC (Windows)" || normalized_type == "Windows") && final_pc_config.is_empty() {
-                let (runner, prefix, wrapper, gs, mh, gs_args, gs_w, gs_h, gs_out_w, gs_out_h, gs_rf, gs_sc, gs_up, gs_fs) = crate::bridge::settings::AppSettings::get_pc_defaults();
+                let (runner, prefix, wrapper, gs, mh, wayland, gs_args, gs_w, gs_h, gs_out_w, gs_out_h, gs_rf, gs_sc, gs_up, gs_fs) = crate::bridge::settings::AppSettings::get_pc_defaults();
                 
                 let defaults = serde_json::json!({
                     "umu_proton_version": runner,
@@ -315,6 +315,7 @@ impl PlatformListModel {
                     "wrapper": wrapper,
                     "use_gamescope": gs,
                     "use_mangohud": mh,
+                    "enable_wayland": wayland,
                     "gamescope_args": gs_args,
                     "gs_state": {
                         "w": gs_w,

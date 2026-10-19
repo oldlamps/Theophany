@@ -286,6 +286,7 @@ Dialog {
                 pcLogLevelCombo.currentIndex = logIdx !== -1 ? logIdx : 1
 
                 pcMangohudCheck.checked = !!json.use_mangohud
+                pcWaylandCheck.checked = json.enable_wayland !== undefined ? !!json.enable_wayland : (appSettings ? !!appSettings.defaultProtonUseWayland : false)
                 
                 // Gamescope restore
                 pcGamescopeCheck.checked = !!json.use_gamescope
@@ -315,6 +316,7 @@ Dialog {
             pcDisableFixesCheck.checked = false
             pcNoRuntimeCheck.checked = false
             pcLogLevelCombo.currentIndex = 1
+            pcWaylandCheck.checked = appSettings ? !!appSettings.defaultProtonUseWayland : false
             pcGamescopeCheck.checked = false
             gsWidthField.text = ""
             gsHeightField.text = ""
@@ -1005,6 +1007,29 @@ Dialog {
                                             }
 
                                             CheckBox {
+                                                id: pcWaylandCheck
+                                                text: "Enable Wayland (PROTON_ENABLE_WAYLAND=1)"
+                                                palette.windowText: Theme.text
+                                                font.bold: true
+                                                indicator: Rectangle {
+                                                    implicitWidth: 18; implicitHeight: 18
+                                                    x: pcWaylandCheck.leftPadding
+                                                    y: parent.height / 2 - height / 2
+                                                    radius: 3
+                                                    border.color: pcWaylandCheck.checked ? Theme.accent : Theme.secondaryText
+                                                    color: "transparent"
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "✓"
+                                                        color: Theme.accent
+                                                        visible: pcWaylandCheck.checked
+                                                        font.bold: true
+                                                        font.pixelSize: 14
+                                                    }
+                                                }
+                                            }
+
+                                            CheckBox {
                                                 id: pcGamescopeCheck
                                                 text: "Enable Gamescope"
                                                 palette.windowText: Theme.text
@@ -1285,6 +1310,7 @@ Dialog {
                                         "log_level": pcLogLevelCombo.currentText,
                                         "use_gamescope": pcGamescopeCheck.checked,
                                         "use_mangohud": pcMangohudCheck.checked,
+                                        "enable_wayland": pcWaylandCheck.checked,
                                         "gamescope_args": getGamescopeArgs(),
                                         "gs_state": {
                                             "w": gsWidthField.text,
@@ -1373,6 +1399,7 @@ Dialog {
     function applyGlobalDefaults() {
         if (appSettings) {
              pcMangohudCheck.checked = appSettings.defaultProtonUseMangohud
+             pcWaylandCheck.checked = appSettings.defaultProtonUseWayland
              
              var defaultRunner = appSettings.defaultProtonRunner
              if (defaultRunner && defaultRunner !== "") {
@@ -1409,6 +1436,7 @@ Dialog {
              protonCombo.currentIndex = 0
              pcPrefixField.text = ""
              pcMangohudCheck.checked = false
+             pcWaylandCheck.checked = false
              pcGamescopeCheck.checked = false
         }
     }

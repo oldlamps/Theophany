@@ -46,6 +46,8 @@ struct SettingsData {
     #[serde(default)]
     pub column_widths: String,
     #[serde(default)]
+    pub collection_sorts: String,
+    #[serde(default)]
     pub default_ignore_on_delete: bool,
     #[serde(default = "default_hotkeys")]
     pub hotkeys: HashMap<String, String>,
@@ -83,6 +85,8 @@ struct SettingsData {
     pub default_proton_use_gamescope: bool,
     #[serde(default)]
     pub default_proton_use_mangohud: bool,
+    #[serde(default)]
+    pub default_proton_use_wayland: bool,
     #[serde(default)]
     pub default_proton_gamescope_args: String,
     #[serde(default)]
@@ -155,6 +159,7 @@ impl Default for SettingsData {
             ignore_the_in_sort: true,
             ai_description_prompt: default_description_prompt(),
             column_widths: String::new(),
+            collection_sorts: String::new(),
             default_ignore_on_delete: false,
             hotkeys: default_hotkeys(),
             active_metadata_scraper: default_metadata_scraper(),
@@ -174,6 +179,7 @@ impl Default for SettingsData {
             default_proton_wrapper: String::new(),
             default_proton_use_gamescope: false,
             default_proton_use_mangohud: false,
+            default_proton_use_wayland: false,
             default_proton_gamescope_args: String::new(),
             default_proton_gamescope_w: String::new(),
             default_proton_gamescope_h: String::new(),
@@ -287,6 +293,7 @@ pub struct AppSettings {
     ignoreTheInSort: qt_property!(bool; NOTIFY settingsChanged),
     aiDescriptionPrompt: qt_property!(QString; NOTIFY settingsChanged),
     columnWidths: qt_property!(QString; NOTIFY settingsChanged),
+    collectionSorts: qt_property!(QString; NOTIFY settingsChanged),
     defaultIgnoreOnDelete: qt_property!(bool; NOTIFY settingsChanged),
     hotkeysJson: qt_property!(QString; NOTIFY settingsChanged),
     activeMetadataScraper: qt_property!(QString; NOTIFY settingsChanged),
@@ -307,6 +314,7 @@ pub struct AppSettings {
     defaultProtonWrapper: qt_property!(QString; NOTIFY settingsChanged),
     defaultProtonUseGamescope: qt_property!(bool; NOTIFY settingsChanged),
     defaultProtonUseMangohud: qt_property!(bool; NOTIFY settingsChanged),
+    defaultProtonUseWayland: qt_property!(bool; NOTIFY settingsChanged),
     defaultProtonGamescopeArgs: qt_property!(QString; NOTIFY settingsChanged),
     defaultProtonGamescopeW: qt_property!(QString; NOTIFY settingsChanged),
     defaultProtonGamescopeH: qt_property!(QString; NOTIFY settingsChanged),
@@ -366,7 +374,7 @@ impl AppSettings {
         (String::new(), String::new())
     }
 
-    pub fn get_pc_defaults() -> (String, String, String, bool, bool, String, String, String, String, String, String, i32, i32, bool) {
+    pub fn get_pc_defaults() -> (String, String, String, bool, bool, bool, String, String, String, String, String, String, i32, i32, bool) {
         let path = crate::core::paths::get_config_dir().join("settings.json");
         if let Ok(content) = fs::read_to_string(&path) {
             if let Ok(data) = serde_json::from_str::<SettingsData>(&content) {
@@ -376,6 +384,7 @@ impl AppSettings {
                     data.default_proton_wrapper,
                     data.default_proton_use_gamescope,
                     data.default_proton_use_mangohud,
+                    data.default_proton_use_wayland,
                     data.default_proton_gamescope_args,
                     data.default_proton_gamescope_w,
                     data.default_proton_gamescope_h,
@@ -388,7 +397,7 @@ impl AppSettings {
                 );
             }
         }
-        (String::new(), String::new(), String::new(), false, false, String::new(), String::new(), String::new(), String::new(), String::new(), String::new(), 0, 0, false)
+        (String::new(), String::new(), String::new(), false, false, false, String::new(), String::new(), String::new(), String::new(), String::new(), String::new(), 0, 0, false)
     }
 
     pub fn get_exodos_path() -> String {
@@ -426,6 +435,7 @@ impl AppSettings {
             ignore_the_in_sort: self.ignoreTheInSort,
             ai_description_prompt: self.aiDescriptionPrompt.to_string(),
             column_widths: self.columnWidths.to_string(),
+            collection_sorts: self.collectionSorts.to_string(),
             default_ignore_on_delete: self.defaultIgnoreOnDelete,
             hotkeys: self.data.hotkeys.clone(),
             active_metadata_scraper: self.activeMetadataScraper.to_string(),
@@ -445,6 +455,7 @@ impl AppSettings {
             default_proton_wrapper: self.defaultProtonWrapper.to_string(),
             default_proton_use_gamescope: self.defaultProtonUseGamescope,
             default_proton_use_mangohud: self.defaultProtonUseMangohud,
+            default_proton_use_wayland: self.defaultProtonUseWayland,
             default_proton_gamescope_args: self.defaultProtonGamescopeArgs.to_string(),
             default_proton_gamescope_w: self.defaultProtonGamescopeW.to_string(),
             default_proton_gamescope_h: self.defaultProtonGamescopeH.to_string(),
@@ -514,6 +525,7 @@ impl AppSettings {
                     self.ignoreTheInSort = data.ignore_the_in_sort;
                     self.aiDescriptionPrompt = QString::from(data.ai_description_prompt);
                     self.columnWidths = QString::from(data.column_widths);
+                    self.collectionSorts = QString::from(data.collection_sorts);
                     self.defaultIgnoreOnDelete = data.default_ignore_on_delete;
                     
                     // Merge loaded hotkeys with defaults to ensure new defaults appear
@@ -551,6 +563,7 @@ impl AppSettings {
                     self.defaultProtonWrapper = QString::from(data.default_proton_wrapper);
                     self.defaultProtonUseGamescope = data.default_proton_use_gamescope;
                     self.defaultProtonUseMangohud = data.default_proton_use_mangohud;
+                    self.defaultProtonUseWayland = data.default_proton_use_wayland;
                     self.defaultProtonGamescopeArgs = QString::from(data.default_proton_gamescope_args);
                     self.defaultProtonGamescopeW = QString::from(data.default_proton_gamescope_w);
                     self.defaultProtonGamescopeH = QString::from(data.default_proton_gamescope_h);
@@ -640,6 +653,7 @@ impl Default for AppSettings {
             ignoreTheInSort: Default::default(),
             aiDescriptionPrompt: Default::default(),
             columnWidths: Default::default(),
+            collectionSorts: Default::default(),
             defaultIgnoreOnDelete: Default::default(),
             hotkeysJson: Default::default(),
             activeMetadataScraper: Default::default(),
@@ -667,6 +681,7 @@ impl Default for AppSettings {
             defaultProtonWrapper: Default::default(),
             defaultProtonUseGamescope: false,
             defaultProtonUseMangohud: false,
+            defaultProtonUseWayland: false,
             defaultProtonGamescopeArgs: Default::default(),
             defaultProtonGamescopeW: Default::default(),
             defaultProtonGamescopeH: Default::default(),
@@ -721,6 +736,7 @@ impl Default for AppSettings {
         s.ignoreTheInSort = s.data.ignore_the_in_sort;
         s.aiDescriptionPrompt = QString::from(s.data.ai_description_prompt.clone());
         s.columnWidths = QString::from(s.data.column_widths.clone());
+        s.collectionSorts = QString::from(s.data.collection_sorts.clone());
         s.defaultIgnoreOnDelete = s.data.default_ignore_on_delete;
         s.gridScale = s.data.grid_scale;
         s.sidebarLibraryCollapsed = s.data.sidebar_library_collapsed;
@@ -737,6 +753,7 @@ impl Default for AppSettings {
         s.defaultProtonWrapper = QString::from(s.data.default_proton_wrapper.clone());
         s.defaultProtonUseGamescope = s.data.default_proton_use_gamescope;
         s.defaultProtonUseMangohud = s.data.default_proton_use_mangohud;
+        s.defaultProtonUseWayland = s.data.default_proton_use_wayland;
         s.defaultProtonGamescopeArgs = QString::from(s.data.default_proton_gamescope_args.clone());
         s.defaultProtonGamescopeW = QString::from(s.data.default_proton_gamescope_w.clone());
         s.defaultProtonGamescopeH = QString::from(s.data.default_proton_gamescope_h.clone());
@@ -763,5 +780,23 @@ impl Default for AppSettings {
         s.gridTitleOverlay = s.data.grid_title_overlay;
  
         s
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_collection_sorts_serde() {
+        let mut settings = SettingsData::default();
+        assert_eq!(settings.collection_sorts, "");
+
+        let json_sorts = r#"{"platform-1":"LastPlayed","platform-2":"TitleAZ"}"#;
+        settings.collection_sorts = json_sorts.to_string();
+
+        let serialized = serde_json::to_string(&settings).unwrap();
+        let deserialized: SettingsData = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.collection_sorts, json_sorts);
     }
 }

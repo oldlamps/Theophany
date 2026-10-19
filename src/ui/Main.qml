@@ -457,6 +457,7 @@ ApplicationWindow {
     
     property string currentPlatformId: ""
     property var platformSelectionCache: ({})
+    property var collectionSortCache: ({})
     property string pendingSelectionId: ""  // Robust Async Restoration
     property bool isJumping: false
     property bool searchActive: false
@@ -583,6 +584,13 @@ ApplicationWindow {
         id: appSettings
         Component.onCompleted: {
             load()
+            if (collectionSorts && collectionSorts !== "") {
+                try {
+                    window.collectionSortCache = JSON.parse(collectionSorts) || {}
+                } catch(e) {
+                    window.collectionSortCache = {}
+                }
+            }
             // Apply defaults on load
             viewStack.currentIndex = defaultView
             window.showFilterBar = showFilterBar
@@ -727,6 +735,17 @@ ApplicationWindow {
     function refocusList() {
         if (viewStack.currentIndex === 0) gameGrid.forceActiveFocus()
         else gameList.forceActiveFocus()
+    }
+
+    function setCollectionSort(collectionId, method) {
+        if (collectionId !== undefined) {
+            collectionSortCache[collectionId] = method
+            if (appSettings) {
+                appSettings.collectionSorts = JSON.stringify(collectionSortCache)
+                appSettings.save()
+            }
+        }
+        gameModel.setSortMethod(method)
     }
 
     StoreBridge {
@@ -1186,18 +1205,19 @@ ApplicationWindow {
                     var historyId = pid.startsWith("playlist:") ? pid.substring(9) : pid;
                     pushHistory(historyType, historyId, name, icon);
 
+                    var targetSort = collectionSortCache[pid] || (pid === "recent" ? "LastPlayed" : "TitleAZ")
+
                     if (pid.startsWith("playlist:")) {
                         var realId = pid.substring(9)
-                        gameModel.setPlaylistFilter(realId)
-                        // Do NOT call batchSetFilters here - setPlaylistFilter already handles refresh
+                        gameModel.setPlaylistFilterWithSort(realId, targetSort)
                     } else if (pid === "favorites") {
-                        gameModel.batchSetFilters("", true, gameModel.sortMethod, false, filterBar.installedButton.checked)
+                        gameModel.batchSetFilters("", true, targetSort, false, filterBar.installedButton.checked)
                     } else if (pid === "recent") {
-                        gameModel.batchSetFilters("", false, "LastPlayed", true, filterBar.installedButton.checked)
+                        gameModel.batchSetFilters("", false, targetSort, true, filterBar.installedButton.checked)
                     } else if (pid === "") { // All Games
-                        gameModel.batchSetFilters("", false, gameModel.sortMethod, false, filterBar.installedButton.checked)
+                        gameModel.batchSetFilters("", false, targetSort, false, filterBar.installedButton.checked)
                     } else { // System UUID
-                        gameModel.batchSetFilters(pid, false, gameModel.sortMethod, false, filterBar.installedButton.checked)
+                        gameModel.batchSetFilters(pid, false, targetSort, false, filterBar.installedButton.checked)
                     }
                     
                     // 3. Queue selection restoration for the INCOMING platform
@@ -1255,6 +1275,7 @@ ApplicationWindow {
                      settingsDialog.currentDefaultProtonWrapper = appSettings.defaultProtonWrapper
                      settingsDialog.currentDefaultProtonUseGamescope = appSettings.defaultProtonUseGamescope
                      settingsDialog.currentDefaultProtonUseMangohud = appSettings.defaultProtonUseMangohud
+                     settingsDialog.currentDefaultProtonUseWayland = appSettings.defaultProtonUseWayland
                      settingsDialog.currentDefaultProtonGamescopeArgs = appSettings.defaultProtonGamescopeArgs
                      settingsDialog.currentDefaultProtonGamescopeW = appSettings.defaultProtonGamescopeW
                      settingsDialog.currentDefaultProtonGamescopeH = appSettings.defaultProtonGamescopeH
@@ -1272,6 +1293,10 @@ ApplicationWindow {
                 }
 
                 onPlatformTypeSelected: (ptype, picon) => {
+                    if (detailsPanel.gameId !== "") {
+                        platformSelectionCache[currentPlatformId] = detailsPanel.gameId
+                    }
+
                     var pid = "type:" + ptype
                     currentPlatformId = pid
                     window.currentViewTitle = ptype
@@ -1279,7 +1304,8 @@ ApplicationWindow {
                     
                     pushHistory("platformType", ptype, ptype, picon || "🏷️");
 
-                    gameModel.setPlatformTypeFilter(ptype)
+                    var targetSort = collectionSortCache[pid] || "TitleAZ"
+                    gameModel.setPlatformTypeFilterWithSort(ptype, targetSort)
                     
                     // Queue restoration for the INCOMING platform type
                     pendingSelectionId = platformSelectionCache[pid] || ""
@@ -1395,6 +1421,7 @@ ApplicationWindow {
             isRightSide: true
             
             onTargetWidthChanged: {
+                if (!pressed) return
                 if (sidebar.collapsed) {
                     if (targetWidth > 150) {
                         sidebar.collapsed = false
@@ -1769,7 +1796,7 @@ ApplicationWindow {
                                      // Force selection of first item after refresh
                                      window.pendingSelectionId = "-1"
                                      
-                                     gameModel.setSortMethod(method)
+                                     window.setCollectionSort(window.currentPlatformId, method)
                                      window.refocusList()
                                  }
                              }
@@ -1778,10 +1805,11 @@ ApplicationWindow {
                                  target: gameModel
                                  function onSortMethodChanged() {
                                      var method = gameModel.sortMethod
-                                     if (method === "TitleAZ") topSortBox.currentIndex = 0
+                                     if (method === "TitleAZ" || method === "Title") topSortBox.currentIndex = 0
                                      else if (method === "TitleZA" || method === "TitleDESC") topSortBox.currentIndex = 1
-                                     else if (method === "Recent") topSortBox.currentIndex = 2
+                                     else if (method === "Recent" || method === "DateAddedDESC") topSortBox.currentIndex = 2
                                      else if (method === "LastPlayed") topSortBox.currentIndex = 3
+                                     else topSortBox.currentIndex = -1
                                  }
                              }
                          }
@@ -1855,6 +1883,12 @@ ApplicationWindow {
                              filterBar.selectRegion(appSettings.defaultRegion)
                         } else {
                            // If loaded late, Connections handles it.
+                        }
+
+                        // Apply initial sort from collection sort memory
+                        var initialSort = window.collectionSortCache[window.currentPlatformId] || "TitleAZ"
+                        if (initialSort !== "TitleAZ") {
+                             gameModel.setSortMethod(initialSort)
                         }
                     }
                     onStatsUpdated: (totalGames, totalTime, lastPlayed, lastPlayedId, libraryCount) => {
@@ -2937,7 +2971,7 @@ ApplicationWindow {
             maxWidth: window.width * 0.5
             isRightSide: false
             onTargetWidthChanged: {
-                if (Math.abs(appSettings.detailsWidth - targetWidth) > 0.1) {
+                if (pressed && Math.abs(appSettings.detailsWidth - targetWidth) > 0.1) {
                     appSettings.detailsWidth = targetWidth
                 }
             }
@@ -3301,6 +3335,7 @@ ApplicationWindow {
         currentDefaultProtonWrapper: appSettings.defaultProtonWrapper
         currentDefaultProtonUseGamescope: appSettings.defaultProtonUseGamescope
         currentDefaultProtonUseMangohud: appSettings.defaultProtonUseMangohud
+        currentDefaultProtonUseWayland: appSettings.defaultProtonUseWayland
         currentDefaultProtonGamescopeArgs: appSettings.defaultProtonGamescopeArgs
         currentDefaultProtonGamescopeW: appSettings.defaultProtonGamescopeW
         currentDefaultProtonGamescopeH: appSettings.defaultProtonGamescopeH
@@ -3323,7 +3358,7 @@ ApplicationWindow {
         availableRegions: gameModel.getRegions()
         availableScrapers: gameModel.getAvailableScrapers()
         
-        onSettingsApplied: (viewMode, showFilter, defRegion, themeName, raUser, raToken, raEnabled, showTray, closeToTray, aiEnabled, ollamaUrl, ollamaModel, detailsPreferVideo, ignoreTheInSort, aiDescriptionPrompt, defaultIgnoreOnDelete, activeMeta, activeImage, geminiKey, openaiKey, llmProvider, saveHeroicLocally, autoRescan, confirmQuit, gridScale, gridTitleOverlay, useCustomYtdlp, customYtdlpPath, defaultProtonRunner, defaultProtonPrefix, defaultProtonWrapper, defaultProtonUseGamescope, defaultProtonUseMangohud, defaultProtonGamescopeArgs, defaultProtonGamescopeW, defaultProtonGamescopeH, defaultProtonGamescopeOutW, defaultProtonGamescopeOutH, defaultProtonGamescopeRefresh, defaultProtonGamescopeScaling, defaultProtonGamescopeUpscaler, defaultProtonGamescopeFullscreen, hidePlatformsSidebar, checkUpdates, useCustomLegendary, customLegendaryPath, defaultInstallLocation, useCustomNile, customNilePath) => {
+        onSettingsApplied: (viewMode, showFilter, defRegion, themeName, raUser, raToken, raEnabled, showTray, closeToTray, aiEnabled, ollamaUrl, ollamaModel, detailsPreferVideo, ignoreTheInSort, aiDescriptionPrompt, defaultIgnoreOnDelete, activeMeta, activeImage, geminiKey, openaiKey, llmProvider, saveHeroicLocally, autoRescan, confirmQuit, gridScale, gridTitleOverlay, useCustomYtdlp, customYtdlpPath, defaultProtonRunner, defaultProtonPrefix, defaultProtonWrapper, defaultProtonUseGamescope, defaultProtonUseMangohud, defaultProtonUseWayland, defaultProtonGamescopeArgs, defaultProtonGamescopeW, defaultProtonGamescopeH, defaultProtonGamescopeOutW, defaultProtonGamescopeOutH, defaultProtonGamescopeRefresh, defaultProtonGamescopeScaling, defaultProtonGamescopeUpscaler, defaultProtonGamescopeFullscreen, hidePlatformsSidebar, checkUpdates, useCustomLegendary, customLegendaryPath, defaultInstallLocation, useCustomNile, customNilePath) => {
              // Update Settings
              appSettings.defaultView = viewMode
              appSettings.showFilterBar = showFilter
@@ -3368,6 +3403,7 @@ ApplicationWindow {
              appSettings.defaultProtonWrapper = defaultProtonWrapper
              appSettings.defaultProtonUseGamescope = defaultProtonUseGamescope
              appSettings.defaultProtonUseMangohud = defaultProtonUseMangohud
+             appSettings.defaultProtonUseWayland = defaultProtonUseWayland
              appSettings.defaultProtonGamescopeArgs = defaultProtonGamescopeArgs
              appSettings.defaultProtonGamescopeW = defaultProtonGamescopeW
              appSettings.defaultProtonGamescopeH = defaultProtonGamescopeH

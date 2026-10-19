@@ -331,8 +331,7 @@ impl VideoProxy {
                 .arg("--format-sort")
                 .arg("res:720,ext:mp4:m4a")
                 .arg("-f")
-                // Prioritize progressive MP4 (itag 22 and 18) for maximum player compatibility
-                .arg("22/18/best[ext=mp4][height<=720]/best[height<=720]/best")
+                .arg("22/18/best[ext=mp4][height<=720]/best[height<=720]/best/bestvideo+bestaudio")
                 .arg(&url)
                 .output();
 
@@ -340,35 +339,22 @@ impl VideoProxy {
                 Ok(output) => {
                     if output.status.success() {
                         let stdout = String::from_utf8_lossy(&output.stdout);
-                        let mut stream_url = stdout.lines().next().unwrap_or_default().trim().to_string();
-                        
-                        // Sanitize URL: Strip any accidental time/start/begin parameters
-                        let params_to_strip = ["&t=", "&start=", "&begin=", "&seek="];
-                        for param in params_to_strip {
-                            if let Some(pos) = stream_url.find(param) {
-                                stream_url = stream_url[..pos].to_string();
-                            }
-                        }
-                        
-                        // Handle cases where the parameter might be at the end or mid-string without '&'
-                        for p in &["begin=", "start=", "t=", "seek="] {
-                            if let Some(pos) = stream_url.find(p) {
-                                if pos > 0 {
-                                    let prev_char = stream_url.as_bytes()[pos-1] as char;
-                                    if prev_char == '?' || prev_char == '&' {
-                                        stream_url = stream_url[..pos-1].to_string();
-                                    }
-                                }
-                            }
-                        }
+                        let lines: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+                        let combined_url = lines.join("\n");
 
-                        if !stream_url.is_empty() {
-                            let _ = tx.send(VideoWorkerMsg::StreamUrlReady(stream_url, url));
+                        if !combined_url.is_empty() {
+                            let _ = tx.send(VideoWorkerMsg::StreamUrlReady(combined_url, url));
                         } else {
                             let _ = tx.send(VideoWorkerMsg::Error("Empty stream URL returned".to_string()));
                         }
                     } else {
-                        let _ = tx.send(VideoWorkerMsg::Error("Failed to fetch stream URL".to_string()));
+                        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                        let msg = if err.is_empty() {
+                            "Failed to fetch stream URL".to_string()
+                        } else {
+                            format!("Failed to fetch stream URL: {}", err)
+                        };
+                        let _ = tx.send(VideoWorkerMsg::Error(msg));
                     }
                 },
                 Err(e) => {

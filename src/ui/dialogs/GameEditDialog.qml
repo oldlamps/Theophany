@@ -241,6 +241,7 @@ Dialog {
 
             mangohudCheck.checked = (currentConfig.use_mangohud !== undefined) ? !!currentConfig.use_mangohud : !!platformDefaults.use_mangohud
             steamCompatCheck.checked = (currentConfig.steam_compat_mode !== undefined) ? !!currentConfig.steam_compat_mode : (platformDefaults.steam_compat_mode !== undefined ? !!platformDefaults.steam_compat_mode : true)
+            enableWaylandCheck.checked = (currentConfig.enable_wayland !== undefined && currentConfig.enable_wayland !== null) ? !!currentConfig.enable_wayland : (platformDefaults.enable_wayland !== undefined && platformDefaults.enable_wayland !== null ? !!platformDefaults.enable_wayland : (typeof appSettings !== "undefined" && appSettings ? !!appSettings.defaultProtonUseWayland : false))
             preLaunchField.text = (currentConfig.pre_launch_script !== undefined) ? (currentConfig.pre_launch_script || "") : ""
             postLaunchField.text = (currentConfig.post_launch_script !== undefined) ? (currentConfig.post_launch_script || "") : ""
 
@@ -1417,6 +1418,12 @@ Dialog {
                                             text: "Steam Compatibility Mode (Sets STEAM_COMPAT_* variables)"
                                             checked: true
                                         }
+
+                                        TheophanyCheckBox {
+                                            id: enableWaylandCheck
+                                            text: "Enable Wayland (Sets PROTON_ENABLE_WAYLAND=1)"
+                                            visible: root.isWindows
+                                        }
                                     }
 
                                     Rectangle { Layout.fillWidth: true; height: 1; color: Theme.border }
@@ -1725,6 +1732,7 @@ Dialog {
             config["disable_fixes"] = disableFixesCheck.checked
             config["no_runtime"] = noRuntimeCheck.checked
             config["log_level"] = logLevelCombo.currentText
+            config["enable_wayland"] = enableWaylandCheck.checked
         }
 
         // Cloud Saves

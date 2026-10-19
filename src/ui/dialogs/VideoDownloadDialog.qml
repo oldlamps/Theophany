@@ -77,8 +77,16 @@ Dialog {
         onStreamUrlReady: (url, original_url) => {
             root.streaming = false
             streamPlayer.stop()
+            audioPlayer.stop()
+            var parts = url.split("\n")
             streamPlayer.source = ""
-            streamPlayer.source = url
+            streamPlayer.source = parts[0]
+            if (parts.length > 1 && parts[1] !== "") {
+                audioPlayer.source = parts[1]
+                audioPlayer.play()
+            } else {
+                audioPlayer.source = ""
+            }
             streamPlayer.play()
             videoContainer.forceActiveFocus()
         }
@@ -155,7 +163,15 @@ Dialog {
     }
     
     onClosed: {
-        streamPlayer.stop()
+        if (typeof videoContainer !== "undefined" && videoContainer.isFullscreen) {
+            videoContainer.toggleFullscreen()
+        }
+        if (streamPlayer.playbackState === MediaPlayer.PlayingState) {
+            streamPlayer.pause()
+        }
+        if (audioPlayer.playbackState === MediaPlayer.PlayingState) {
+            audioPlayer.pause()
+        }
     }
 
     contentItem: Rectangle {
@@ -706,9 +722,11 @@ Dialog {
                         function togglePlayback() {
                             if (streamPlayer.playbackState === MediaPlayer.PlayingState) {
                                 streamPlayer.pause()
+                                if (audioPlayer.source != "") audioPlayer.pause()
                                 if (typeof(pauseIconAnim) !== "undefined") pauseIconAnim.restart()
                             } else {
                                 streamPlayer.play()
+                                if (audioPlayer.source != "") audioPlayer.play()
                                 if (typeof(playIconAnim) !== "undefined") playIconAnim.restart()
                             }
                         }
@@ -726,7 +744,10 @@ Dialog {
                             }
                             if (wasPlaying) {
                                 // Delay slightly to ensure re-parenting is finished before playing
-                                Qt.callLater(function() { streamPlayer.play() })
+                                Qt.callLater(function() {
+                                    streamPlayer.play()
+                                    if (audioPlayer.source != "") audioPlayer.play()
+                                })
                             }
                             videoContainer.forceActiveFocus()
                         }
@@ -819,6 +840,11 @@ Dialog {
                                             root.showFeedback("Playback Error: " + errorString)
                                             root.streaming = false
                                         }
+                                    }
+
+                                    MediaPlayer {
+                                        id: audioPlayer
+                                        audioOutput: AudioOutput { volume: root.playerVolume }
                                     }
 
                                     // Large Overlay Icons for feedback
@@ -938,7 +964,9 @@ Dialog {
                                                     focusPolicy: Qt.NoFocus
                                                     onMoved: {
                                                         streamPlayer.position = value
+                                                        if (audioPlayer.source != "") audioPlayer.position = value
                                                         streamPlayer.play()
+                                                        if (audioPlayer.source != "") audioPlayer.play()
                                                     }
                                                     
                                                     background: Rectangle {
@@ -1018,8 +1046,11 @@ Dialog {
                                                             hoverEnabled: true
                                                             cursorShape: Qt.PointingHandCursor
                                                             onClicked: {
-                                                                streamPlayer.position = Math.max(0, streamPlayer.position - 30000)
+                                                                var newPos = Math.max(0, streamPlayer.position - 30000)
+                                                                streamPlayer.position = newPos
+                                                                if (audioPlayer.source != "") audioPlayer.position = newPos
                                                                 streamPlayer.play()
+                                                                if (audioPlayer.source != "") audioPlayer.play()
                                                             }
                                                         }
                                                     }
@@ -1078,8 +1109,11 @@ Dialog {
                                                             hoverEnabled: true
                                                             cursorShape: Qt.PointingHandCursor
                                                             onClicked: {
-                                                                streamPlayer.position = Math.min(streamPlayer.duration, streamPlayer.position + 30000)
+                                                                var newPos = Math.min(streamPlayer.duration, streamPlayer.position + 30000)
+                                                                streamPlayer.position = newPos
+                                                                if (audioPlayer.source != "") audioPlayer.position = newPos
                                                                 streamPlayer.play()
+                                                                if (audioPlayer.source != "") audioPlayer.play()
                                                             }
                                                         }
                                                     }
@@ -1226,6 +1260,8 @@ Dialog {
     }
     
     function show(gId, gTitle, gPlatform, gPlatformType, pFolder, autoPlayUrl, autoPlayTitle) {
+        var sameGame = (root.gameId === gId && root.gameId !== "")
+
         root.gameId = gId 
         root.gameTitle = gTitle
         root.gamePlatform = gPlatform
@@ -1274,10 +1310,21 @@ Dialog {
             root.currentPlayingUploader = "Remote Resource"
             streamPlayer.stop()
             streamPlayer.source = ""
+            audioPlayer.stop()
+            audioPlayer.source = ""
             videoProxyInternal.getStreamUrl(autoPlayUrl)
-        } else {
+        } else if (!sameGame || streamPlayer.source == "") {
+            streamPlayer.stop()
+            streamPlayer.source = ""
+            audioPlayer.stop()
+            audioPlayer.source = ""
             root.currentTab = 0
             startSearch()
+        } else {
+            // Same game with loaded video: keep paused video loaded for manual start
+            if (root.searchResults.length === 0) {
+                startSearch()
+            }
         }
         
         refreshLibrary()

@@ -166,6 +166,7 @@ impl DbManager {
                 cloud_save_path TEXT,
                 cloud_save_auto_sync INTEGER,
                 steam_compat_mode INTEGER,
+                enable_wayland INTEGER,
                 FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
             );
 
@@ -251,6 +252,7 @@ impl DbManager {
                     pre_launch_script TEXT, post_launch_script TEXT,
                     cloud_saves_enabled INTEGER, cloud_save_path TEXT, cloud_save_auto_sync INTEGER,
                     steam_compat_mode INTEGER,
+                    enable_wayland INTEGER,
                     FOREIGN KEY(rom_id) REFERENCES roms(id) ON DELETE CASCADE
                  );
                  INSERT OR IGNORE INTO pc_configurations_new (rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, use_mangohud, pre_launch_script, post_launch_script)
@@ -387,6 +389,12 @@ impl DbManager {
         if self.conn.prepare("SELECT steam_compat_mode FROM pc_configurations LIMIT 1").is_err() {
             log::info!("[Migration] Adding steam_compat_mode column to pc_configurations table...");
             let _ = self.conn.execute("ALTER TABLE pc_configurations ADD COLUMN steam_compat_mode INTEGER DEFAULT 1", []);
+        }
+
+        // Migration: Add enable_wayland to pc_configurations if missing
+        if self.conn.prepare("SELECT enable_wayland FROM pc_configurations LIMIT 1").is_err() {
+            log::info!("[Migration] Adding enable_wayland column to pc_configurations table...");
+            let _ = self.conn.execute("ALTER TABLE pc_configurations ADD COLUMN enable_wayland INTEGER", []);
         }
 
         Ok(())
@@ -1159,7 +1167,7 @@ impl DbManager {
 
     pub fn get_pc_config(&self, rom_id: &str) -> Result<Option<crate::core::models::PcConfig>> {
         let mut stmt = self.conn.prepare(
-            "SELECT rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, gs_state, use_mangohud, pre_launch_script, post_launch_script, cloud_saves_enabled, cloud_save_path, cloud_save_auto_sync, steam_compat_mode 
+            "SELECT rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, gs_state, use_mangohud, pre_launch_script, post_launch_script, cloud_saves_enabled, cloud_save_path, cloud_save_auto_sync, steam_compat_mode, enable_wayland 
              FROM pc_configurations WHERE rom_id = ?1"
         )?;
         let mut rows = stmt.query(params![rom_id])?;
@@ -1188,6 +1196,7 @@ impl DbManager {
                 cloud_save_path: row.get(20)?,
                 cloud_save_auto_sync: row.get::<_, Option<i32>>(21)?.map(|v| v != 0),
                 steam_compat_mode: row.get::<_, Option<i32>>(22)?.map(|v| v != 0),
+                enable_wayland: row.get::<_, Option<i32>>(23)?.map(|v| v != 0),
             }))
         } else {
             Ok(None)
@@ -1196,8 +1205,8 @@ impl DbManager {
 
     pub fn insert_pc_config(&self, config: &crate::core::models::PcConfig) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO pc_configurations (rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, gs_state, use_mangohud, pre_launch_script, post_launch_script, cloud_saves_enabled, cloud_save_path, cloud_save_auto_sync, steam_compat_mode)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+            "INSERT OR REPLACE INTO pc_configurations (rom_id, umu_proton_version, umu_store, wine_prefix, working_dir, umu_id, env_vars, extra_args, proton_verb, disable_fixes, no_runtime, log_level, wrapper, use_gamescope, gamescope_args, gs_state, use_mangohud, pre_launch_script, post_launch_script, cloud_saves_enabled, cloud_save_path, cloud_save_auto_sync, steam_compat_mode, enable_wayland)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
             params![
                 config.rom_id,
                 config.umu_proton_version,
@@ -1222,6 +1231,7 @@ impl DbManager {
                 config.cloud_save_path,
                 config.cloud_save_auto_sync.map(|b| b as i32),
                 config.steam_compat_mode.map(|b| b as i32),
+                config.enable_wayland.map(|b| b as i32),
             ],
         )?;
         Ok(())

@@ -93,7 +93,16 @@ Rectangle {
             if (root.videoList.length > 0 && root.currentVideoIndex < root.videoList.length) {
                 var v = root.videoList[root.currentVideoIndex]
                 if (v.url === original_url) {
-                    player.source = url
+                    player.stop()
+                    audioPlayer.stop()
+                    var parts = url.split("\n")
+                    player.source = parts[0]
+                    if (parts.length > 1 && parts[1] !== "") {
+                        audioPlayer.source = parts[1]
+                        if (root.showVideoOverlay) audioPlayer.play()
+                    } else {
+                        audioPlayer.source = ""
+                    }
                     if (root.showVideoOverlay) {
                         player.play()
                     }
@@ -415,12 +424,19 @@ Rectangle {
     property bool isFullscreen: false
     
     function toggleFullscreen() {
+        var wasPlaying = player.playbackState === MediaPlayer.PlayingState
         if (root.isFullscreen) {
             videoOverlay.parent = headerArea
             root.isFullscreen = false
         } else {
             videoOverlay.parent = Window.window.contentItem
             root.isFullscreen = true
+        }
+        if (wasPlaying) {
+            Qt.callLater(function() {
+                player.play()
+                if (audioPlayer.source != "") audioPlayer.play()
+            })
         }
     }
     property string platformFolder: ""
@@ -882,6 +898,15 @@ Rectangle {
                     }
                     loops: MediaPlayer.Infinite
                 }
+
+                MediaPlayer {
+                    id: audioPlayer
+                    audioOutput: AudioOutput {
+                        muted: audio.muted
+                        volume: audio.volume
+                    }
+                    loops: MediaPlayer.Infinite
+                }
                 
                 MouseArea {
                     id: controlsArea
@@ -890,8 +915,10 @@ Rectangle {
                     onClicked: {
                         if (player.playbackState === MediaPlayer.PlayingState) {
                             player.pause()
+                            if (audioPlayer.source != "") audioPlayer.pause()
                         } else {
                             player.play()
+                            if (audioPlayer.source != "") audioPlayer.play()
                         }
                     }
                     onDoubleClicked: {

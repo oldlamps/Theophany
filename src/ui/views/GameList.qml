@@ -42,13 +42,19 @@ FocusScope {
         target: gameModel
         function onSortMethodChanged() {
             var method = gameModel.sortMethod
-            if (method === "TitleAZ") {
+            if (method === "TitleAZ" || method === "Title") {
                 sortColumn = "Title"
                 sortDescending = false
             } else if (method === "TitleZA" || method === "TitleDESC") {
                 sortColumn = "Title"
                 sortDescending = true
-            } else if (method === "Recent") {
+            } else if (method === "Recent" || method === "DateAddedDESC") {
+                sortColumn = "DateAdded"
+                sortDescending = true
+            } else if (method === "DateAdded") {
+                sortColumn = "DateAdded"
+                sortDescending = false
+            } else if (method === "LastPlayed") {
                 sortColumn = ""
                 sortDescending = false
             } else if (method.endsWith("DESC")) {
@@ -80,7 +86,11 @@ FocusScope {
         }
         
         var method = sortColumn + (sortDescending ? "DESC" : "")
-        gameModel.setSortMethod(method)
+        if (typeof window !== "undefined" && window.setCollectionSort) {
+            window.setCollectionSort(window.currentPlatformId, method)
+        } else {
+            gameModel.setSortMethod(method)
+        }
         listView.forceActiveFocus()
     }
 

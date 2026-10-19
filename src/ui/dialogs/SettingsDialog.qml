@@ -32,7 +32,7 @@ Dialog {
         }
     }
 
-    signal settingsApplied(int viewMode, bool showFilter, string defRegion, string themeName, string raUser, string raToken, bool raEnabled, bool showTray, bool closeToTray, bool aiEnabled, string ollamaUrl, string ollamaModel, bool detailsPreferVideo, bool ignoreTheInSort, string aiDescriptionPrompt, bool defaultIgnoreOnDelete, string activeMeta, string activeImage, string geminiKey, string openaiKey, string llmProvider, bool saveHeroicLocally, bool autoRescan, bool confirmQuit, real gridScale, bool gridTitleOverlay, bool useCustomYtdlp, string customYtdlpPath, string defaultProtonRunner, string defaultProtonPrefix, string defaultProtonWrapper, bool defaultProtonUseGamescope, bool defaultProtonUseMangohud, string defaultProtonGamescopeArgs, string defaultProtonGamescopeW, string defaultProtonGamescopeH, string defaultProtonGamescopeOutW, string defaultProtonGamescopeOutH, string defaultProtonGamescopeRefresh, int defaultProtonGamescopeScaling, int defaultProtonGamescopeUpscaler, bool defaultProtonGamescopeFullscreen, bool hidePlatformsSidebar, bool checkUpdates, bool useCustomLegendary, string customLegendaryPath, string defaultInstallLocation, bool useCustomNile, string customNilePath)
+    signal settingsApplied(int viewMode, bool showFilter, string defRegion, string themeName, string raUser, string raToken, bool raEnabled, bool showTray, bool closeToTray, bool aiEnabled, string ollamaUrl, string ollamaModel, bool detailsPreferVideo, bool ignoreTheInSort, string aiDescriptionPrompt, bool defaultIgnoreOnDelete, string activeMeta, string activeImage, string geminiKey, string openaiKey, string llmProvider, bool saveHeroicLocally, bool autoRescan, bool confirmQuit, real gridScale, bool gridTitleOverlay, bool useCustomYtdlp, string customYtdlpPath, string defaultProtonRunner, string defaultProtonPrefix, string defaultProtonWrapper, bool defaultProtonUseGamescope, bool defaultProtonUseMangohud, bool defaultProtonUseWayland, string defaultProtonGamescopeArgs, string defaultProtonGamescopeW, string defaultProtonGamescopeH, string defaultProtonGamescopeOutW, string defaultProtonGamescopeOutH, string defaultProtonGamescopeRefresh, int defaultProtonGamescopeScaling, int defaultProtonGamescopeUpscaler, bool defaultProtonGamescopeFullscreen, bool hidePlatformsSidebar, bool checkUpdates, bool useCustomLegendary, string customLegendaryPath, string defaultInstallLocation, bool useCustomNile, string customNilePath)
 
     property int currentViewMode: 0
     property bool currentShowFilterBar: false
@@ -70,6 +70,7 @@ Dialog {
     property string currentDefaultProtonWrapper: ""
     property bool currentDefaultProtonUseGamescope: false
     property bool currentDefaultProtonUseMangohud: false
+    property bool currentDefaultProtonUseWayland: false
     property string currentDefaultProtonGamescopeArgs: ""
     property string currentDefaultProtonGamescopeW: ""
     property string currentDefaultProtonGamescopeH: ""
@@ -522,6 +523,8 @@ Dialog {
         protonPrefixField.text = currentDefaultProtonPrefix
         protonWrapperField.text = currentDefaultProtonWrapper
         protonUseGamescopeSwitch.checked = currentDefaultProtonUseGamescope
+        protonUseMangohudSwitch.checked = currentDefaultProtonUseMangohud
+        protonUseWaylandSwitch.checked = currentDefaultProtonUseWayland
         protonGamescopeArgsField.text = currentDefaultProtonGamescopeArgs
 
         tempRaUser = currentRaUser
@@ -1544,6 +1547,16 @@ Dialog {
                                           }
                                       }
 
+                                      RowLayout { // Wayland Toggle
+                                          spacing: 12
+                                          Layout.fillWidth: true
+                                          Label { text: "Enable Wayland:"; color: Theme.text; Layout.preferredWidth: 120 }
+                                          TheophanySwitch {
+                                              id: protonUseWaylandSwitch
+                                              checked: root.currentDefaultProtonUseWayland
+                                          }
+                                      }
+
                                       RowLayout { // Extra Args
                                           spacing: 12
                                           Layout.fillWidth: true
@@ -1750,6 +1763,7 @@ Dialog {
                                     protonWrapperField.text,
                                     protonUseGamescopeSwitch.checked,
                                     protonUseMangohudSwitch.checked,
+                                    protonUseWaylandSwitch.checked,
                                     protonGamescopeArgsField.text,
                                     gsWidthField.text,
                                     gsHeightField.text,

@@ -2318,6 +2318,7 @@ impl StoreBridge {
                                                 cloud_save_path: None,
                                                 cloud_save_auto_sync: None,
                                                 steam_compat_mode: Some(true),
+                                                enable_wayland: defaults.get("enable_wayland").and_then(|v| v.as_bool()),
                                             };
                                             let _ = db.insert_pc_config(&new_config);
                                         }

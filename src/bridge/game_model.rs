@@ -199,6 +199,7 @@ pub struct GameListModel {
     getSystemStats: qt_method!(fn(&mut self)), // Helper to trigger stats update manually if needed (mostly auto)
     setFilter: qt_method!(fn(&mut self, platform_id: String)),
     setPlaylistFilter: qt_method!(fn(&mut self, playlist_id: String)),
+    setPlaylistFilterWithSort: qt_method!(fn(&mut self, playlist_id: String, sort: String)),
     addToPlaylist: qt_method!(fn(&mut self, playlist_id: String, rom_id: String)),
     setGenreFilter: qt_method!(fn(&mut self, genre: String)),
     setRegionFilter: qt_method!(fn(&mut self, region: String)),
@@ -215,6 +216,7 @@ pub struct GameListModel {
     setSearchFilter: qt_method!(fn(&mut self, text: String)),
     setInstalledOnly: qt_method!(fn(&mut self, installed_only: bool)),
     setPlatformTypeFilter: qt_method!(fn(&mut self, platform_type: String)),
+    setPlatformTypeFilterWithSort: qt_method!(fn(&mut self, platform_type: String, sort: String)),
     toggleFavorite: qt_method!(fn(&mut self, rom_id: String)),
     startBulkScrape: qt_method!(fn(&mut self, json_ids: String, json_categories: String, json_fields: String, min_delay_ms: i32, max_delay_ms: i32, ra_user: String, ra_key: String, metadata_provider: String, prefer_ra: bool, ollama_url: String, ollama_model: String, gemini_key: String, openai_key: String, llm_provider: String)),
     stopBulkScrape: qt_method!(fn(&mut self)),
@@ -907,10 +909,33 @@ impl GameListModel {
     }
 
     #[allow(non_snake_case)]
+    fn setPlatformTypeFilterWithSort(&mut self, platform_type: String, sort: String) {
+        let normalized_filter = if platform_type.is_empty() { None } else { Some(platform_type) };
+        *self.current_platform_type_filter.borrow_mut() = normalized_filter;
+        *self.current_platform_filter.borrow_mut() = None; // Clear platform id filter
+        *self.current_playlist_filter.borrow_mut() = None; // Clear playlist filter
+        *self.current_sort_method.borrow_mut() = sort.clone();
+        self.sortMethod = sort.into();
+        self.sortMethodChanged();
+        self.refresh();
+    }
+
+    #[allow(non_snake_case)]
     fn setPlaylistFilter(&mut self, playlist_id: String) {
         *self.current_playlist_filter.borrow_mut() = if playlist_id.is_empty() { None } else { Some(playlist_id) };
         *self.current_platform_filter.borrow_mut() = None; // Clear platform filter
         *self.current_platform_type_filter.borrow_mut() = None; // Clear platform type filter
+        self.refresh();
+    }
+
+    #[allow(non_snake_case)]
+    fn setPlaylistFilterWithSort(&mut self, playlist_id: String, sort: String) {
+        *self.current_playlist_filter.borrow_mut() = if playlist_id.is_empty() { None } else { Some(playlist_id) };
+        *self.current_platform_filter.borrow_mut() = None; // Clear platform filter
+        *self.current_platform_type_filter.borrow_mut() = None; // Clear platform type filter
+        *self.current_sort_method.borrow_mut() = sort.clone();
+        self.sortMethod = sort.into();
+        self.sortMethodChanged();
         self.refresh();
     }
 
@@ -1137,7 +1162,9 @@ impl GameListModel {
         let p_filter = if platform_id.is_empty() { None } else { Some(platform_id) };
         *self.current_platform_filter.borrow_mut() = p_filter.clone();
         *self.current_favorites_only.borrow_mut() = favorites;
-        *self.current_sort_method.borrow_mut() = sort;
+        *self.current_sort_method.borrow_mut() = sort.clone();
+        self.sortMethod = sort.into();
+        self.sortMethodChanged();
         *self.current_recent_only.borrow_mut() = recent_only;
         *self.current_installed_only.borrow_mut() = installed_only;
         *self.current_platform_type_filter.borrow_mut() = None;
@@ -1492,7 +1519,7 @@ impl GameListModel {
                             if let Some(ref t) = type_opt {
                                 let t_lower = t.to_lowercase();
                                 if t_lower.contains("windows") || t_lower.contains("epic") {
-                                    let (def_proton, def_prefix, def_wrapper, def_gamescope, def_mangohud, def_gs_args, 
+                                    let (def_proton, def_prefix, def_wrapper, def_gamescope, def_mangohud, def_wayland, def_gs_args, 
                                          def_gs_w, def_gs_h, def_gs_out_w, def_gs_out_h, def_gs_r, def_gs_s, def_gs_u, def_gs_f) = crate::bridge::settings::AppSettings::get_pc_defaults();
                                     if !def_proton.is_empty() {
                                         log::info!("[GameModel] Applying Default PC Config for new platform: Proton={}", def_proton);
@@ -1502,6 +1529,7 @@ impl GameListModel {
                                             "wrapper": def_wrapper,
                                             "use_gamescope": def_gamescope,
                                             "use_mangohud": def_mangohud,
+                                            "enable_wayland": def_wayland,
                                             "gamescope_args": def_gs_args,
                                             "gs_state": {
                                                 "w": def_gs_w,
@@ -1715,6 +1743,7 @@ impl GameListModel {
                              cloud_save_path: None,
                              cloud_save_auto_sync: None,
                              steam_compat_mode: Some(true),
+                             enable_wayland: defaults.get("enable_wayland").and_then(|v| v.as_bool()),
                          };
                         
                         if let Err(e) = db.insert_pc_config(&new_config) {
@@ -2898,6 +2927,10 @@ impl GameListModel {
 
                                   if c.disable_fixes.unwrap_or(false) { env_prefix.push_str("PROTONFIXES_DISABLE=1 "); }
                                   if c.no_runtime.unwrap_or(false) { env_prefix.push_str("UMU_NO_RUNTIME=1 "); }
+                                  let enable_wayland = c.enable_wayland
+                                      .or_else(|| platform_defaults.as_ref().and_then(|d| d["enable_wayland"].as_bool()))
+                                      .unwrap_or_else(|| crate::bridge::settings::AppSettings::get_pc_defaults().5);
+                                  if enable_wayland { env_prefix.push_str("PROTON_ENABLE_WAYLAND=1 "); }
 
                                   if let Some(l) = &c.log_level {
                                       match l.as_str() {
@@ -2978,6 +3011,10 @@ impl GameListModel {
 
                                   let no_runtime = platform_defaults.as_ref().and_then(|d| d["no_runtime"].as_bool()).unwrap_or(false);
                                   if no_runtime { env_prefix.push_str("UMU_NO_RUNTIME=1 "); }
+
+                                  let enable_wayland = platform_defaults.as_ref().and_then(|d| d["enable_wayland"].as_bool())
+                                      .unwrap_or_else(|| crate::bridge::settings::AppSettings::get_pc_defaults().5);
+                                  if enable_wayland { env_prefix.push_str("PROTON_ENABLE_WAYLAND=1 "); }
 
                                   let log = platform_defaults.as_ref().and_then(|d| d["log_level"].as_str().map(|s| s.to_string()));
                                   if let Some(l) = log {
