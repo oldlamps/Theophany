@@ -2,4 +2,6 @@
 /dist
 *.db
 *.tar.gz
+GEMINI.md
+STATE.md
 

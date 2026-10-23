@@ -14,8 +14,30 @@ Dialog {
     modal: true
     // title removed to prevent default title bar
     
+    MediaDevices {
+        id: mediaDevices
+        onDefaultAudioOutputChanged: {
+            console.log("[VideoDownloadDialog] System default audio output changed:", defaultAudioOutput ? defaultAudioOutput.description : "None")
+            root.updateAudioDevice()
+        }
+        onAudioOutputsChanged: {
+            root.updateAudioDevice()
+        }
+    }
+
+    property var selectedAudioDevice: null
+
+    function updateAudioDevice() {
+        var target = root.selectedAudioDevice ? root.selectedAudioDevice : mediaDevices.defaultAudioOutput
+        if (target) {
+            audioOut.device = target
+            streamAudioOut.device = target
+        }
+    }
+
     Component.onCompleted: {
         videoProxyInternal.init(appInfo.getDataPath() + "/games.db")
+        root.updateAudioDevice()
     }
     // Properties
     property string gameId: ""
@@ -835,7 +857,11 @@ Dialog {
                                     MediaPlayer {
                                         id: streamPlayer
                                         videoOutput: videoOutput
-                                        audioOutput: AudioOutput { id: audioOut; volume: root.playerVolume }
+                                        audioOutput: AudioOutput { 
+                                            id: audioOut
+                                            volume: root.playerVolume 
+                                            device: root.selectedAudioDevice ? root.selectedAudioDevice : mediaDevices.defaultAudioOutput
+                                        }
                                         onErrorOccurred: (error, errorString) => {
                                             root.showFeedback("Playback Error: " + errorString)
                                             root.streaming = false
@@ -844,7 +870,11 @@ Dialog {
 
                                     MediaPlayer {
                                         id: audioPlayer
-                                        audioOutput: AudioOutput { volume: root.playerVolume }
+                                        audioOutput: AudioOutput { 
+                                            id: streamAudioOut
+                                            volume: root.playerVolume 
+                                            device: root.selectedAudioDevice ? root.selectedAudioDevice : mediaDevices.defaultAudioOutput
+                                        }
                                     }
 
                                     // Large Overlay Icons for feedback
@@ -1123,7 +1153,7 @@ Dialog {
                                                 RowLayout {
                                                     anchors.left: parent.left
                                                     anchors.verticalCenter: parent.verticalCenter
-                                                    spacing: 12
+                                                    spacing: 8
                                                     
                                                     Rectangle {
                                                         width: 40; height: 40; radius: 20
@@ -1135,17 +1165,22 @@ Dialog {
                                                         }
                                                         HoverHandler { id: volHover }
                                                         TapHandler { onTapped: root.playerVolume = (root.playerVolume === 0 ? 1.0 : 0) }
+                                                        TheophanyTooltip {
+                                                            visible: volHover.hovered
+                                                            text: (root.playerVolume === 0 ? "Muted" : ("Volume: " + Math.round(root.playerVolume * 100) + "%")) +
+                                                                  (audioOut.device ? ("\nAudio: " + audioOut.device.description) : "")
+                                                        }
                                                     }
 
                                                     Slider {
                                                         id: volumeSlider
-                                                        width: 120
+                                                        width: 100
                                                         from: 0; to: 1.0; value: root.playerVolume
                                                         onMoved: root.playerVolume = value
                                                         background: Rectangle {
                                                             x: volumeSlider.leftPadding
                                                             y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
-                                                            implicitWidth: 120; implicitHeight: 6
+                                                            implicitWidth: 100; implicitHeight: 6
                                                             width: volumeSlider.availableWidth; height: implicitHeight
                                                             radius: 3; color: Theme.border
                                                             Rectangle {
@@ -1158,6 +1193,60 @@ Dialog {
                                                             y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
                                                             implicitWidth: 14; implicitHeight: 14; radius: 7; color: "white"
                                                             visible: volumeSlider.hovered || volumeSlider.pressed
+                                                        }
+                                                    }
+
+                                                    // Audio Device Selector (when multiple devices are detected)
+                                                    Rectangle {
+                                                        id: audioDeviceBtn
+                                                        width: 32; height: 32; radius: 16
+                                                        visible: mediaDevices.audioOutputs.length > 1
+                                                        color: audioDevHover.hovered ? Theme.buttonBackground : "transparent"
+                                                        border.color: audioDevHover.hovered ? Theme.border : "transparent"
+                                                        border.width: 1
+
+                                                        Label {
+                                                            anchors.centerIn: parent
+                                                            text: "🎧"
+                                                            font.pixelSize: 14
+                                                        }
+
+                                                        HoverHandler { id: audioDevHover }
+                                                        TapHandler {
+                                                            onTapped: audioDeviceMenu.open()
+                                                        }
+
+                                                        TheophanyTooltip {
+                                                            visible: audioDevHover.hovered && !audioDeviceMenu.visible
+                                                            text: "Audio Device: " + (audioOut.device ? audioOut.device.description : "Default") + "\n(Click to change)"
+                                                        }
+
+                                                        TheophanyMenu {
+                                                            id: audioDeviceMenu
+                                                            y: -height - 5
+
+                                                            TheophanyMenuItem {
+                                                                text: "System Default (" + (mediaDevices.defaultAudioOutput ? mediaDevices.defaultAudioOutput.description : "Auto") + ")"
+                                                                iconEmoji: root.selectedAudioDevice === null ? "✓" : ""
+                                                                onTriggered: {
+                                                                    root.selectedAudioDevice = null
+                                                                    root.updateAudioDevice()
+                                                                }
+                                                            }
+
+                                                            TheophanyMenuSeparator { visible: mediaDevices.audioOutputs.length > 1 }
+
+                                                            Repeater {
+                                                                model: mediaDevices.audioOutputs
+                                                                delegate: TheophanyMenuItem {
+                                                                    text: modelData.description
+                                                                    iconEmoji: root.selectedAudioDevice === modelData ? "✓" : ""
+                                                                    onTriggered: {
+                                                                        root.selectedAudioDevice = modelData
+                                                                        root.updateAudioDevice()
+                                                                    }
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 }

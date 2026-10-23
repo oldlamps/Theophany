@@ -21,7 +21,9 @@ T.MenuItem {
     spacing: 12
 
     property string iconSource: ""
+    property string iconEmoji: ""
     readonly property string effectiveIcon: {
+        if (iconEmoji !== "") return iconEmoji
         if (iconSource !== "") return iconSource
         if (control.subMenu && control.subMenu.iconSource !== undefined) return control.subMenu.iconSource
         return ""
@@ -42,9 +44,9 @@ T.MenuItem {
                 Layout.preferredHeight: 20
                 visible: control.effectiveIcon !== ""
 
-                readonly property bool isPath: control.effectiveIcon.indexOf("/") !== -1 || 
+                readonly property bool isPath: control.iconEmoji === "" && (control.effectiveIcon.indexOf("/") !== -1 || 
                                                control.effectiveIcon.indexOf(".") !== -1 ||
-                                               control.effectiveIcon.startsWith("qrc:")
+                                               control.effectiveIcon.startsWith("qrc:"))
 
                 Text {
                     anchors.centerIn: parent

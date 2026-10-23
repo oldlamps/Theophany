@@ -43,9 +43,9 @@ Dialog {
                 var data = JSON.parse(json)
                 if (data.extensions) extField.text = data.extensions
                 
+                var foundIdx = -1
                 if (data.platform_type && data.platform_type !== "") {
                     // 1. Try to find existing collection of this type
-                    var foundIdx = -1
                     if (platformModel) {
                         for (var i = 0; i < platformModel.rowCount(); i++) {
                             var mIdx = platformModel.index(i, 0)
@@ -56,15 +56,22 @@ Dialog {
                             }
                         }
                     }
+                }
 
-                    if (foundIdx !== -1) {
-                        existingRadio.checked = true
-                        existingCombo.currentIndex = foundIdx
-                    } else {
-                        newRadio.checked = true
-                        newNameField.text = data.collection_name
-                        
-                        // Find platform type in combo
+                // If not matched by platform_type, check if collection_name matches an existing collection
+                if (foundIdx === -1 && data.collection_name) {
+                    foundIdx = root.getExistingCollectionIndexByName(data.collection_name)
+                }
+
+                if (foundIdx !== -1) {
+                    existingRadio.checked = true
+                    existingCombo.currentIndex = foundIdx
+                } else {
+                    newRadio.checked = true
+                    newNameField.text = data.collection_name || ""
+                    
+                    // Find platform type in combo
+                    if (data.platform_type) {
                         for (var j = 0; j < platformTypeCombo.model.length; j++) {
                             if (platformTypeCombo.model[j].value === data.platform_type || platformTypeCombo.model[j].text === data.platform_type) {
                                 platformTypeCombo.currentIndex = j
@@ -72,11 +79,23 @@ Dialog {
                             }
                         }
                     }
-                } else if (data.collection_name) {
-                    if (newNameField.text === "") newNameField.text = data.collection_name
                 }
             } catch(e) { }
         }
+    }
+
+    function getExistingCollectionIndexByName(searchName) {
+        if (!platformModel || !searchName) return -1
+        var trimmed = searchName.trim().toLowerCase()
+        if (trimmed === "") return -1
+        for (var i = 0; i < platformModel.rowCount(); i++) {
+            var mIdx = platformModel.index(i, 0)
+            var pName = platformModel.data(mIdx, 257)
+            if (pName && pName.trim().toLowerCase() === trimmed) {
+                return i
+            }
+        }
+        return -1
     }
 
     function checkAutoSelectPlatform(path) {
@@ -109,6 +128,17 @@ Dialog {
                         platformTypeCombo.currentIndex = j
                         break
                     }
+                }
+            }
+        } else {
+            // For any file, try to match parent folder name to an existing collection
+            var parts = path.split('/')
+            if (parts.length > 1) {
+                var folderName = parts[parts.length - 2]
+                var matchIdx = root.getExistingCollectionIndexByName(folderName)
+                if (matchIdx !== -1) {
+                    existingRadio.checked = true
+                    existingCombo.currentIndex = matchIdx
                 }
             }
         }
@@ -438,6 +468,14 @@ Dialog {
                                     Layout.fillWidth: true
                                     placeholderText: "Collection Name (e.g. SNES)"
                                 }
+                                Text {
+                                    property int matchIdx: root.getExistingCollectionIndexByName(newNameField.text)
+                                    visible: newRadio.checked && matchIdx >= 0
+                                    text: matchIdx >= 0 && platformModel ? "✓ Matches existing collection '" + platformModel.data(platformModel.index(matchIdx, 0), 257) + "'. Content will be added to it." : ""
+                                    color: Theme.accent
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
                                 ColumnLayout {
                                     spacing: 5
                                     Label { text: "Platform Type"; color: Theme.secondaryText; font.pixelSize: 11 }
@@ -582,17 +620,30 @@ Dialog {
                 icon = platformModel.data(modelIdx, 262)
             }
         } else {
-            name = newNameField.text
-            var currentIdx = platformTypeCombo.currentIndex
-            if (currentIdx >= 0) {
-                var item = platformTypeCombo.model[currentIdx]
-                pType = item.value || ""
-                var iconUrl = item.icon || ""
-                if (iconUrl !== "" && platformModel) {
-                    var localPath = platformModel.ensureSystemIcon(iconUrl, pType)
-                    icon = (localPath !== "") ? localPath : iconUrl
-                } else {
-                    icon = iconUrl
+            name = newNameField.text.trim()
+            
+            // Check if collection with this name already exists
+            var existingIdx = root.getExistingCollectionIndexByName(name)
+            if (existingIdx !== -1) {
+                var modelIdx = platformModel.index(existingIdx, 0)
+                pid = platformModel.data(modelIdx, 256)
+                name = platformModel.data(modelIdx, 257)
+                cmd = platformModel.data(modelIdx, 259)
+                emuId = platformModel.data(modelIdx, 260)
+                pType = platformModel.data(modelIdx, 261)
+                icon = platformModel.data(modelIdx, 262)
+            } else {
+                var currentIdx = platformTypeCombo.currentIndex
+                if (currentIdx >= 0) {
+                    var item = platformTypeCombo.model[currentIdx]
+                    pType = item.value || ""
+                    var iconUrl = item.icon || ""
+                    if (iconUrl !== "" && platformModel) {
+                        var localPath = platformModel.ensureSystemIcon(iconUrl, pType)
+                        icon = (localPath !== "") ? localPath : iconUrl
+                    } else {
+                        icon = iconUrl
+                    }
                 }
             }
         }

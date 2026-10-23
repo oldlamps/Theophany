@@ -3571,42 +3571,62 @@ ApplicationWindow {
         onSystemConfigured: (name, ext, path, cmd, emuId, emuName, pType, icon, pcConfig) => {
             if (addSystemDialog.editMode) {
                 sidebar.updateSystem(addSystemDialog.platformId, name, ext, cmd, emuId, pType, icon, pcConfig)
-            } else if (path === "") {
-                // No path - just create the collection without importing anything
-                gameModel.commitSystemImport(
-                    name,
-                    ext,
-                    path,
-                    cmd,
-                    emuId,
-                    pType,
-                    icon,
-                    pcConfig || "",
-                    "[]"
-                )
             } else {
-                // New Flow: Preview first
-                var json = gameModel.previewSystemImport(name, ext, path, emuId, pType)
-                var roms = JSON.parse(json)
-                
-                romPreviewDialog.systemName = name
-                romPreviewDialog.emulatorName = emuName
-                romPreviewDialog.setRoms(roms)
-                
-                // Save other params for commit
-                romPreviewDialog.tempParams = {
-                    "platformId": "", // New system
-                    "name": name,
-                    "ext": ext,
-                    "path": path,
-                    "cmd": cmd,
-                    "emuId": emuId,
-                    "pType": pType,
-                    "icon": icon,
-                    "pcConfig": pcConfig
+                // Check if a platform with this name already exists
+                var existingId = ""
+                if (sidebar.platformModel && name) {
+                    var searchName = name.trim().toLowerCase()
+                    for (var i = 0; i < sidebar.platformModel.rowCount(); i++) {
+                        var mIdx = sidebar.platformModel.index(i, 0)
+                        var pName = sidebar.platformModel.data(mIdx, 257)
+                        if (pName && pName.trim().toLowerCase() === searchName) {
+                            existingId = sidebar.platformModel.data(mIdx, 256)
+                            break
+                        }
+                    }
                 }
-                
-                romPreviewDialog.open()
+
+                if (path === "") {
+                    // No path - just configure the collection without importing anything
+                    if (existingId !== "") {
+                        sidebar.updateSystem(existingId, name, ext, cmd, emuId, pType, icon, pcConfig)
+                    } else {
+                        gameModel.commitSystemImport(
+                            name,
+                            ext,
+                            path,
+                            cmd,
+                            emuId,
+                            pType,
+                            icon,
+                            pcConfig || "",
+                            "[]"
+                        )
+                    }
+                } else {
+                    // New Flow: Preview first
+                    var json = gameModel.previewSystemImport(name, ext, path, emuId, pType)
+                    var roms = JSON.parse(json)
+                    
+                    romPreviewDialog.systemName = name
+                    romPreviewDialog.emulatorName = emuName
+                    romPreviewDialog.setRoms(roms)
+                    
+                    // Save other params for commit
+                    romPreviewDialog.tempParams = {
+                        "platformId": existingId, // If already exists, use it
+                        "name": name,
+                        "ext": ext,
+                        "path": path,
+                        "cmd": cmd,
+                        "emuId": emuId,
+                        "pType": pType,
+                        "icon": icon,
+                        "pcConfig": pcConfig
+                    }
+                    
+                    romPreviewDialog.open()
+                }
             }
         }
         onManageEmulatorsRequested: emulatorManager.open()
@@ -3680,10 +3700,29 @@ ApplicationWindow {
             suggestedName = parts.length > 1 ? parts[parts.length - 2] : ""
         }
         
-        // Reset dialog state
-        addContentDialog.isNewMode = true 
-        addContentDialog.newCollectionName = suggestedName
-        addContentDialog.existingCollectionIndex = -1
+        // Check if an existing collection already matches suggestedName
+        var foundIdx = -1
+        if (suggestedName !== "" && sidebar.platformModel) {
+            var searchName = suggestedName.trim().toLowerCase()
+            for (var i = 0; i < sidebar.platformModel.rowCount(); i++) {
+                var mIdx = sidebar.platformModel.index(i, 0)
+                var pName = sidebar.platformModel.data(mIdx, 257)
+                if (pName && pName.trim().toLowerCase() === searchName) {
+                    foundIdx = i
+                    break
+                }
+            }
+        }
+
+        if (foundIdx !== -1) {
+            addContentDialog.isNewMode = false
+            addContentDialog.existingCollectionIndex = foundIdx
+            addContentDialog.newCollectionName = ""
+        } else {
+            addContentDialog.isNewMode = true 
+            addContentDialog.newCollectionName = suggestedName
+            addContentDialog.existingCollectionIndex = -1
+        }
         
         addContentDialog.isFolderMode = isDir
         addContentDialog.droppedPath = path
@@ -3691,6 +3730,19 @@ ApplicationWindow {
     }
 
     function startContentPreview(path, pid, name, exts, emuId, pType, icon, cmd, recursive) {
+        // If pid is empty, check if a collection with this name already exists
+        if ((!pid || pid === "") && name && sidebar.platformModel) {
+            var searchName = name.trim().toLowerCase()
+            for (var i = 0; i < sidebar.platformModel.rowCount(); i++) {
+                var mIdx = sidebar.platformModel.index(i, 0)
+                var pName = sidebar.platformModel.data(mIdx, 257)
+                if (pName && pName.trim().toLowerCase() === searchName) {
+                    pid = sidebar.platformModel.data(mIdx, 256)
+                    break
+                }
+            }
+        }
+
         // Use existing preview logic
         var previewJson = gameModel.previewSystemImport(name, exts, path, emuId, pType, !!recursive)
         var roms = JSON.parse(previewJson)
@@ -3717,9 +3769,24 @@ ApplicationWindow {
         property var tempParams: ({})
         onImportRequested: (selectedRoms) => {
             var selectedJson = JSON.stringify(selectedRoms)
-            if (tempParams.platformId && tempParams.platformId !== "") {
+            var targetPlatformId = tempParams.platformId || ""
+            
+            // Double check if collection already exists by name in case platformId was not set
+            if (targetPlatformId === "" && tempParams.name && sidebar.platformModel) {
+                var searchName = tempParams.name.trim().toLowerCase()
+                for (var i = 0; i < sidebar.platformModel.rowCount(); i++) {
+                    var mIdx = sidebar.platformModel.index(i, 0)
+                    var pName = sidebar.platformModel.data(mIdx, 257)
+                    if (pName && pName.trim().toLowerCase() === searchName) {
+                        targetPlatformId = sidebar.platformModel.data(mIdx, 256)
+                        break
+                    }
+                }
+            }
+
+            if (targetPlatformId !== "") {
                  gameModel.commitContentImport(
-                    tempParams.platformId,
+                    targetPlatformId,
                     tempParams.name,
                     tempParams.ext,
                     tempParams.path,

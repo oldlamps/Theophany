@@ -1487,6 +1487,11 @@ impl GameListModel {
                 // 1. Setup Platform if new, or get existing
                 let final_platform_id = if is_existing {
                     platform_id
+                } else if let Some(existing) = db.get_platforms().ok().and_then(|platforms| {
+                    platforms.into_iter().find(|p| p.name.trim().eq_ignore_ascii_case(name.trim()))
+                }) {
+                    log::info!("[Import] Platform with name '{}' already exists with ID: {}. Reusing existing platform.", name, existing.id);
+                    existing.id
                 } else {
                     let new_id = Uuid::new_v4().to_string();
                     let slug = name.to_lowercase().replace(" ", "-");

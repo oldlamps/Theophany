@@ -40,6 +40,7 @@ qrc!(my_resources,
         "src/ui/components/TheophanySuggestField.qml" as "components/TheophanySuggestField.qml",
         "src/ui/components/TheophanyTooltip.qml" as "components/TheophanyTooltip.qml",
         "src/ui/components/TheophanyMessageDialog.qml" as "components/TheophanyMessageDialog.qml",
+        "src/ui/components/ActivityCenterPopup.qml" as "components/ActivityCenterPopup.qml",
         "src/ui/views/GameList.qml" as "views/GameList.qml",
         "src/ui/views/EmptyStateView.qml" as "views/EmptyStateView.qml",
         "src/ui/style/qmldir" as "style/qmldir",
@@ -81,6 +82,8 @@ qrc!(my_resources,
         "src/ui/dialogs/AmazonInstallDialog.qml" as "dialogs/AmazonInstallDialog.qml",
         "assets/tray_icon.png" as "tray_icon.png",
         "assets/logo.png" as "assets/logo.png",
+        "assets/logo_large.png" as "assets/logo_large.png",
+        "assets/theophany_logo.svg" as "assets/theophany_logo.svg",
         "assets/RA.png" as "assets/RA.png",
         "assets/systems/exodos.png" as "assets/systems/exodos.png",
         "assets/systems/flatpak.png" as "assets/systems/flatpak.png",
@@ -92,6 +95,7 @@ qrc!(my_resources,
         "assets/systems/epic.png" as "assets/systems/epic.png",
         "assets/systems/amazon.png" as "assets/systems/amazon.png",
         "assets/systems/gog.png" as "assets/systems/gog.png",
+        "assets/systems/xbox360.png" as "assets/systems/xbox360.png",
     }
 );
 
@@ -291,6 +295,7 @@ fn setup_assets() {
         ("amazon.png", include_bytes!("../assets/systems/amazon.png").as_slice()),
         ("gog.png", include_bytes!("../assets/systems/gog.png").as_slice()),
         ("exodos.png", include_bytes!("../assets/systems/exodos.png").as_slice()),
+        ("xbox360.png", include_bytes!("../assets/systems/xbox360.png").as_slice()),
     ];
 
     for (name, bytes) in systems {

@@ -115,8 +115,22 @@ Rectangle {
         }
     }
     
+    MediaDevices {
+        id: mediaDevices
+        onDefaultAudioOutputChanged: root.updateAudioDevice()
+        onAudioOutputsChanged: root.updateAudioDevice()
+    }
+
+    function updateAudioDevice() {
+        if (mediaDevices.defaultAudioOutput) {
+            audio.device = mediaDevices.defaultAudioOutput
+            audioPlayerAudio.device = mediaDevices.defaultAudioOutput
+        }
+    }
+
     Component.onCompleted: {
         videoProxy.init(appInfo.getDataPath() + "/games.db")
+        root.updateAudioDevice()
     }
 
     function loadCurrentVideo() {
@@ -895,6 +909,7 @@ Rectangle {
                         id: audio
                         muted: true // Default muted
                         volume: 1.0
+                        device: mediaDevices.defaultAudioOutput
                     }
                     loops: MediaPlayer.Infinite
                 }
@@ -902,8 +917,10 @@ Rectangle {
                 MediaPlayer {
                     id: audioPlayer
                     audioOutput: AudioOutput {
+                        id: audioPlayerAudio
                         muted: audio.muted
                         volume: audio.volume
+                        device: mediaDevices.defaultAudioOutput
                     }
                     loops: MediaPlayer.Infinite
                 }
@@ -966,7 +983,13 @@ Rectangle {
                                 text: audio.muted ? "🔇" : "🔊"
                                 background: null
                                 contentItem: Text { text: parent.text; color: Theme.text; font.pixelSize: 16 }
-                                onClicked: audio.muted = !audio.muted
+                                onClicked: {
+                                    root.updateAudioDevice()
+                                    audio.muted = !audio.muted
+                                }
+                                TheophanyTooltip {
+                                    text: (audio.muted ? "Unmute" : "Mute") + (audio.device ? (" (" + audio.device.description + ")") : "")
+                                }
                             }
                             
                             Slider {
