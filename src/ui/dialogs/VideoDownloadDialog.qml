@@ -27,6 +27,15 @@ Dialog {
 
     property var selectedAudioDevice: null
 
+    // Space toggles play/pause for the loaded video, regardless of which control has focus.
+    // Text fields consume Space via ShortcutOverride, so typing in the search box is unaffected.
+    Shortcut {
+        sequence: "Space"
+        context: Qt.WindowShortcut
+        enabled: root.opened && streamPlayer.source != "" && streamPlayer.playbackState !== MediaPlayer.StoppedState
+        onActivated: videoContainer.togglePlayback()
+    }
+
     function updateAudioDevice() {
         var target = root.selectedAudioDevice ? root.selectedAudioDevice : mediaDevices.defaultAudioOutput
         if (target) {

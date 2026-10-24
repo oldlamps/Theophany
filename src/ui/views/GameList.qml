@@ -776,6 +776,32 @@ FocusScope {
                                 }
                             }
                             TheophanyMenuItem {
+                                text: "Create Application Shortcut"
+                                iconSource: "📌"
+                                visible: rootRoot.selectedIndices.length === 1
+                                onTriggered: {
+                                    var res = gameModel.createApplicationShortcut(gameId)
+                                    shortcutStatusDialog.text = res
+                                    shortcutStatusDialog.open()
+                                }
+                            }
+                            TheophanyMenuItem {
+                                text: "Create Desktop Shortcut"
+                                iconSource: "🖥️"
+                                visible: rootRoot.selectedIndices.length === 1
+                                onTriggered: {
+                                    var res = gameModel.createDesktopShortcut(gameId)
+                                    shortcutStatusDialog.text = res
+                                    shortcutStatusDialog.open()
+                                }
+                            }
+                            TheophanyMenuItem {
+                                text: "Browse Local"
+                                iconSource: "📂"
+                                visible: rootRoot.selectedIndices.length === 1
+                                onTriggered: window.browseGameLocation(gameId)
+                            }
+                            TheophanyMenuItem {
                                 text: "Game Properties"
                                 iconSource: "📝"
                                 visible: rootRoot.selectedIndices.length === 1

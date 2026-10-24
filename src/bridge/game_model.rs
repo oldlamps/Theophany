@@ -256,6 +256,7 @@ pub struct GameListModel {
     deleteGame: qt_method!(fn(&mut self, rom_id: String, ignore: bool, uninstall_flatpak: bool, delete_data: bool, delete_assets: bool)),
     getIgnoreList: qt_method!(fn(&mut self) -> String),
     openFileLocation: qt_method!(fn(&mut self, path: String)),
+    browseGameLocation: qt_method!(fn(&mut self, rom_id: String) -> QString),
     removeFromIgnoreList: qt_method!(fn(&mut self, platform_id: String, path: String)),
     bulkUpdateMetadata: qt_method!(fn(&mut self, rom_ids_json: String, json_data: String)),
     deleteGamesBulk: qt_method!(fn(&mut self, rom_ids_json: String, ignore: bool, delete_assets: bool)),
@@ -4641,6 +4642,64 @@ impl GameListModel {
         let _ = std::process::Command::new("xdg-open")
             .arg(folder)
             .spawn();
+    }
+
+    #[allow(non_snake_case)]
+    /// Opens the system file manager at the folder containing the game's ROM / executable.
+    /// Falls back to the configured working directory for games whose path is a launcher URI.
+    /// Returns an empty string on success, or a user-facing message on failure.
+    fn browseGameLocation(&mut self, rom_id: String) -> QString {
+        let db_path = self.db_path.borrow().clone();
+        if db_path.is_empty() || rom_id.is_empty() {
+            return QString::from("Unable to locate game.");
+        }
+
+        let (rom_path, working_dir) = match DbManager::open(&db_path) {
+            Ok(db) => {
+                let path = db.get_rom_path(&rom_id).ok().flatten().unwrap_or_default();
+                let wd = db.get_pc_config(&rom_id).ok().flatten()
+                    .and_then(|c| c.working_dir)
+                    .filter(|s| !s.trim().is_empty());
+                (path, wd)
+            }
+            Err(e) => return QString::from(format!("Error: {}", e)),
+        };
+
+        let clean = rom_path.strip_prefix("file://").unwrap_or(&rom_path).to_string();
+        let p = std::path::Path::new(&clean);
+        let folder: Option<std::path::PathBuf> = if !clean.is_empty() && p.is_dir() {
+            Some(p.to_path_buf())
+        } else if !clean.is_empty() && p.exists() {
+            p.parent().map(|x| x.to_path_buf())
+        } else {
+            working_dir
+                .map(std::path::PathBuf::from)
+                .filter(|wd| wd.is_dir())
+        };
+
+        let Some(folder) = folder else {
+            return QString::from("No local folder found for this game.\n\nStore and launcher-managed games (Steam, Heroic, Lutris, etc.) may not have a browsable location unless a working directory is set in Game Properties.");
+        };
+
+        log::debug!("Browsing game location: {:?}", folder);
+
+        let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
+        let result = if is_flatpak {
+            std::process::Command::new("flatpak-spawn")
+                .arg("--host").arg("xdg-open").arg(&folder)
+                .spawn()
+        } else {
+            std::process::Command::new("xdg-open").arg(&folder).spawn()
+        };
+
+        match result {
+            Ok(mut child) => {
+                // Reap the child in the background to avoid zombies
+                std::thread::spawn(move || { let _ = child.wait(); });
+                QString::from("")
+            }
+            Err(e) => QString::from(format!("Error opening file manager: {}", e)),
+        }
     }
 
     #[allow(non_snake_case)]

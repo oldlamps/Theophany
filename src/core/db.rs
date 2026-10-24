@@ -784,6 +784,16 @@ impl DbManager {
         }
     }
 
+    pub fn get_rom_path(&self, rom_id: &str) -> Result<Option<String>> {
+        let mut stmt = self.conn.prepare("SELECT path FROM roms WHERE id = ?1")?;
+        let mut rows = stmt.query(params![rom_id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(row.get(0)?))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn get_rom_path_info(&self, rom_id: &str) -> Result<Option<(String, String)>> {
         let mut stmt = self.conn.prepare(
             "SELECT COALESCE(p.platform_type, p.name), r.filename 

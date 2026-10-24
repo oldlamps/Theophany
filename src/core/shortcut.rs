@@ -170,7 +170,7 @@ mod tests {
         let content = fs::read_to_string(&app_file).unwrap();
         assert!(content.contains("Name=Test Game Title"));
         assert!(content.contains("Exec=theophany --launch \"game123\""));
-        assert!(content.contains("Categories=Games;"));
+        assert!(content.contains("Categories=Game;"));
 
         let _ = fs::remove_file(app_file);
 

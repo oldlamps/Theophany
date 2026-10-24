@@ -2048,6 +2048,36 @@ ApplicationWindow {
                         displayMarginBeginning: 100 // Reduce overdraw at the beginning
                         displayMarginEnd: 100 // Reduce overdraw at the end
 
+                        // Ctrl + Scroll Wheel: adjust cover art size in 5% steps
+                        property real wheelZoomAccumulator: 0
+                        WheelHandler {
+                            acceptedModifiers: Qt.ControlModifier
+                            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                            onWheel: (event) => {
+                                // Accumulate deltas so high-resolution wheels / touchpads
+                                // step once per standard notch (120 units)
+                                gameGrid.wheelZoomAccumulator += event.angleDelta.y
+                                var steps = Math.trunc(gameGrid.wheelZoomAccumulator / 120)
+                                if (steps !== 0) {
+                                    gameGrid.wheelZoomAccumulator -= steps * 120
+                                    var newScale = Math.round((window.gridScale + steps * 0.05) * 100) / 100
+                                    newScale = Math.max(0.5, Math.min(1.5, newScale))
+                                    if (newScale !== window.gridScale) {
+                                        window.gridScale = newScale
+                                        appSettings.gridScale = newScale
+                                        gridScaleSaveTimer.restart()
+                                    }
+                                }
+                                event.accepted = true
+                            }
+                        }
+                        Timer {
+                            id: gridScaleSaveTimer
+                            interval: 500
+                            repeat: false
+                            onTriggered: appSettings.save()
+                        }
+
                         onCurrentIndexChanged: {
                             viewStack.sharedGameIndex = currentIndex
                             if (currentIndex >= 0 && focus) {
@@ -2600,6 +2630,12 @@ ApplicationWindow {
                                                 shortcutStatusDialog.text = res
                                                 shortcutStatusDialog.open()
                                             }
+                                        }
+                                        TheophanyMenuItem {
+                                            text: "Browse Local"
+                                            iconSource: "📂"
+                                            visible: rootViewStack.sharedSelectedIndices.length === 1
+                                            onTriggered: window.browseGameLocation(gameId)
                                         }
                                         TheophanyMenuItem {
                                             text: "Game Properties"
@@ -4208,6 +4244,21 @@ ApplicationWindow {
         id: shortcutStatusDialog
         title: "Desktop Shortcut"
         buttons: Platform.MessageDialog.Ok
+    }
+
+    Platform.MessageDialog {
+        id: browseLocationErrorDialog
+        title: "Browse Local Files"
+        buttons: Platform.MessageDialog.Ok
+    }
+
+    // Opens the file manager at the game's ROM / install folder (context menu "Browse Local")
+    function browseGameLocation(gId) {
+        var err = gameModel.browseGameLocation(gId)
+        if (err !== "") {
+            browseLocationErrorDialog.text = err
+            browseLocationErrorDialog.open()
+        }
     }
 
     Platform.MessageDialog {
