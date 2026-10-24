@@ -193,6 +193,7 @@ pub struct GameListModel {
 
     // Methods exposed to QML
     init: qt_method!(fn(&mut self, db_path: String)),
+    initWithSort: qt_method!(fn(&mut self, db_path: String, sort: String)),
     refresh: qt_method!(fn(&mut self)),
     setIgnoreTheInSort: qt_method!(fn(&mut self, ignore: bool)),
     addSystem: qt_method!(fn(&mut self, name: String, extensions: String, rom_path: String, command: String, emulator_id: String, platform_type: String, icon: String)),
@@ -446,13 +447,18 @@ impl QAbstractListModel for GameListModel {
 
 impl GameListModel {
     fn init(&mut self, db_path: String) {
-        log::debug!("[GameListModel] Initializing with DB path: {}", db_path);
+        self.initWithSort(db_path, "TitleAZ".to_string());
+    }
+
+    #[allow(non_snake_case)]
+    fn initWithSort(&mut self, db_path: String, sort: String) {
+        let initial_sort = if sort.is_empty() { "TitleAZ".to_string() } else { sort };
+        log::debug!("[GameListModel] Initializing with DB path: {}, sort: {}", db_path, initial_sort);
         *self.db_path.borrow_mut() = db_path.clone();
-        *self.current_sort_method.borrow_mut() = "TitleAZ".to_string();
-        self.sortMethod = "TitleAZ".into();
+        *self.current_sort_method.borrow_mut() = initial_sort.clone();
+        self.sortMethod = QString::from(initial_sort);
         *self.current_playlist_filter.borrow_mut() = None;
         
-        // Initialize Bulk Control
         // Initialize Bulk Control
         self.bulk_cancel_flag = Arc::new(AtomicBool::new(false));
         self.bulk_pause_flag = Arc::new(AtomicBool::new(false));

@@ -591,6 +591,11 @@ ApplicationWindow {
                     window.collectionSortCache = {}
                 }
             }
+            // Apply persistent sort to All Games on startup if model is already initialized
+            var initialSort = window.collectionSortCache[window.currentPlatformId] || "TitleAZ"
+            if (typeof gameModel !== "undefined" && gameModel && gameModel.sortMethod !== initialSort) {
+                gameModel.setSortMethod(initialSort)
+            }
             // Apply defaults on load
             viewStack.currentIndex = defaultView
             window.showFilterBar = showFilterBar
@@ -1871,7 +1876,8 @@ ApplicationWindow {
                     id: gameModel
                     // Use XDG data path for persistence
                     Component.onCompleted: {
-                        init(appInfo.getDataPath() + "/games.db")
+                        var initialSort = window.collectionSortCache[window.currentPlatformId] || "TitleAZ"
+                        initWithSort(appInfo.getDataPath() + "/games.db", initialSort)
                         filterBar.refreshModels()
                         
                         // Apply Ignore "The" Sorting from Settings
@@ -1883,12 +1889,6 @@ ApplicationWindow {
                              filterBar.selectRegion(appSettings.defaultRegion)
                         } else {
                            // If loaded late, Connections handles it.
-                        }
-
-                        // Apply initial sort from collection sort memory
-                        var initialSort = window.collectionSortCache[window.currentPlatformId] || "TitleAZ"
-                        if (initialSort !== "TitleAZ") {
-                             gameModel.setSortMethod(initialSort)
                         }
                     }
                     onStatsUpdated: (totalGames, totalTime, lastPlayed, lastPlayedId, libraryCount) => {
@@ -3532,6 +3532,7 @@ ApplicationWindow {
 
         menu: Platform.Menu {
             id: trayMenu
+            visible: false
             onAboutToShow: refreshTrayRecentGames()
 
             Platform.MenuItem {
