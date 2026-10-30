@@ -474,14 +474,29 @@ impl GogDownloader {
         let binary =
             Self::find_binary().ok_or_else(|| anyhow::anyhow!("lgogdownloader binary not found"))?;
 
-        std::fs::create_dir_all(install_path).ok();
+        let p = std::path::Path::new(install_path);
+        let (base_dir, subfolder) = if let Some(parent) = p.parent() {
+            if let Some(file_name) = p.file_name() {
+                (parent.to_string_lossy().to_string(), Some(file_name.to_string_lossy().to_string()))
+            } else {
+                (install_path.to_string(), None)
+            }
+        } else {
+            (install_path.to_string(), None)
+        };
+
+        std::fs::create_dir_all(&base_dir).ok();
 
         let mut cmd = Self::build_command(&binary);
         cmd.arg("--galaxy-platform").arg(platform)
            .arg("--galaxy-install").arg(format!("{}/0", slug))
-           .arg("--directory").arg(install_path)
+           .arg("--directory").arg(&base_dir)
            .arg("--no-color")
            .arg("--save-icon");
+
+        if let Some(ref sub) = subfolder {
+            cmd.arg("--subdir-galaxy-install").arg(sub);
+        }
 
         if no_dependencies {
             cmd.arg("--galaxy-no-dependencies");

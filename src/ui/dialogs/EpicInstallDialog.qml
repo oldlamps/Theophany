@@ -26,6 +26,42 @@ Dialog {
     property string defaultRunner: ""
     property bool loading: true
 
+    function getDefaultSubfolder() {
+        var raw = (gameTitleStr && gameTitleStr.length > 0) ? gameTitleStr : pendingAppId;
+        var safe = raw.replace(/[^a-zA-Z0-9_-]/g, "");
+        return safe.length > 0 ? safe : pendingAppId;
+    }
+
+    function getGameSubfolder() {
+        var currentText = installPathInput.text.trim().replace(/\/+$/, "");
+        if (currentText.length > 0) {
+            var lastSlash = currentText.lastIndexOf("/");
+            if (lastSlash >= 0) {
+                var candidate = currentText.substring(lastSlash + 1).trim();
+                var cleanDefault = defaultInstallDir.replace(/\/+$/, "");
+                var defaultBaseName = cleanDefault.substring(cleanDefault.lastIndexOf("/") + 1).trim();
+                if (candidate.length > 0 && candidate.toLowerCase() !== defaultBaseName.toLowerCase()) {
+                    return candidate;
+                }
+            }
+        }
+        return getDefaultSubfolder();
+    }
+
+    function combineBaseAndSubfolder(basePath, subfolder) {
+        var cleanBase = basePath.toString().replace(/^file:\/\//, "").replace(/\/+$/, "");
+        var cleanSub = (subfolder || "").toString().trim().replace(/^\/+/, "").replace(/\/+$/, "");
+        if (!cleanSub) {
+            return cleanBase;
+        }
+        var baseLower = cleanBase.toLowerCase();
+        var subLower = cleanSub.toLowerCase();
+        if (baseLower.endsWith("/" + subLower) || baseLower === subLower) {
+            return cleanBase;
+        }
+        return cleanBase + "/" + cleanSub;
+    }
+
     // title: "Install Epic Game" (Removed to avoid duplicate with custom header)
     modal: true
     width: 650
@@ -71,7 +107,8 @@ Dialog {
     onOpened: {
         loading = true;
         gameTitleStr = "";
-        installPathInput.text = defaultInstallDir;
+        var initialSubfolder = getDefaultSubfolder();
+        installPathInput.text = combineBaseAndSubfolder(defaultInstallDir, initialSubfolder);
         prefixInput.text = defaultPrefixDir;
         installSizeStr = "";
         cloudSavesStr = "";
@@ -125,20 +162,25 @@ Dialog {
                 // Set Title
                 if (info.game && info.game.title) {
                     gameTitleStr = info.game.title;
+                    var safeTitle = getDefaultSubfolder();
                     
-                    var safeTitle = gameTitleStr.replace(/[^a-zA-Z0-9]/g, "");
                     if (safeTitle.length > 0) {
+                        var currentText = installPathInput.text.trim().replace(/\/+$/, "");
+                        var cleanDefault = defaultInstallDir.replace(/\/+$/, "");
+                        var baseDir = cleanDefault;
+
+                        if (currentText.length > 0 && currentText !== cleanDefault) {
+                            var lastSlash = currentText.lastIndexOf("/");
+                            if (lastSlash >= 0) {
+                                baseDir = currentText.substring(0, lastSlash);
+                            }
+                        }
+                        installPathInput.text = combineBaseAndSubfolder(baseDir, safeTitle);
+
                         // Auto-generate a unique prefix folder if still using the fallback default
-                        if (prefixInput.text === defaultPrefixDir) {
+                        if (prefixInput.text === defaultPrefixDir || prefixInput.text.indexOf(defaultPrefixDir) === 0) {
                             var newPrefix = defaultPrefixDir.replace(/\/default$/, "/" + safeTitle);
                             prefixInput.text = newPrefix;
-                        }
-                        
-                        // Auto-generate a unique install path if still using the fallback default
-                        if (installPathInput.text === defaultInstallDir) {
-                            var newInstall = defaultInstallDir;
-                            if (!newInstall.endsWith("/")) newInstall += "/";
-                            installPathInput.text = newInstall + safeTitle;
                         }
                     }
                 }
@@ -190,7 +232,7 @@ Dialog {
 
         title: "Select Installation Folder"
         onAccepted: {
-            installPathInput.text = installPathDialog.selectedFolder.toString().replace("file://", "");
+            installPathInput.text = combineBaseAndSubfolder(installPathDialog.selectedFolder, getGameSubfolder());
         }
     }
 

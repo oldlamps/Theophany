@@ -288,7 +288,15 @@ impl LegendaryWrapper {
         }
 
         if let Some(path) = install_path {
-            cmd.arg("--base-path").arg(path);
+            let p = std::path::Path::new(path);
+            if let Some(parent) = p.parent() {
+                cmd.arg("--base-path").arg(parent.to_string_lossy().to_string());
+                if let Some(game_folder) = p.file_name() {
+                    cmd.arg("--game-folder").arg(game_folder.to_string_lossy().to_string());
+                }
+            } else {
+                cmd.arg("--base-path").arg(path);
+            }
         }
 
         #[cfg(unix)]

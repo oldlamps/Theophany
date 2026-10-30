@@ -1779,15 +1779,21 @@ impl StoreBridge {
                         last_progress
                     };
 
+                    let base_install_path = if let Some(parent) = std::path::Path::new(&install_path).parent() {
+                        parent.to_string_lossy().to_string()
+                    } else {
+                        install_path.clone()
+                    };
+
                     let rom_id_stdout = rom_id.clone();
                     let info_path_mutex_clone = info_path_mutex.clone();
-                    let install_path_stdout = install_path.clone();
+                    let install_path_stdout = base_install_path.clone();
                     let stdout_handle = std::thread::spawn(move || {
                         parse_and_broadcast(Box::new(stdout), rom_id_stdout, info_path_mutex_clone, install_path_stdout);
                     });
 
                     let info_path_mutex_stderr = info_path_mutex.clone();
-                    let install_path_stderr = install_path.clone();
+                    let install_path_stderr = base_install_path.clone();
                     parse_and_broadcast(Box::new(stderr), rom_id_stderr, info_path_mutex_stderr, install_path_stderr);
 
                     match child.wait() {

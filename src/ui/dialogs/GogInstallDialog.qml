@@ -18,7 +18,7 @@ Dialog {
     property var platformModel
 
     property string defaultInstallDir: appSettings
-        ? (appSettings.defaultInstallLocation || (Qt.resolvedUrl("~/Games").toString()))
+        ? (appSettings.defaultInstallLocation || "~/Games")
         : "~/Games"
     property string defaultPrefixDir: appSettings
         ? (appSettings.defaultProtonPrefix || "~/Games/theophany/default")
@@ -28,6 +28,42 @@ Dialog {
     property bool isInstalling: false
     property bool loading: false
     property string installSizeStr: ""
+
+    function getDefaultSubfolder() {
+        var raw = (root.gameTitle && root.gameTitle.length > 0) ? root.gameTitle : root.slug;
+        var safe = raw.replace(/[^a-zA-Z0-9_-]/g, "");
+        return safe.length > 0 ? safe : root.slug;
+    }
+
+    function getGameSubfolder() {
+        var currentText = installPathInput.text.trim().replace(/\/+$/, "");
+        if (currentText.length > 0) {
+            var lastSlash = currentText.lastIndexOf("/");
+            if (lastSlash >= 0) {
+                var candidate = currentText.substring(lastSlash + 1).trim();
+                var cleanDefault = defaultInstallDir.replace(/\/+$/, "");
+                var defaultBaseName = cleanDefault.substring(cleanDefault.lastIndexOf("/") + 1).trim();
+                if (candidate.length > 0 && candidate.toLowerCase() !== defaultBaseName.toLowerCase()) {
+                    return candidate;
+                }
+            }
+        }
+        return getDefaultSubfolder();
+    }
+
+    function combineBaseAndSubfolder(basePath, subfolder) {
+        var cleanBase = basePath.toString().replace(/^file:\/\//, "").replace(/\/+$/, "");
+        var cleanSub = (subfolder || "").toString().trim().replace(/^\/+/, "").replace(/\/+$/, "");
+        if (!cleanSub) {
+            return cleanBase;
+        }
+        var baseLower = cleanBase.toLowerCase();
+        var subLower = cleanSub.toLowerCase();
+        if (baseLower.endsWith("/" + subLower) || baseLower === subLower) {
+            return cleanBase;
+        }
+        return cleanBase + "/" + cleanSub;
+    }
 
     modal: true
     width: 620
@@ -41,8 +77,8 @@ Dialog {
         isInstalling = false
         loading = true
         installSizeStr = ""
-        installPathInput.text = defaultInstallDir
-        var safeTitle = root.gameTitle.replace(/[^a-zA-Z0-9]/g, "")
+        var safeTitle = getDefaultSubfolder()
+        installPathInput.text = combineBaseAndSubfolder(defaultInstallDir, safeTitle)
         prefixInput.text = defaultPrefixDir.replace(/\/default$/, "/") + (safeTitle || root.slug)
         platformCombo.currentIndex = 0
         noDepsCheck.checked = false
@@ -154,7 +190,7 @@ Dialog {
     FolderDialog {
         id: installPathDialog
         title: "Select Installation Folder"
-        onAccepted: installPathInput.text = installPathDialog.selectedFolder.toString().replace("file://", "")
+        onAccepted: installPathInput.text = combineBaseAndSubfolder(installPathDialog.selectedFolder, getGameSubfolder())
     }
 
     FolderDialog {
