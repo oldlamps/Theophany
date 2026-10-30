@@ -1247,6 +1247,27 @@ impl DbManager {
         Ok(())
     }
 
+    pub fn update_working_dir(&self, rom_id: &str, working_dir: &str) -> Result<()> {
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pc_configurations WHERE rom_id = ?1)",
+            [rom_id],
+            |row| row.get(0),
+        ).unwrap_or(false);
+
+        if exists {
+            self.conn.execute(
+                "UPDATE pc_configurations SET working_dir = ?1 WHERE rom_id = ?2",
+                rusqlite::params![working_dir, rom_id],
+            )?;
+        } else {
+            self.conn.execute(
+                "INSERT INTO pc_configurations (rom_id, working_dir) VALUES (?1, ?2)",
+                rusqlite::params![rom_id, working_dir],
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn get_ai_context(&self) -> Result<crate::core::models::AiContext> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

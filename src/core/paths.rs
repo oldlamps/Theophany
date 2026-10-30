@@ -53,6 +53,19 @@ pub fn get_default_install_dir() -> PathBuf {
     path
 }
 
+pub fn expand_home(path_str: &str) -> PathBuf {
+    if let Some(stripped) = path_str.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home).join(stripped);
+        }
+    } else if path_str == "~" {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home);
+        }
+    }
+    PathBuf::from(path_str)
+}
+
 
 pub fn get_assets_dir() -> PathBuf {
     let path = get_data_dir().join("assets");

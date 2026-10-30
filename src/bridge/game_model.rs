@@ -4679,7 +4679,7 @@ impl GameListModel {
             p.parent().map(|x| x.to_path_buf())
         } else {
             working_dir
-                .map(std::path::PathBuf::from)
+                .map(|wd| crate::core::paths::expand_home(&wd))
                 .filter(|wd| wd.is_dir())
         };
 

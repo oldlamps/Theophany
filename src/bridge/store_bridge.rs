@@ -623,7 +623,7 @@ impl StoreBridge {
         std::thread::spawn(move || {
             let _ = broadcast_msg(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Initializing Legendary...".into()));
             
-            match StoreManager::install_legendary_game(app_name_clone.clone(), install_path, with_dlcs) {
+            match StoreManager::install_legendary_game(app_name_clone.clone(), install_path.clone(), with_dlcs) {
                 Ok(mut child) => {
                     use std::io::{BufReader, Read};
                     
@@ -717,6 +717,24 @@ impl StoreBridge {
                                 let rom_id = format!("legendary-{}", app_name_clone);
                                 let conn = db.get_connection();
                                 let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
+                                let _ = conn.execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id]);
+
+                                let resolved_dir = if let Ok(json_str) = crate::core::legendary::LegendaryWrapper::get_game_info(&app_name_clone) {
+                                    serde_json::from_str::<serde_json::Value>(&json_str).ok().and_then(|val| {
+                                        val.get("install")
+                                            .and_then(|i| i.get("install_path"))
+                                            .and_then(|v| v.as_str())
+                                            .filter(|s| !s.trim().is_empty())
+                                            .map(|s| s.to_string())
+                                    })
+                                } else {
+                                    None
+                                }.or_else(|| install_path.clone());
+
+                                if let Some(ref dir) = resolved_dir {
+                                    log::info!("[LegendaryBridge] Setting working_dir for {} to {}", rom_id, dir);
+                                    let _ = db.update_working_dir(&rom_id, dir);
+                                }
                             }
                             let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, true, "Installed successfully".into()));
                         },
@@ -816,7 +834,7 @@ impl StoreBridge {
         std::thread::spawn(move || {
             let _ = broadcast_msg(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Importing to Legendary...".into()));
             
-            match StoreManager::import_legendary_game(app_name_clone.clone(), import_path) {
+            match StoreManager::import_legendary_game(app_name_clone.clone(), import_path.clone()) {
                 Ok(mut child) => {
                     use std::io::{BufReader, Read};
                     
@@ -909,6 +927,10 @@ impl StoreBridge {
                                 let rom_id = format!("legendary-{}", app_name_clone);
                                 let conn = db.get_connection();
                                 let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
+                                let _ = conn.execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id]);
+
+                                log::info!("[LegendaryBridge] Setting working_dir for {} to {}", rom_id, import_path);
+                                let _ = db.update_working_dir(&rom_id, &import_path);
                             }
                             let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, true, "Imported successfully".into()));
                         },
@@ -2106,7 +2128,7 @@ impl StoreBridge {
         std::thread::spawn(move || {
             let _ = broadcast_msg(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Initializing Nile...".into()));
             
-            match StoreManager::install_nile_game(app_name_clone.clone(), install_path, with_dlcs) {
+            match StoreManager::install_nile_game(app_name_clone.clone(), install_path.clone(), with_dlcs) {
                 Ok(mut child) => {
                     use std::io::{BufReader, Read};
                     
@@ -2197,6 +2219,12 @@ impl StoreBridge {
                                 let rom_id = format!("amazon-{}", app_name_clone);
                                 let conn = db.get_connection();
                                 let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
+                                let _ = conn.execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id]);
+
+                                if let Some(ref dir) = install_path {
+                                    log::info!("[NileBridge] Setting working_dir for {} to {}", rom_id, dir);
+                                    let _ = db.update_working_dir(&rom_id, dir);
+                                }
                             }
                             let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, true, "Installed successfully".into()));
                         },
@@ -2230,7 +2258,7 @@ impl StoreBridge {
         std::thread::spawn(move || {
             let _ = broadcast_msg(StoreMsg::InstallProgress(app_name_clone.clone(), 0.0, "Importing to Nile...".into()));
             
-            match StoreManager::import_nile_game(app_name_clone.clone(), import_path) {
+            match StoreManager::import_nile_game(app_name_clone.clone(), import_path.clone()) {
                 Ok(mut child) => {
                     use std::io::{BufReader, Read};
                     
@@ -2295,6 +2323,7 @@ impl StoreBridge {
                                 let rom_id = format!("amazon-{}", app_name_clone);
                                 let conn = db.get_connection();
                                 let _ = conn.execute("UPDATE metadata SET is_installed = 1 WHERE rom_id = ?1", [&rom_id]);
+                                let _ = conn.execute("UPDATE roms SET is_installed = 1 WHERE id = ?1", [&rom_id]);
 
                                 // Explicitly inherit PC settings from platform defaults
                                 if let Ok(mut stmt) = conn.prepare("SELECT pc_config_json FROM platforms WHERE id = 'amazon'") {
@@ -2305,7 +2334,7 @@ impl StoreBridge {
                                                 umu_proton_version: defaults.get("umu_proton_version").and_then(|v| v.as_str()).map(|s| s.to_string()),
                                                 umu_store: defaults.get("umu_store").and_then(|v| v.as_str()).map(|s| s.to_string()).or(Some("none".to_string())),
                                                 wine_prefix: defaults.get("wine_prefix").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                                                working_dir: None,
+                                                working_dir: Some(import_path.clone()),
                                                 umu_id: defaults.get("umu_id").and_then(|v| v.as_str()).map(|s| s.to_string()).or(Some("".to_string())),
                                                 env_vars: None,
                                                 extra_args: defaults.get("extra_args").and_then(|v| v.as_str()).map(|s| s.to_string()),
@@ -2330,6 +2359,8 @@ impl StoreBridge {
                                         }
                                     }
                                 }
+                                log::info!("[NileBridge] Setting working_dir for {} to {}", rom_id, import_path);
+                                let _ = db.update_working_dir(&rom_id, &import_path);
                             }
                             let _ = broadcast_msg(StoreMsg::InstallFinished(app_name_clone, true, "Imported successfully".into()));
                         },
