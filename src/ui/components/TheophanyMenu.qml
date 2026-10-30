@@ -56,10 +56,7 @@ T.Menu {
             verticalOffset: 6
         }
     }
-    property bool wasFlipped: false
-    property real lastFlippedY: 0
-
-    onAboutToShow: {
+    function ensureFlipped() {
         // Force layout to ensure height is valid
         if (contentItem) contentItem.forceLayout()
         
@@ -72,43 +69,29 @@ T.Menu {
         
         // Ensure we have a parent to map coordinates
         if (parent) {
-            // Restore y if previously flipped so subsequent opens start with accurate un-flipped coordinates
-            if (wasFlipped) {
-                y = y - lastFlippedY
-                wasFlipped = false
-                lastFlippedY = 0
-            }
-
-            // Map current local 'y' to global coordinates
-            var globalPos = parent.mapToItem(null, x, y)
-            var globalY = globalPos.y
+            // Compute the parent's actual position in the window, completely independent of menu y
+            var parentGlobal = parent.mapToItem(null, 0, 0)
+            var parentY = parentGlobal.y
+            var parentH = (parent.height > 0 && parent.height < winHeight * 0.6) ? parent.height : 0
             
-            // Check for overflow in global space
-            if (globalY + h > winHeight) {
-                // Determine new global Y (flipped upwards)
-                var newGlobalY = globalY
-                
-                // If we flip up (bottom at cursor), new top is cursor - height
-                // But 'y' is the top-left of the menu. 
-                // The cursor position is roughly 'globalY' (since popup opens at mouse/top-left).
-                
-                // If we assume the menu opened AT the cursor (at globalY),
-                // then we want the BOTTOM of the menu to be at globalY.
-                // So newGlobalTop = globalY - h
-                
-                if (globalY - h > 0) {
-                     newGlobalY = globalY - h
-                } else {
-                     // Clamp to bottom
-                     newGlobalY = winHeight - h - 10
+            // Check if opening below the item exceeds the window bottom
+            if (parentY + parentH + h > winHeight) {
+                // Not enough room below: flip upwards above parent (or clamp to stay on screen)
+                var targetGlobalY = parentY - h
+                if (targetGlobalY < 10) {
+                    targetGlobalY = Math.max(10, winHeight - h - 10)
                 }
-                
-                // Map back to local space to set 'y'
-                var localPos = parent.mapFromItem(null, globalPos.x, newGlobalY)
-                lastFlippedY = localPos.y - y
-                wasFlipped = true
+                var localPos = parent.mapFromItem(null, 0, targetGlobalY)
                 y = localPos.y
+            } else {
+                // Plenty of room below: reset y if previously shifted negative
+                if (y < 0) {
+                    y = 0
+                }
             }
         }
     }
+
+    onAboutToShow: ensureFlipped()
+    onOpened: ensureFlipped()
 }

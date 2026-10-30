@@ -2417,7 +2417,11 @@ ApplicationWindow {
                                         }
                                         window.loadGameDetails(index)
                                     }
-                                    onDoubleClicked: window.launchGame(gameId)
+                                    onDoubleClicked: (mouse) => {
+                                        if (mouse.button === Qt.LeftButton) {
+                                            window.launchGame(gameId)
+                                        }
+                                    }
                                     
                                         TheophanyMenu {
                                             id: gridContextMenu
