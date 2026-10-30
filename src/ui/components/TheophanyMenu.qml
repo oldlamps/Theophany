@@ -56,6 +56,9 @@ T.Menu {
             verticalOffset: 6
         }
     }
+    property bool wasFlipped: false
+    property real lastFlippedY: 0
+
     onAboutToShow: {
         // Force layout to ensure height is valid
         if (contentItem) contentItem.forceLayout()
@@ -69,6 +72,13 @@ T.Menu {
         
         // Ensure we have a parent to map coordinates
         if (parent) {
+            // Restore y if previously flipped so subsequent opens start with accurate un-flipped coordinates
+            if (wasFlipped) {
+                y = y - lastFlippedY
+                wasFlipped = false
+                lastFlippedY = 0
+            }
+
             // Map current local 'y' to global coordinates
             var globalPos = parent.mapToItem(null, x, y)
             var globalY = globalPos.y
@@ -95,6 +105,8 @@ T.Menu {
                 
                 // Map back to local space to set 'y'
                 var localPos = parent.mapFromItem(null, globalPos.x, newGlobalY)
+                lastFlippedY = localPos.y - y
+                wasFlipped = true
                 y = localPos.y
             }
         }

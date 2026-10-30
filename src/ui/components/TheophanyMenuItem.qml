@@ -13,9 +13,11 @@ T.MenuItem {
     implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
                              implicitContentHeight + topPadding + bottomPadding)
 
+    visible: control.subMenu && control.subMenu.menuVisible !== undefined ? control.subMenu.menuVisible : true
+
     // Properly handle visibility by collapsing height
     height: visible ? implicitHeight : 0
-    enabled: visible
+    enabled: visible && (control.subMenu ? control.subMenu.enabled : true)
 
     padding: 10
     spacing: 12

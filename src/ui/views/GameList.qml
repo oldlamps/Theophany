@@ -775,24 +775,32 @@ FocusScope {
                                     }
                                 }
                             }
-                            TheophanyMenuItem {
-                                text: "Create Application Shortcut"
-                                iconSource: "📌"
-                                visible: rootRoot.selectedIndices.length === 1
-                                onTriggered: {
-                                    var res = gameModel.createApplicationShortcut(gameId)
-                                    shortcutStatusDialog.text = res
-                                    shortcutStatusDialog.open()
+                            TheophanyMenu {
+                                id: shortcutsMenuList
+                                title: "Create Shortcut"
+                                property string iconSource: "📌"
+                                property bool menuVisible: rootRoot.selectedIndices.length === 1
+                                enabled: rootRoot.selectedIndices.length === 1
+
+                                TheophanyMenuItem {
+                                    text: "Application Shortcut"
+                                    iconSource: "📌"
+                                    onTriggered: {
+                                        contextMenu.close()
+                                        var res = gameModel.createApplicationShortcut(gameId)
+                                        shortcutStatusDialog.text = res
+                                        shortcutStatusDialog.open()
+                                    }
                                 }
-                            }
-                            TheophanyMenuItem {
-                                text: "Create Desktop Shortcut"
-                                iconSource: "🖥️"
-                                visible: rootRoot.selectedIndices.length === 1
-                                onTriggered: {
-                                    var res = gameModel.createDesktopShortcut(gameId)
-                                    shortcutStatusDialog.text = res
-                                    shortcutStatusDialog.open()
+                                TheophanyMenuItem {
+                                    text: "Desktop Shortcut"
+                                    iconSource: "🖥️"
+                                    onTriggered: {
+                                        contextMenu.close()
+                                        var res = gameModel.createDesktopShortcut(gameId)
+                                        shortcutStatusDialog.text = res
+                                        shortcutStatusDialog.open()
+                                    }
                                 }
                             }
                             TheophanyMenuItem {

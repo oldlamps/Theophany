@@ -2611,24 +2611,32 @@ ApplicationWindow {
                                                 }
                                             }
                                         }
-                                        TheophanyMenuItem {
-                                            text: "Create Application Shortcut"
-                                            iconSource: "📌"
-                                            visible: rootViewStack.sharedSelectedIndices.length === 1
-                                            onTriggered: {
-                                                var res = gameModel.createApplicationShortcut(gameId)
-                                                shortcutStatusDialog.text = res
-                                                shortcutStatusDialog.open()
+                                        TheophanyMenu {
+                                            id: shortcutsMenuGrid
+                                            title: "Create Shortcut"
+                                            property string iconSource: "📌"
+                                            property bool menuVisible: rootViewStack.sharedSelectedIndices.length === 1
+                                            enabled: rootViewStack.sharedSelectedIndices.length === 1
+
+                                            TheophanyMenuItem {
+                                                text: "Application Shortcut"
+                                                iconSource: "📌"
+                                                onTriggered: {
+                                                    gridContextMenu.close()
+                                                    var res = gameModel.createApplicationShortcut(gameId)
+                                                    shortcutStatusDialog.text = res
+                                                    shortcutStatusDialog.open()
+                                                }
                                             }
-                                        }
-                                        TheophanyMenuItem {
-                                            text: "Create Desktop Shortcut"
-                                            iconSource: "🖥️"
-                                            visible: rootViewStack.sharedSelectedIndices.length === 1
-                                            onTriggered: {
-                                                var res = gameModel.createDesktopShortcut(gameId)
-                                                shortcutStatusDialog.text = res
-                                                shortcutStatusDialog.open()
+                                            TheophanyMenuItem {
+                                                text: "Desktop Shortcut"
+                                                iconSource: "🖥️"
+                                                onTriggered: {
+                                                    gridContextMenu.close()
+                                                    var res = gameModel.createDesktopShortcut(gameId)
+                                                    shortcutStatusDialog.text = res
+                                                    shortcutStatusDialog.open()
+                                                }
                                             }
                                         }
                                         TheophanyMenuItem {
