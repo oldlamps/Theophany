@@ -19,6 +19,7 @@ Dialog {
     property string systemName: ""
     property string emulatorName: ""
     property int selectedCount: 0
+    property int duplicateCount: 0
     property bool autoScrape: false
 
     property var allGenres: []
@@ -46,10 +47,13 @@ Dialog {
 
     function updateSelectedCount() {
         var count = 0
+        var dupes = 0
         for (var i = 0; i < romListModel.count; i++) {
             if (romListModel.get(i).selected) count++
+            if (romListModel.get(i).already_exists) dupes++
         }
         selectedCount = count
+        duplicateCount = dupes
     }
 
     ListModel {
@@ -60,7 +64,7 @@ Dialog {
         romListModel.clear()
         for (var i = 0; i < romArray.length; i++) {
             var item = romArray[i]
-            item.selected = true
+            item.selected = !item.already_exists
             romListModel.append(item)
         }
         updateSelectedCount()
@@ -90,13 +94,30 @@ Dialog {
                     font.bold: true
                 }
                 Text {
-                    text: "Found " + romListModel.count + " files. " + selectedCount + " selected for import."
+                    text: {
+                        var txt = "Found " + romListModel.count + " files. " + selectedCount + " selected for import."
+                        if (duplicateCount > 0) {
+                            txt += " (" + duplicateCount + " already in library, unchecked)"
+                        }
+                        return txt
+                    }
                     color: Theme.secondaryText
                     font.pixelSize: 14
                 }
             }
 
             Item { Layout.fillWidth: true }
+
+            TheophanyButton {
+                text: "Select New Only"
+                visible: duplicateCount > 0
+                onClicked: {
+                    for (var i = 0; i < romListModel.count; i++) {
+                        romListModel.setProperty(i, "selected", !romListModel.get(i).already_exists)
+                    }
+                    updateSelectedCount()
+                }
+            }
 
             TheophanyButton {
                 text: "Deselect All"
@@ -127,7 +148,7 @@ Dialog {
             Flickable {
                 id: horizontalFlick
                 anchors.fill: parent
-                contentWidth: 1830
+                contentWidth: 1920
                 contentHeight: parent.height
                 clip: true
                 
@@ -155,6 +176,7 @@ Dialog {
                             spacing: 10
 
                             Item { width: 30 } // Checkbox
+                            Text { text: "Status"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 80 }
                             Text { text: "Title"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 250; Layout.fillWidth: true }
                             Text { text: "Filename"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 250 }
                             Text { text: "Region"; color: Theme.secondaryText; font.bold: true; Layout.preferredWidth: 100 }
@@ -215,6 +237,26 @@ Dialog {
                                             visible: itemSelectCheck.checked
                                             font.bold: true
                                             font.pixelSize: 14
+                                        }
+                                    }
+                                }
+                                
+                                Item {
+                                    Layout.preferredWidth: 80
+                                    Layout.preferredHeight: 22
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        width: 74
+                                        height: 20
+                                        radius: 4
+                                        color: model.already_exists ? Qt.rgba(0.9, 0.6, 0.1, 0.15) : Qt.rgba(0.2, 0.8, 0.2, 0.15)
+                                        border.color: model.already_exists ? Qt.rgba(0.9, 0.6, 0.1, 0.5) : Qt.rgba(0.2, 0.8, 0.2, 0.4)
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: model.already_exists ? "In Library" : "New"
+                                            color: model.already_exists ? "#E5A93C" : "#4CAF50"
+                                            font.pixelSize: 10
+                                            font.bold: true
                                         }
                                     }
                                 }

@@ -547,6 +547,19 @@ impl DbManager {
         Ok(paths)
     }
 
+    pub fn get_rom_path_to_id_by_platform(&self, platform_id: &str) -> Result<std::collections::HashMap<String, String>> {
+        let mut stmt = self.conn.prepare("SELECT path, id FROM roms WHERE platform_id = ?1")?;
+        let rows = stmt.query_map(params![platform_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut map = std::collections::HashMap::new();
+        for row in rows {
+            let (path, id) = row?;
+            map.insert(path, id);
+        }
+        Ok(map)
+    }
+
     pub fn get_rom_ids_by_platform(&self, platform_id: &str) -> Result<std::collections::HashSet<String>> {
         let mut stmt = self.conn.prepare("SELECT id FROM roms WHERE platform_id = ?1")?;
         let rows = stmt.query_map(params![platform_id], |row| row.get::<_, String>(0))?;

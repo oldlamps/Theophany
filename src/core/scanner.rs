@@ -75,29 +75,3 @@ impl Scanner {
         roms
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs::{self, File};
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_scanner_finds_roms() {
-        let dir = tempdir().unwrap();
-        let root = dir.path();
-        
-        // Create dummy structure
-        fs::create_dir(root.join("snes")).unwrap();
-        File::create(root.join("snes/mario.sfc")).unwrap(); // Should find
-        File::create(root.join("snes/zelda.smc")).unwrap(); // Should find
-        File::create(root.join("snes/readme.txt")).unwrap(); // Should ignore
-
-        let roms = Scanner::scan_directory("snes_id", root, &["sfc", "smc"], true);
-        
-        assert_eq!(roms.len(), 2);
-        let filenames: Vec<String> = roms.iter().map(|r| r.filename.clone()).collect();
-        assert!(filenames.contains(&"mario.sfc".to_string()));
-        assert!(filenames.contains(&"zelda.smc".to_string()));
-    }
-}

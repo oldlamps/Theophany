@@ -3642,7 +3642,8 @@ ApplicationWindow {
                     }
                 } else {
                     // New Flow: Preview first
-                    var json = gameModel.previewSystemImport(name, ext, path, emuId, pType)
+                    var targetIdOrName = (existingId !== "") ? existingId : name
+                    var json = gameModel.previewSystemImport(targetIdOrName, ext, path, emuId, pType, false)
                     var roms = JSON.parse(json)
                     
                     romPreviewDialog.systemName = name
@@ -3781,7 +3782,8 @@ ApplicationWindow {
         }
 
         // Use existing preview logic
-        var previewJson = gameModel.previewSystemImport(name, exts, path, emuId, pType, !!recursive)
+        var targetIdOrName = (pid && pid !== "") ? pid : name
+        var previewJson = gameModel.previewSystemImport(targetIdOrName, exts, path, emuId, pType, !!recursive)
         var roms = JSON.parse(previewJson)
         
         romPreviewDialog.systemName = name

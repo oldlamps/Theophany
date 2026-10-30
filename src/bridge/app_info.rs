@@ -114,7 +114,7 @@ impl AppInfo {
         std::thread::spawn(move || {
             let tools_dir = crate::core::paths::get_tools_dir();
             let dest_path = tools_dir.join("legendary");
-            let url = "https://github.com/oldlamps/legendary/releases/latest/download/legendary";
+            let url = "https://github.com/legendary-gl/legendary/releases/latest/download/legendary_linux_x64";
 
             log::debug!("[AppInfo] Downloading Legendary from: {}", url);
             

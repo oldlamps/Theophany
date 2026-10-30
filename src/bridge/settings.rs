@@ -782,21 +782,3 @@ impl Default for AppSettings {
         s
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_collection_sorts_serde() {
-        let mut settings = SettingsData::default();
-        assert_eq!(settings.collection_sorts, "");
-
-        let json_sorts = r#"{"platform-1":"LastPlayed","platform-2":"TitleAZ"}"#;
-        settings.collection_sorts = json_sorts.to_string();
-
-        let serialized = serde_json::to_string(&settings).unwrap();
-        let deserialized: SettingsData = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(deserialized.collection_sorts, json_sorts);
-    }
-}

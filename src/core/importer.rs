@@ -31,6 +31,7 @@ impl BulkImporter {
         let mut success_count = 0;
 
         let existing_ids = db.get_rom_ids_by_platform(platform_id).unwrap_or_default();
+        let mut existing_paths_map = db.get_rom_path_to_id_by_platform(platform_id).unwrap_or_default();
 
         let mut asset_tasks = Vec::new();
         // forced_symlink_ids logic was removed
@@ -43,8 +44,20 @@ impl BulkImporter {
             let mut final_rom = rom.clone();
             final_rom.platform_id = platform_id.to_string();
 
-            if existing_ids.contains(&rom.id) {
-                log::info!("[BulkImporter] ROM already exists, updating metadata: {}", rom.id);
+            let clean_rom_path = rom.path.strip_prefix("file://").unwrap_or(&rom.path).trim_end_matches('/');
+            let existing_id = if existing_ids.contains(&rom.id) {
+                Some(rom.id.clone())
+            } else if let Some(id) = existing_paths_map.get(&rom.path) {
+                Some(id.clone())
+            } else if let Some(id) = existing_paths_map.get(clean_rom_path) {
+                Some(id.clone())
+            } else {
+                None
+            };
+
+            if let Some(matched_id) = existing_id {
+                log::info!("[BulkImporter] ROM already exists, updating metadata: {} (path: {})", matched_id, rom.path);
+                final_rom.id = matched_id;
                 // Even if exists, we update metadata from the scan to catch enrichment (e.g. descriptions, developer)
                 let mut meta = db.get_metadata(&final_rom.id).ok().flatten().unwrap_or_default();
                 let existing_is_installed = meta.is_installed;
@@ -93,6 +106,8 @@ impl BulkImporter {
                     log::error!("[BulkImporter] Failed to insert ROM {}: {}", final_rom.id, e);
                     continue;
                 }
+                existing_paths_map.insert(rom.path.clone(), final_rom.id.clone());
+                existing_paths_map.insert(clean_rom_path.to_string(), final_rom.id.clone());
 
                 // 1. Metadata
                 let mut meta = GameMetadata::default();

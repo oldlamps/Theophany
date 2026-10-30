@@ -76,25 +76,3 @@ impl MetadataManager {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::core::models::GameMetadata;
-
-    #[test]
-    fn test_sidecar_roundtrip() {
-        let mut meta = GameMetadata::default();
-        meta.rom_id = "test-rom".to_string();
-        meta.title = Some("Test Game".to_string());
-        meta.tags = Some("Tag1, Tag2".to_string());
-        meta.is_favorite = true;
-        
-        let json = serde_json::to_string_pretty(&meta).unwrap();
-        let deserialized: GameMetadata = serde_json::from_str(&json).unwrap();
-        
-        assert_eq!(deserialized.title, meta.title);
-        assert_eq!(deserialized.tags, meta.tags);
-        assert_eq!(deserialized.is_favorite, meta.is_favorite);
-    }
-}

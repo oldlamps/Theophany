@@ -1383,7 +1383,6 @@ impl GameListModel {
     #[allow(non_snake_case)]
     fn previewSystemImport(&mut self, name: String, extensions: String, rom_path: String, emulator_id: String, _platform_type: String, recursive: bool) -> String {
 
-        
         let clean_path = if rom_path.starts_with("file://") {
             rom_path.replace("file://", "")
         } else {
@@ -1396,6 +1395,33 @@ impl GameListModel {
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .collect();
+
+        // Check for existing platform to match existing ROMs
+        let db_path = self.db_path.borrow().clone();
+        let mut existing_paths = std::collections::HashSet::new();
+        let mut resolved_system_name = name.clone();
+
+        if !db_path.is_empty() {
+            if let Ok(db) = DbManager::open(&db_path) {
+                let matched_platform = db.get_platform(&name).ok().flatten()
+                    .or_else(|| {
+                        db.get_platforms().ok().and_then(|platforms| {
+                            platforms.into_iter().find(|p| p.name.trim().eq_ignore_ascii_case(name.trim()) || p.slug.trim().eq_ignore_ascii_case(name.trim()))
+                        })
+                    });
+
+                if let Some(p) = matched_platform {
+                    resolved_system_name = p.name.clone();
+                    if let Ok(paths) = db.get_rom_paths_by_platform(&p.id) {
+                        for path in paths {
+                            let clean = path.strip_prefix("file://").unwrap_or(&path).trim_end_matches('/').to_string();
+                            existing_paths.insert(clean);
+                            existing_paths.insert(path);
+                        }
+                    }
+                }
+            }
+        }
 
         // If it's a file, we "scan" just that file. If it's a directory, we scan recursively.
         let roms_found = if scan_path.is_file() || scan_path.is_symlink() {
@@ -1428,6 +1454,8 @@ impl GameListModel {
         let mut results = Vec::new();
         for rom in roms_found {
             let metadata = crate::core::parser::FileNameParser::parse(&rom.filename, &rom.id);
+            let clean_rom_path = rom.path.strip_prefix("file://").unwrap_or(&rom.path).trim_end_matches('/');
+            let already_exists = existing_paths.contains(&rom.path) || existing_paths.contains(clean_rom_path);
             
             let mut map = serde_json::Map::new();
             map.insert("id".to_string(), serde_json::json!(rom.id));
@@ -1435,8 +1463,9 @@ impl GameListModel {
             map.insert("filename".to_string(), serde_json::json!(rom.filename));
             map.insert("title".to_string(), serde_json::json!(metadata.title.unwrap_or_default()));
             map.insert("region".to_string(), serde_json::json!(metadata.region.unwrap_or_default()));
-            map.insert("system".to_string(), serde_json::json!(name));
+            map.insert("system".to_string(), serde_json::json!(resolved_system_name));
             map.insert("emulator".to_string(), serde_json::json!(emulator_id)); 
+            map.insert("already_exists".to_string(), serde_json::json!(already_exists));
             
             // New fields for preview
             map.insert("genre".to_string(), serde_json::json!(metadata.genre.unwrap_or_default()));
@@ -1642,11 +1671,18 @@ impl GameListModel {
                     .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok());
 
                 let mut imported_ids = Vec::new();
+                let mut existing_path_to_id = db.get_rom_path_to_id_by_platform(&final_platform_id).unwrap_or_default();
 
                 // 2. Import ROMs
                 for (i, rom_val) in selected_roms.iter().enumerate() {
-                    let path = rom_val.get("path").and_then(|v| v.as_str()).unwrap_or_default();
+                    let raw_path = rom_val.get("path").and_then(|v| v.as_str()).unwrap_or_default();
                     let filename = rom_val.get("filename").and_then(|v| v.as_str()).unwrap_or_default();
+                    let path = if raw_path.starts_with("file://") {
+                        raw_path.replace("file://", "")
+                    } else {
+                        raw_path.to_string()
+                    };
+                    let clean_path = path.trim_end_matches('/').to_string();
 
                     let r_title = rom_val.get("title").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
                     let r_region = rom_val.get("region").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
@@ -1658,148 +1694,173 @@ impl GameListModel {
                     let r_year = rom_val.get("year").and_then(|v| v.as_str()).map(|s| s.to_string());
                     let r_rating = rom_val.get("rating").and_then(|v| v.as_str()).and_then(|s| s.parse::<f32>().ok()).filter(|&r| r > 0.0);
                     let r_playtime = rom_val.get("total_play_time").and_then(|v| v.as_i64());
-                    
-                    let mut rom = Rom {
-                        id: Uuid::new_v4().to_string(),
-                        platform_id: final_platform_id.clone(),
-                        path: path.to_string(),
-                        filename: filename.to_string(),
-                        file_size: rom_val.get("file_size").and_then(|v| v.as_i64()).unwrap_or(0),
-                        hash_sha1: None,
-                        title: r_title,
-                        region: r_region,
-                        platform_name: None,
-                        platform_type: None,
-                        boxart_path: None,
-                        date_added: None,
-                        play_count: None,
-                        total_play_time: r_playtime,
-                        last_played: None,
-                        platform_icon: None,
-                        is_favorite: None,
-                        genre: r_genre,
-                        developer: r_dev,
-                        publisher: r_pub,
-                        rating: r_rating,
-                        tags: r_tags,
-                        release_date: r_year,
-                        icon_path: None,
-                        background_path: None,
-                        description: None,
-                        is_installed: Some(true),
-                        cloud_saves_supported: None,
-                        resources: None, // Will be filled from JSON if present
-                    };
-
-                    // Extract resources from JSON if present
-                    if let Some(res_val) = rom_val.get("resources").and_then(|v| v.as_array()) {
-                        let mut resources = Vec::new();
-                        for rv in res_val {
-                            if let Ok(res) = serde_json::from_value::<crate::core::models::GameResource>(rv.clone()) {
-                                resources.push(res);
-                            }
-                        }
-                        if !resources.is_empty() {
-                            rom.resources = Some(resources);
-                        }
-                    }
-
-                    if platform_folder == "windows" || platform_folder == "PC (Windows)" {
-                        rom.icon_path = Some("assets/systems/windows.png".to_string());
-                    }
 
                     // Send Progress BEFORE processing to show current file
                     let _ = tx.send(AsyncResponse::ImportProgress((i as f32) / (total as f32), filename.to_string()));
 
-                    if let Err(e) = db.insert_rom(&rom) {
-                        log::error!("Failed to insert rom: {}", e);
-                        continue;
-                    }
+                    let existing_id_opt = existing_path_to_id.get(&path)
+                        .or_else(|| existing_path_to_id.get(raw_path))
+                        .or_else(|| existing_path_to_id.get(&clean_path))
+                        .cloned();
+
+                    let is_duplicate = existing_id_opt.is_some();
+                    let rom_id = if let Some(existing_id) = existing_id_opt {
+                        log::info!("[Import] ROM already exists in collection '{}' at '{}' (ID: {}). Reusing existing entry to avoid duplicate.", final_platform_id, path, existing_id);
+                        existing_id
+                    } else {
+                        let new_id = Uuid::new_v4().to_string();
+                        let mut rom = Rom {
+                            id: new_id.clone(),
+                            platform_id: final_platform_id.clone(),
+                            path: path.clone(),
+                            filename: filename.to_string(),
+                            file_size: rom_val.get("file_size").and_then(|v| v.as_i64()).unwrap_or(0),
+                            hash_sha1: None,
+                            title: r_title.clone(),
+                            region: r_region.clone(),
+                            platform_name: None,
+                            platform_type: None,
+                            boxart_path: None,
+                            date_added: None,
+                            play_count: None,
+                            total_play_time: r_playtime,
+                            last_played: None,
+                            platform_icon: None,
+                            is_favorite: None,
+                            genre: r_genre.clone(),
+                            developer: r_dev.clone(),
+                            publisher: r_pub.clone(),
+                            rating: r_rating,
+                            tags: r_tags.clone(),
+                            release_date: r_year.clone(),
+                            icon_path: None,
+                            background_path: None,
+                            description: None,
+                            is_installed: Some(true),
+                            cloud_saves_supported: None,
+                            resources: None, // Will be filled from JSON if present
+                        };
+
+                        // Extract resources from JSON if present
+                        if let Some(res_val) = rom_val.get("resources").and_then(|v| v.as_array()) {
+                            let mut resources = Vec::new();
+                            for rv in res_val {
+                                if let Ok(res) = serde_json::from_value::<crate::core::models::GameResource>(rv.clone()) {
+                                    resources.push(res);
+                                }
+                            }
+                            if !resources.is_empty() {
+                                rom.resources = Some(resources);
+                            }
+                        }
+
+                        if platform_folder == "windows" || platform_folder == "PC (Windows)" {
+                            rom.icon_path = Some("assets/systems/windows.png".to_string());
+                        }
+
+                        if let Err(e) = db.insert_rom(&rom) {
+                            log::error!("Failed to insert rom: {}", e);
+                            continue;
+                        }
+
+                        existing_path_to_id.insert(path.clone(), new_id.clone());
+                        existing_path_to_id.insert(clean_path.clone(), new_id.clone());
+                        new_id
+                    };
 
                     // Insert resources if any
-                    if let Some(resources) = &rom.resources {
-                        for res in resources {
-                            if let Err(e) = db.insert_resource(res) {
-                                log::error!("Failed to insert resource: {}", e);
+                    if let Some(res_val) = rom_val.get("resources").and_then(|v| v.as_array()) {
+                        for rv in res_val {
+                            if let Ok(mut res) = serde_json::from_value::<crate::core::models::GameResource>(rv.clone()) {
+                                res.rom_id = rom_id.clone();
+                                if let Err(e) = db.insert_resource(&res) {
+                                    log::error!("Failed to insert resource: {}", e);
+                                }
                             }
                         }
                     }
 
-                    imported_ids.push(rom.id.clone());
+                    imported_ids.push(rom_id.clone());
 
                     // PC Config Inheritance
-                    // If the platform has default PC settings, copy them to this game's individual config
+                    // If the platform has default PC settings, copy them to this game's individual config if it doesn't have one
                     if let Some(defaults) = &default_pc_settings {
-                         let new_config = crate::core::models::PcConfig {
-                            rom_id: rom.id.clone(),
-                            umu_proton_version: defaults.get("umu_proton_version").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            umu_store: defaults.get("umu_store").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            wine_prefix: defaults.get("wine_prefix").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            // working_dir is usually specific to the game, so we don't copy a default
-                            working_dir: None, 
-                            umu_id: defaults.get("umu_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            env_vars: None, // Env vars are usually specific or complex, ignoring for now unless requested
-                            extra_args: defaults.get("extra_args").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            proton_verb: defaults.get("proton_verb").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            disable_fixes: defaults.get("disable_fixes").and_then(|v| v.as_bool()),
-                            no_runtime: defaults.get("no_runtime").and_then(|v| v.as_bool()),
-                            log_level: defaults.get("log_level").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            wrapper: defaults.get("wrapper").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            use_gamescope: defaults.get("use_gamescope").and_then(|v| v.as_bool()),
-                            gamescope_args: defaults.get("gamescope_args").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            gs_state: defaults.get("gs_state").cloned(),
-                            use_mangohud: defaults.get("use_mangohud").and_then(|v| v.as_bool()),
-                             pre_launch_script: None,
-                             post_launch_script: None,
-                             cloud_saves_enabled: None,
-                             cloud_save_path: None,
-                             cloud_save_auto_sync: None,
-                             steam_compat_mode: Some(true),
-                             enable_wayland: defaults.get("enable_wayland").and_then(|v| v.as_bool()),
-                         };
-                        
-                        if let Err(e) = db.insert_pc_config(&new_config) {
-                            log::error!("Failed to insert inherited PC config: {}", e);
-                        } else {
-                            log::info!("Inherited default PC settings for {}", rom.id);
+                        if !is_duplicate || db.get_pc_config(&rom_id).ok().flatten().is_none() {
+                            let new_config = crate::core::models::PcConfig {
+                                rom_id: rom_id.clone(),
+                                umu_proton_version: defaults.get("umu_proton_version").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                umu_store: defaults.get("umu_store").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                wine_prefix: defaults.get("wine_prefix").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                // working_dir is usually specific to the game, so we don't copy a default
+                                working_dir: None, 
+                                umu_id: defaults.get("umu_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                env_vars: None, // Env vars are usually specific or complex, ignoring for now unless requested
+                                extra_args: defaults.get("extra_args").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                proton_verb: defaults.get("proton_verb").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                disable_fixes: defaults.get("disable_fixes").and_then(|v| v.as_bool()),
+                                no_runtime: defaults.get("no_runtime").and_then(|v| v.as_bool()),
+                                log_level: defaults.get("log_level").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                wrapper: defaults.get("wrapper").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                use_gamescope: defaults.get("use_gamescope").and_then(|v| v.as_bool()),
+                                gamescope_args: defaults.get("gamescope_args").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                gs_state: defaults.get("gs_state").cloned(),
+                                use_mangohud: defaults.get("use_mangohud").and_then(|v| v.as_bool()),
+                                pre_launch_script: None,
+                                post_launch_script: None,
+                                cloud_saves_enabled: None,
+                                cloud_save_path: None,
+                                cloud_save_auto_sync: None,
+                                steam_compat_mode: Some(true),
+                                enable_wayland: defaults.get("enable_wayland").and_then(|v| v.as_bool()),
+                            };
+                            
+                            if let Err(e) = db.insert_pc_config(&new_config) {
+                                log::error!("Failed to insert inherited PC config: {}", e);
+                            } else {
+                                log::info!("Inherited default PC settings for {}", rom_id);
+                            }
                         }
                     }
                     // End: PC Config Inheritance
 
                     // Metadata
-                    let mut metadata = crate::core::parser::FileNameParser::parse(filename, &rom.id);
+                    let mut metadata = db.get_metadata(&rom_id).ok().flatten()
+                        .unwrap_or_else(|| crate::core::parser::FileNameParser::parse(filename, &rom_id));
+                    metadata.rom_id = rom_id.clone();
                     
                     let rom_stem = Path::new(filename).file_stem().and_then(|s| s.to_str()).unwrap_or(filename);
 
-                    // Sidecar Recovery
-                    if let Some(sidecar) = MetadataManager::load_sidecar(&platform_folder, rom_stem) {
-                        metadata = sidecar;
-                        metadata.rom_id = rom.id.clone();
+                    // Sidecar Recovery for new ROMs
+                    if !is_duplicate {
+                        if let Some(sidecar) = MetadataManager::load_sidecar(&platform_folder, rom_stem) {
+                            metadata = sidecar;
+                            metadata.rom_id = rom_id.clone();
+                        }
                     }
 
                     // Override with user-edited values if present in JSON (Import Dialog edits)
-                    if let Some(t) = rom_val.get("title").and_then(|v| v.as_str()) {
+                    if let Some(t) = rom_val.get("title").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                         metadata.title = Some(t.to_string());
                     }
-                    if let Some(r) = rom_val.get("region").and_then(|v| v.as_str()) {
+                    if let Some(r) = rom_val.get("region").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                         metadata.region = Some(r.to_string());
                     }
                     // Extract new fields
-                    if let Some(v) = rom_val.get("genre").and_then(|v| v.as_str()) {
+                    if let Some(v) = rom_val.get("genre").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                         metadata.genre = Some(v.to_string());
                     }
-                    if let Some(v) = rom_val.get("developer").and_then(|v| v.as_str()) {
+                    if let Some(v) = rom_val.get("developer").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                         metadata.developer = Some(v.to_string());
                     }
-                    if let Some(v) = rom_val.get("publisher").and_then(|v| v.as_str()) {
+                    if let Some(v) = rom_val.get("publisher").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                         metadata.publisher = Some(v.to_string());
                     }
-                    if let Some(v) = rom_val.get("tags").and_then(|v| v.as_str()) {
+                    if let Some(v) = rom_val.get("tags").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                         metadata.tags = Some(v.to_string());
                     }
                     if let Some(v) = rom_val.get("year").and_then(|v| v.as_str()) {
                         if v == "0" || v.is_empty() {
-                            metadata.release_date = None;
+                            // keep existing if any
                         } else if let Ok(y) = v.parse::<i64>() {
                             metadata.release_date = Some(y.to_string());
                         } else {
@@ -1808,44 +1869,44 @@ impl GameListModel {
                     }
                     if let Some(v) = rom_val.get("rating").and_then(|v| v.as_str()) {
                         if let Ok(r) = v.parse::<f32>() {
-                            metadata.rating = Some(r);
+                            if r > 0.0 {
+                                metadata.rating = Some(r);
+                            }
                         }
                     }
 
                     let _ = db.insert_metadata(&metadata);
                     let _ = MetadataManager::save_sidecar(&platform_folder, rom_stem, &metadata);
 
-                    // Assets
-                    // Note: discover_assets_internal is a &self method, so we can't call it easily here in static context
-                    // We'll duplicate the logic for now or move it to a helper.
-                    // Actually, let's just use the logic from discover_assets_internal directly.
-                    let data_dir = crate::core::paths::get_data_dir();
-                    let rom_stem = Path::new(filename).file_stem().and_then(|s| s.to_str()).unwrap_or(filename);
-                    let sanitized_folder = platform_folder.replace("/", "-").replace("\\", "-");
-                    let assets_base_dir = data_dir.join("Images").join(sanitized_folder).join(rom_stem);
+                    // Assets (discover only for new ROMs)
+                    if !is_duplicate {
+                        let data_dir = crate::core::paths::get_data_dir();
+                        let sanitized_folder = platform_folder.replace("/", "-").replace("\\", "-");
+                        let assets_base_dir = data_dir.join("Images").join(sanitized_folder).join(rom_stem);
 
-                    if assets_base_dir.exists() && assets_base_dir.is_dir() {
-                        let mut boxart_path = None;
-                        let mut icon_path = None;
+                        if assets_base_dir.exists() && assets_base_dir.is_dir() {
+                            let mut boxart_path = None;
+                            let mut icon_path = None;
 
-                        if let Ok(entries) = std::fs::read_dir(&assets_base_dir) {
-                            for entry in entries.flatten() {
-                                if let Ok(file_type) = entry.file_type() {
-                                    if file_type.is_dir() {
-                                        let asset_type = entry.file_name().to_string_lossy().to_string();
-                                        if let Ok(files) = std::fs::read_dir(entry.path()) {
-                                            for file in files.flatten() {
-                                                if let Ok(ft) = file.file_type() {
-                                                    if ft.is_file() || ft.is_symlink() {
-                                                        let path = file.path().to_string_lossy().to_string();
-                                                        let _ = db.insert_asset(&rom.id, &asset_type, &path);
-                                                        
-                                                        // Auto-link primary assets
-                                                        if asset_type == "boxart" || asset_type == "Steam Library Capsule" {
-                                                            boxart_path = Some(path.clone());
-                                                        }
-                                                        if asset_type == "icon" || asset_type == "Steam Icon" {
-                                                            icon_path = Some(path.clone());
+                            if let Ok(entries) = std::fs::read_dir(&assets_base_dir) {
+                                for entry in entries.flatten() {
+                                    if let Ok(file_type) = entry.file_type() {
+                                        if file_type.is_dir() {
+                                            let asset_type = entry.file_name().to_string_lossy().to_string();
+                                            if let Ok(files) = std::fs::read_dir(entry.path()) {
+                                                for file in files.flatten() {
+                                                    if let Ok(ft) = file.file_type() {
+                                                        if ft.is_file() || ft.is_symlink() {
+                                                            let path = file.path().to_string_lossy().to_string();
+                                                            let _ = db.insert_asset(&rom_id, &asset_type, &path);
+                                                            
+                                                            // Auto-link primary assets
+                                                            if asset_type == "boxart" || asset_type == "Steam Library Capsule" {
+                                                                boxart_path = Some(path.clone());
+                                                            }
+                                                            if asset_type == "icon" || asset_type == "Steam Icon" {
+                                                                icon_path = Some(path.clone());
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -1854,17 +1915,17 @@ impl GameListModel {
                                     }
                                 }
                             }
-                        }
 
-                        // Update ROM table with found assets
-                        if boxart_path.is_some() || icon_path.is_some() {
-                             let conn = db.get_connection();
-                             if let Some(bp) = boxart_path {
-                                 let _ = conn.execute("UPDATE roms SET boxart_path = ?1 WHERE id = ?2", [&bp, &rom.id]);
-                             }
-                             if let Some(ip) = icon_path {
-                                 let _ = conn.execute("UPDATE roms SET icon_path = ?1 WHERE id = ?2", [&ip, &rom.id]);
-                             }
+                            // Update ROM table with found assets
+                            if boxart_path.is_some() || icon_path.is_some() {
+                                 let conn = db.get_connection();
+                                 if let Some(bp) = boxart_path {
+                                     let _ = conn.execute("UPDATE roms SET boxart_path = ?1 WHERE id = ?2", [&bp, &rom_id]);
+                                 }
+                                 if let Some(ip) = icon_path {
+                                     let _ = conn.execute("UPDATE roms SET icon_path = ?1 WHERE id = ?2", [&ip, &rom_id]);
+                                 }
+                            }
                         }
                     }
                 }
@@ -2795,7 +2856,7 @@ impl GameListModel {
                     .filter(|s| !s.is_empty())
                     .collect();
 
-                let existing_paths = db.get_rom_paths_by_platform(&platform_id).unwrap_or_default();
+                let mut existing_paths = db.get_rom_paths_by_platform(&platform_id).unwrap_or_default();
                 let ignored_paths = db.get_ignore_list(&platform_id).unwrap_or_default();
                 let platform_folder = platform.platform_type.clone().or(Some(platform.name.clone())).unwrap_or_else(|| "Unknown".to_string());
 
@@ -2810,6 +2871,7 @@ impl GameListModel {
                         if !existing_paths.contains(&path_match) && !ignored_paths.contains(&path_match) {
                             // New game found and not ignored!
                             if let Ok(_) = db.insert_rom(&rom) {
+                                existing_paths.insert(path_match.clone());
                                 // Parse metadata
                                 use crate::core::parser::FileNameParser;
                                 let mut metadata = FileNameParser::parse(&rom.filename, &rom.id);
