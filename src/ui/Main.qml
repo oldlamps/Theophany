@@ -595,6 +595,9 @@ ApplicationWindow {
             if (collectionFilters && collectionFilters !== "") {
                 try {
                     window.collectionFilterCache = JSON.parse(collectionFilters) || {}
+                    delete window.collectionFilterCache[""]
+                    delete window.collectionFilterCache["favorites"]
+                    delete window.collectionFilterCache["recent"]
                 } catch(e) {
                     window.collectionFilterCache = {}
                 }
@@ -766,6 +769,10 @@ ApplicationWindow {
 
     function saveCurrentCollectionFilters() {
         if (currentPlatformId === undefined) return
+        // Special library views ("All Games", "Favorites", "Recently Played") do not retain filter memory
+        if (currentPlatformId === "" || currentPlatformId === "favorites" || currentPlatformId === "recent") {
+            return
+        }
         if (filterBar.isFiltered) {
             collectionFilterCache[currentPlatformId] = filterBar.getFilterState()
         } else {
@@ -1278,7 +1285,8 @@ ApplicationWindow {
                     pushHistory(historyType, historyId, name, icon);
 
                     var targetSort = collectionSortCache[pid] || (pid === "recent" ? "LastPlayed" : "TitleAZ")
-                    var targetFilters = collectionFilterCache[pid] || null
+                    var isSpecialView = (pid === "" || pid === "favorites" || pid === "recent");
+                    var targetFilters = (!isSpecialView && collectionFilterCache[pid]) ? collectionFilterCache[pid] : null
                     var filtersJson = targetFilters ? JSON.stringify(targetFilters) : "{}"
                     filterBar.setTargetFilters(targetFilters)
 
@@ -1971,7 +1979,8 @@ ApplicationWindow {
                     // Use XDG data path for persistence
                     Component.onCompleted: {
                         var initialSort = window.collectionSortCache[window.currentPlatformId] || "TitleAZ"
-                        var initialFilters = window.collectionFilterCache[window.currentPlatformId] || null
+                        var isSpecialView = (window.currentPlatformId === "" || window.currentPlatformId === "favorites" || window.currentPlatformId === "recent");
+                        var initialFilters = (!isSpecialView && window.collectionFilterCache[window.currentPlatformId]) ? window.collectionFilterCache[window.currentPlatformId] : null
                         filterBar.setTargetFilters(initialFilters)
                         initWithSortAndFilters(appInfo.getDataPath() + "/games.db", initialSort, initialFilters ? JSON.stringify(initialFilters) : "{}")
                         filterBar.refreshModels()
