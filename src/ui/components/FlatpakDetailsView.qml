@@ -320,11 +320,4 @@ Item {
             }
         }
     }
-    
-    // Loading State
-    BusyIndicator {
-        anchors.centerIn: parent
-        running: root.loading
-        visible: root.loading
-    }
 }

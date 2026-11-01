@@ -194,13 +194,14 @@ pub struct GameListModel {
     // Methods exposed to QML
     init: qt_method!(fn(&mut self, db_path: String)),
     initWithSort: qt_method!(fn(&mut self, db_path: String, sort: String)),
+    initWithSortAndFilters: qt_method!(fn(&mut self, db_path: String, sort: String, filters_json: String)),
     refresh: qt_method!(fn(&mut self)),
     setIgnoreTheInSort: qt_method!(fn(&mut self, ignore: bool)),
     addSystem: qt_method!(fn(&mut self, name: String, extensions: String, rom_path: String, command: String, emulator_id: String, platform_type: String, icon: String)),
     getSystemStats: qt_method!(fn(&mut self)), // Helper to trigger stats update manually if needed (mostly auto)
     setFilter: qt_method!(fn(&mut self, platform_id: String)),
     setPlaylistFilter: qt_method!(fn(&mut self, playlist_id: String)),
-    setPlaylistFilterWithSort: qt_method!(fn(&mut self, playlist_id: String, sort: String)),
+    setPlaylistFilterWithSort: qt_method!(fn(&mut self, playlist_id: String, sort: String, filters_json: String)),
     addToPlaylist: qt_method!(fn(&mut self, playlist_id: String, rom_id: String)),
     setGenreFilter: qt_method!(fn(&mut self, genre: String)),
     setRegionFilter: qt_method!(fn(&mut self, region: String)),
@@ -217,7 +218,7 @@ pub struct GameListModel {
     setSearchFilter: qt_method!(fn(&mut self, text: String)),
     setInstalledOnly: qt_method!(fn(&mut self, installed_only: bool)),
     setPlatformTypeFilter: qt_method!(fn(&mut self, platform_type: String)),
-    setPlatformTypeFilterWithSort: qt_method!(fn(&mut self, platform_type: String, sort: String)),
+    setPlatformTypeFilterWithSort: qt_method!(fn(&mut self, platform_type: String, sort: String, filters_json: String)),
     toggleFavorite: qt_method!(fn(&mut self, rom_id: String)),
     startBulkScrape: qt_method!(fn(&mut self, json_ids: String, json_categories: String, json_fields: String, min_delay_ms: i32, max_delay_ms: i32, ra_user: String, ra_key: String, metadata_provider: String, prefer_ra: bool, ollama_url: String, ollama_model: String, gemini_key: String, openai_key: String, llm_provider: String)),
     stopBulkScrape: qt_method!(fn(&mut self)),
@@ -289,7 +290,8 @@ pub struct GameListModel {
 
     getPlatformTypes: qt_method!(fn(&mut self) -> QVariantList),
 
-    batchSetFilters: qt_method!(fn(&mut self, platform_id: String, favorites: bool, sort: String, recent_only: bool, installed_only: bool)),
+    batchSetFilters: qt_method!(fn(&mut self, platform_id: String, favorites: bool, sort: String, recent_only: bool, filters_json: String)),
+    clearAllSecondaryFilters: qt_method!(fn(&mut self)),
     checkAsyncResponses: qt_method!(fn(&mut self)),
     
     // System Import (New Flow)
@@ -448,6 +450,52 @@ impl QAbstractListModel for GameListModel {
 impl GameListModel {
     fn init(&mut self, db_path: String) {
         self.initWithSort(db_path, "TitleAZ".to_string());
+    }
+
+    fn apply_filter_data(&self, filters_json: &str, force_favorites: bool) {
+        #[derive(serde::Deserialize, Default)]
+        struct FilterData {
+            #[serde(default)]
+            genre: String,
+            #[serde(default)]
+            region: String,
+            #[serde(default)]
+            developer: String,
+            #[serde(default)]
+            publisher: String,
+            #[serde(default)]
+            year: String,
+            #[serde(default)]
+            rating: i32,
+            #[serde(default)]
+            installed_only: bool,
+            #[serde(default)]
+            favorites_only: bool,
+            #[serde(default)]
+            tags: Vec<String>,
+        }
+
+        let f: FilterData = if filters_json.is_empty() {
+            FilterData::default()
+        } else {
+            serde_json::from_str(filters_json).unwrap_or_default()
+        };
+
+        *self.current_genre_filter.borrow_mut() = if f.genre.is_empty() || f.genre == "All Genres" { None } else { Some(f.genre) };
+        *self.current_region_filter.borrow_mut() = if f.region.is_empty() || f.region == "All Regions" { None } else { Some(f.region) };
+        *self.current_developer_filter.borrow_mut() = if f.developer.is_empty() || f.developer == "All Developers" { None } else { Some(f.developer) };
+        *self.current_publisher_filter.borrow_mut() = if f.publisher.is_empty() || f.publisher == "All Publishers" { None } else { Some(f.publisher) };
+        *self.current_year_filter.borrow_mut() = if f.year.is_empty() || f.year == "All Years" { None } else { Some(f.year) };
+        *self.current_rating_filter.borrow_mut() = f.rating;
+        *self.current_installed_only.borrow_mut() = f.installed_only;
+        *self.current_favorites_only.borrow_mut() = force_favorites || f.favorites_only;
+        *self.current_tag_filters.borrow_mut() = f.tags;
+    }
+
+    #[allow(non_snake_case)]
+    fn initWithSortAndFilters(&mut self, db_path: String, sort: String, filters_json: String) {
+        self.apply_filter_data(&filters_json, false);
+        self.initWithSort(db_path, sort);
     }
 
     #[allow(non_snake_case)]
@@ -916,7 +964,7 @@ impl GameListModel {
     }
 
     #[allow(non_snake_case)]
-    fn setPlatformTypeFilterWithSort(&mut self, platform_type: String, sort: String) {
+    fn setPlatformTypeFilterWithSort(&mut self, platform_type: String, sort: String, filters_json: String) {
         let normalized_filter = if platform_type.is_empty() { None } else { Some(platform_type) };
         *self.current_platform_type_filter.borrow_mut() = normalized_filter;
         *self.current_platform_filter.borrow_mut() = None; // Clear platform id filter
@@ -924,6 +972,7 @@ impl GameListModel {
         *self.current_sort_method.borrow_mut() = sort.clone();
         self.sortMethod = sort.into();
         self.sortMethodChanged();
+        self.apply_filter_data(&filters_json, false);
         self.refresh();
     }
 
@@ -936,13 +985,14 @@ impl GameListModel {
     }
 
     #[allow(non_snake_case)]
-    fn setPlaylistFilterWithSort(&mut self, playlist_id: String, sort: String) {
+    fn setPlaylistFilterWithSort(&mut self, playlist_id: String, sort: String, filters_json: String) {
         *self.current_playlist_filter.borrow_mut() = if playlist_id.is_empty() { None } else { Some(playlist_id) };
         *self.current_platform_filter.borrow_mut() = None; // Clear platform filter
         *self.current_platform_type_filter.borrow_mut() = None; // Clear platform type filter
         *self.current_sort_method.borrow_mut() = sort.clone();
         self.sortMethod = sort.into();
         self.sortMethodChanged();
+        self.apply_filter_data(&filters_json, false);
         self.refresh();
     }
 
@@ -1165,7 +1215,7 @@ impl GameListModel {
     }
 
     #[allow(non_snake_case)]
-    fn batchSetFilters(&mut self, platform_id: String, favorites: bool, sort: String, recent_only: bool, installed_only: bool) {
+    fn batchSetFilters(&mut self, platform_id: String, favorites: bool, sort: String, recent_only: bool, filters_json: String) {
         let p_filter = if platform_id.is_empty() { None } else { Some(platform_id) };
         *self.current_platform_filter.borrow_mut() = p_filter.clone();
         *self.current_favorites_only.borrow_mut() = favorites;
@@ -1173,10 +1223,25 @@ impl GameListModel {
         self.sortMethod = sort.into();
         self.sortMethodChanged();
         *self.current_recent_only.borrow_mut() = recent_only;
-        *self.current_installed_only.borrow_mut() = installed_only;
         *self.current_platform_type_filter.borrow_mut() = None;
         *self.current_playlist_filter.borrow_mut() = None;
 
+        self.apply_filter_data(&filters_json, favorites);
+
+        self.refresh();
+    }
+
+    #[allow(non_snake_case)]
+    fn clearAllSecondaryFilters(&mut self) {
+        *self.current_genre_filter.borrow_mut() = None;
+        *self.current_region_filter.borrow_mut() = None;
+        *self.current_developer_filter.borrow_mut() = None;
+        *self.current_publisher_filter.borrow_mut() = None;
+        *self.current_year_filter.borrow_mut() = None;
+        *self.current_rating_filter.borrow_mut() = 0;
+        *self.current_installed_only.borrow_mut() = false;
+        *self.current_favorites_only.borrow_mut() = false;
+        self.current_tag_filters.borrow_mut().clear();
         self.refresh();
     }
 

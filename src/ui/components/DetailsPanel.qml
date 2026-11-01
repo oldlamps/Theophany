@@ -1361,7 +1361,8 @@ Rectangle {
                 Layout.preferredHeight: 80
                 Layout.topMargin: 5
                 visible: appSettings.isPlatformRaActive(root.gamePlatformType) && 
-                         !["PC (Windows)", "PC (Linux)", "steam", "heroic", "lutris", "dos"].includes(root.gamePlatformType.toLowerCase())
+                         !(typeof window !== "undefined" && window.isPcOrStorefrontGame && window.isPcOrStorefrontGame(root.gamePlatformType, root.gamePlatform, root.gamePlatformId, root.gameId, root.fullRomPath)) &&
+                         root.gamePlatformType.toLowerCase() !== "dos"
                 color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.05)
                 border.color: cardMouse.containsMouse ? Theme.accent : Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, 0.3)
                 border.width: 1

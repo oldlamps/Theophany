@@ -36,6 +36,46 @@ FocusScope {
         selectedIndices = newSel
         currentIndex = targetIndex // Primary focus follows
     }
+
+    function isPcOrStorefrontGame(pType, pName, pId, gId, gPath) {
+        if (typeof window !== "undefined" && window.isPcOrStorefrontGame) {
+            return window.isPcOrStorefrontGame(pType, pName, pId, gId, gPath)
+        }
+        var type = (pType || "").toLowerCase().trim()
+        var name = (pName || "").toLowerCase().trim()
+        var id = (pId || "").toLowerCase().trim()
+        var gid = (gId || "").toLowerCase().trim()
+        var path = (gPath || "").toLowerCase().trim()
+
+        var isRetroPc = type.includes("pc engine") || type.includes("pc-engine") ||
+                        type.includes("pce") || type.includes("turbografx") ||
+                        type.includes("pc-fx") || type.includes("pcfx") ||
+                        type.includes("pc-88") || type.includes("pc-98") ||
+                        name.includes("pc engine") || name.includes("pc-engine") ||
+                        name.includes("turbografx") || name.includes("pc-fx") ||
+                        name.includes("pc-88") || name.includes("pc-98")
+
+        if (isRetroPc) return false
+
+        var isPc = type === "pc" || type.startsWith("pc (") || type === "windows" || type === "linux" || type === "pc games" ||
+                   name === "pc" || name.startsWith("pc (") || name === "windows" || name === "linux" || name === "pc games"
+
+        var isStorefront = type.includes("amazon") || name.includes("amazon") || id.includes("amazon") ||
+                           type.includes("epic") || name.includes("epic") || id.includes("epic") ||
+                           type.includes("gog") || name.includes("gog") || id.includes("gog") ||
+                           type.includes("steam") || name.includes("steam") || id.includes("steam") ||
+                           type.includes("heroic") || name.includes("heroic") || id.includes("heroic") ||
+                           type.includes("lutris") || name.includes("lutris") || id.includes("lutris")
+
+        var isStorefrontProtocolOrId = gid.startsWith("amazon-") || gid.startsWith("heroic-amazon-") ||
+                                       gid.startsWith("legendary-") || gid.startsWith("epic-") ||
+                                       gid.startsWith("gog-") || gid.startsWith("steam-") ||
+                                       gid.startsWith("heroic-") || gid.startsWith("lutris-") ||
+                                       path.startsWith("amazon://") || path.startsWith("epic://") ||
+                                       path.startsWith("heroic://") || path.startsWith("steam://")
+
+        return isPc || isStorefront || isStorefrontProtocolOrId
+    }
     
     // Reset selection when model changes or sort changes
     Connections {
@@ -701,7 +741,7 @@ FocusScope {
                                 TheophanyMenuItem {
                                     text: "Update RetroAchievements"
                                     iconSource: "🏆"
-                                    visible: !gamePlatformType.includes("PC")
+                                    visible: !rootRoot.isPcOrStorefrontGame(gamePlatformType, gamePlatformName, gamePlatformId, gameId, gamePath)
                                     onTriggered: {
                                         // Call the same achievement refresh function used when game closes
                                         if (detailsPanel && typeof detailsPanel.refreshAchievements !== 'undefined') {

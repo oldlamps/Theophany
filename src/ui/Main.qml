@@ -458,6 +458,7 @@ ApplicationWindow {
     property string currentPlatformId: ""
     property var platformSelectionCache: ({})
     property var collectionSortCache: ({})
+    property var collectionFilterCache: ({})
     property string pendingSelectionId: ""  // Robust Async Restoration
     property bool isJumping: false
     property bool searchActive: false
@@ -591,6 +592,13 @@ ApplicationWindow {
                     window.collectionSortCache = {}
                 }
             }
+            if (collectionFilters && collectionFilters !== "") {
+                try {
+                    window.collectionFilterCache = JSON.parse(collectionFilters) || {}
+                } catch(e) {
+                    window.collectionFilterCache = {}
+                }
+            }
             // Apply persistent sort to All Games on startup if model is already initialized
             var initialSort = window.collectionSortCache[window.currentPlatformId] || "TitleAZ"
             if (typeof gameModel !== "undefined" && gameModel && gameModel.sortMethod !== initialSort) {
@@ -617,14 +625,17 @@ ApplicationWindow {
     }
 
     // Listen for settings changes to apply defaults (handles late load or runtime changes)
+    property string lastAppliedDefaultRegion: ""
     Connections {
         target: appSettings
         function onSettingsChanged() {
              var defRegion = appSettings.defaultRegion
-             if (defRegion !== "" && defRegion !== "All Regions") {
-                  // Ensure model is ready (it should be if app is running)
-                  gameModel.setRegionFilter(defRegion)
-                  filterBar.selectRegion(defRegion)
+             if (defRegion !== window.lastAppliedDefaultRegion && defRegion !== "" && defRegion !== "All Regions") {
+                  window.lastAppliedDefaultRegion = defRegion
+                  if (!window.collectionFilterCache[window.currentPlatformId]) {
+                      gameModel.setRegionFilter(defRegion)
+                      filterBar.selectRegion(defRegion)
+                  }
               }
         }
     }
@@ -753,6 +764,19 @@ ApplicationWindow {
         gameModel.setSortMethod(method)
     }
 
+    function saveCurrentCollectionFilters() {
+        if (currentPlatformId === undefined) return
+        if (filterBar.isFiltered) {
+            collectionFilterCache[currentPlatformId] = filterBar.getFilterState()
+        } else {
+            delete collectionFilterCache[currentPlatformId]
+        }
+        if (appSettings) {
+            appSettings.collectionFilters = JSON.stringify(collectionFilterCache)
+            appSettings.save()
+        }
+    }
+
     StoreBridge {
         id: storeBridge
         
@@ -802,6 +826,49 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    function isPcOrStorefrontGame(pType, pName, pId, gId, gPath) {
+        var type = (pType || "").toLowerCase().trim()
+        var name = (pName || "").toLowerCase().trim()
+        var id = (pId || "").toLowerCase().trim()
+        var gid = (gId || "").toLowerCase().trim()
+        var path = (gPath || "").toLowerCase().trim()
+
+        // 1. Guard against retro consoles that contain "PC" (PC Engine, PC-FX, PC-88, PC-98, etc.)
+        var isRetroPc = type.includes("pc engine") || type.includes("pc-engine") ||
+                        type.includes("pce") || type.includes("turbografx") ||
+                        type.includes("pc-fx") || type.includes("pcfx") ||
+                        type.includes("pc-88") || type.includes("pc-98") ||
+                        name.includes("pc engine") || name.includes("pc-engine") ||
+                        name.includes("turbografx") || name.includes("pc-fx") ||
+                        name.includes("pc-88") || name.includes("pc-98")
+
+        if (isRetroPc) {
+            return false
+        }
+
+        // 2. PC platforms (Windows / Linux)
+        var isPc = type === "pc" || type.startsWith("pc (") || type === "windows" || type === "linux" || type === "pc games" ||
+                   name === "pc" || name.startsWith("pc (") || name === "windows" || name === "linux" || name === "pc games"
+
+        // 3. Storefront platforms (Amazon, Epic, GOG, Steam, Heroic, Lutris)
+        var isStorefront = type.includes("amazon") || name.includes("amazon") || id.includes("amazon") ||
+                           type.includes("epic") || name.includes("epic") || id.includes("epic") ||
+                           type.includes("gog") || name.includes("gog") || id.includes("gog") ||
+                           type.includes("steam") || name.includes("steam") || id.includes("steam") ||
+                           type.includes("heroic") || name.includes("heroic") || id.includes("heroic") ||
+                           type.includes("lutris") || name.includes("lutris") || id.includes("lutris")
+
+        // 4. Game ID / Path indicators
+        var isStorefrontProtocolOrId = gid.startsWith("amazon-") || gid.startsWith("heroic-amazon-") ||
+                                       gid.startsWith("legendary-") || gid.startsWith("epic-") ||
+                                       gid.startsWith("gog-") || gid.startsWith("steam-") ||
+                                       gid.startsWith("heroic-") || gid.startsWith("lutris-") ||
+                                       path.startsWith("amazon://") || path.startsWith("epic://") ||
+                                       path.startsWith("heroic://") || path.startsWith("steam://")
+
+        return isPc || isStorefront || isStorefrontProtocolOrId
     }
 
     function importEpicGame(id) {
@@ -1211,18 +1278,21 @@ ApplicationWindow {
                     pushHistory(historyType, historyId, name, icon);
 
                     var targetSort = collectionSortCache[pid] || (pid === "recent" ? "LastPlayed" : "TitleAZ")
+                    var targetFilters = collectionFilterCache[pid] || null
+                    var filtersJson = targetFilters ? JSON.stringify(targetFilters) : "{}"
+                    filterBar.setTargetFilters(targetFilters)
 
                     if (pid.startsWith("playlist:")) {
                         var realId = pid.substring(9)
-                        gameModel.setPlaylistFilterWithSort(realId, targetSort)
+                        gameModel.setPlaylistFilterWithSort(realId, targetSort, filtersJson)
                     } else if (pid === "favorites") {
-                        gameModel.batchSetFilters("", true, targetSort, false, filterBar.installedButton.checked)
+                        gameModel.batchSetFilters("", true, targetSort, false, filtersJson)
                     } else if (pid === "recent") {
-                        gameModel.batchSetFilters("", false, targetSort, true, filterBar.installedButton.checked)
+                        gameModel.batchSetFilters("", false, targetSort, true, filtersJson)
                     } else if (pid === "") { // All Games
-                        gameModel.batchSetFilters("", false, targetSort, false, filterBar.installedButton.checked)
+                        gameModel.batchSetFilters("", false, targetSort, false, filtersJson)
                     } else { // System UUID
-                        gameModel.batchSetFilters(pid, false, targetSort, false, filterBar.installedButton.checked)
+                        gameModel.batchSetFilters(pid, false, targetSort, false, filtersJson)
                     }
                     
                     // 3. Queue selection restoration for the INCOMING platform
@@ -1310,7 +1380,10 @@ ApplicationWindow {
                     pushHistory("platformType", ptype, ptype, picon || "🏷️");
 
                     var targetSort = collectionSortCache[pid] || "TitleAZ"
-                    gameModel.setPlatformTypeFilterWithSort(ptype, targetSort)
+                    var targetFilters = collectionFilterCache[pid] || null
+                    var filtersJson = targetFilters ? JSON.stringify(targetFilters) : "{}"
+                    filterBar.setTargetFilters(targetFilters)
+                    gameModel.setPlatformTypeFilterWithSort(ptype, targetSort, filtersJson)
                     
                     // Queue restoration for the INCOMING platform type
                     pendingSelectionId = platformSelectionCache[pid] || ""
@@ -1588,6 +1661,8 @@ ApplicationWindow {
                                  onCleared: {
                                      if (filterBar.genreBox) filterBar.genreBox.currentIndex = 0
                                      if (gameModel) gameModel.setGenreFilter("All Genres")
+                                     filterBar.currentTargetFilters = filterBar.isFiltered ? filterBar.getFilterState() : null
+                                     filterBar.filterChanged()
                                  }
                              }
 
@@ -1598,6 +1673,8 @@ ApplicationWindow {
                                  onCleared: {
                                      if (filterBar.regionBox) filterBar.regionBox.currentIndex = 0
                                      if (gameModel) gameModel.setRegionFilter("All Regions")
+                                     filterBar.currentTargetFilters = filterBar.isFiltered ? filterBar.getFilterState() : null
+                                     filterBar.filterChanged()
                                  }
                              }
 
@@ -1608,6 +1685,8 @@ ApplicationWindow {
                                  onCleared: {
                                      if (filterBar.developerBox) filterBar.developerBox.currentIndex = 0
                                      if (gameModel) gameModel.setDeveloperFilter("All Developers")
+                                     filterBar.currentTargetFilters = filterBar.isFiltered ? filterBar.getFilterState() : null
+                                     filterBar.filterChanged()
                                  }
                              }
 
@@ -1618,6 +1697,8 @@ ApplicationWindow {
                                  onCleared: {
                                      if (filterBar.publisherBox) filterBar.publisherBox.currentIndex = 0
                                      if (gameModel) gameModel.setPublisherFilter("All Publishers")
+                                     filterBar.currentTargetFilters = filterBar.isFiltered ? filterBar.getFilterState() : null
+                                     filterBar.filterChanged()
                                  }
                              }
 
@@ -1628,6 +1709,8 @@ ApplicationWindow {
                                  onCleared: {
                                      if (filterBar.yearBox) filterBar.yearBox.currentIndex = 0
                                      if (gameModel) gameModel.setYearFilter("All Years")
+                                     filterBar.currentTargetFilters = filterBar.isFiltered ? filterBar.getFilterState() : null
+                                     filterBar.filterChanged()
                                  }
                              }
 
@@ -1638,16 +1721,20 @@ ApplicationWindow {
                                  onCleared: {
                                      if (filterBar.ratingBox) filterBar.ratingBox.currentIndex = 0
                                      if (gameModel) gameModel.setRatingFilter(0)
+                                     filterBar.currentTargetFilters = filterBar.isFiltered ? filterBar.getFilterState() : null
+                                     filterBar.filterChanged()
                                  }
                              }
 
                              FilterTag {
                                  label: "Favorites"
                                  value: "Only"
-                                 visible: filterBar.favButton && filterBar.favButton.checked
+                                 visible: filterBar.favButton && filterBar.favButton.checked && (window.currentPlatformId !== "favorites")
                                  onCleared: {
                                      if (filterBar.favButton) filterBar.favButton.checked = false
                                      if (gameModel) gameModel.setFavoritesOnly(false)
+                                     filterBar.currentTargetFilters = filterBar.isFiltered ? filterBar.getFilterState() : null
+                                     filterBar.filterChanged()
                                  }
                              }
 
@@ -1658,6 +1745,8 @@ ApplicationWindow {
                                  onCleared: {
                                      if (filterBar.installedButton) filterBar.installedButton.checked = false
                                      if (gameModel) gameModel.setInstalledOnly(false)
+                                     filterBar.currentTargetFilters = filterBar.isFiltered ? filterBar.getFilterState() : null
+                                     filterBar.filterChanged()
                                  }
                              }
 
@@ -1865,6 +1954,11 @@ ApplicationWindow {
                     visible: opacity > 0
                     gameModel: gameModel
                     clip: true
+                    onFilterChanged: {
+                        if (!filterBar.suppressSave) {
+                            window.saveCurrentCollectionFilters()
+                        }
+                    }
                     
                     Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.InOutQuad } }
                     Behavior on opacity { NumberAnimation { duration: 250 } }
@@ -1877,14 +1971,16 @@ ApplicationWindow {
                     // Use XDG data path for persistence
                     Component.onCompleted: {
                         var initialSort = window.collectionSortCache[window.currentPlatformId] || "TitleAZ"
-                        initWithSort(appInfo.getDataPath() + "/games.db", initialSort)
+                        var initialFilters = window.collectionFilterCache[window.currentPlatformId] || null
+                        filterBar.setTargetFilters(initialFilters)
+                        initWithSortAndFilters(appInfo.getDataPath() + "/games.db", initialSort, initialFilters ? JSON.stringify(initialFilters) : "{}")
                         filterBar.refreshModels()
                         
                         // Apply Ignore "The" Sorting from Settings
                         gameModel.setIgnoreTheInSort(appSettings.ignoreTheInSort)
 
                         // Apply Default Region from Settings
-                        if (appSettings.defaultRegion !== "" && appSettings.defaultRegion !== "All Regions") {
+                        if (!initialFilters && appSettings.defaultRegion !== "" && appSettings.defaultRegion !== "All Regions") {
                              gameModel.setRegionFilter(appSettings.defaultRegion)
                              filterBar.selectRegion(appSettings.defaultRegion)
                         } else {
@@ -2540,7 +2636,7 @@ ApplicationWindow {
                                                 TheophanyMenuItem {
                                                     text: "Update RetroAchievements"
                                                     iconSource: "🏆"
-                                                    visible: !gamePlatformType.includes("PC")
+                                                    visible: !window.isPcOrStorefrontGame(gamePlatformType, gamePlatformName, gamePlatformId, gameId, gamePath)
                                                     onTriggered: {
                                                         // Call the same achievement refresh function used when game closes
                                                         if (detailsPanel && typeof detailsPanel.refreshAchievements !== 'undefined') {

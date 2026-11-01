@@ -21,6 +21,8 @@ Rectangle {
     property alias favButton: favButton
     property var selectedTags: []
     property var allTags: []
+    property bool suppressSave: false
+    property var currentTargetFilters: null
 
     signal filterChanged()
 
@@ -31,10 +33,45 @@ Rectangle {
                                        (yearBox.currentIndex > 0) || 
                                        (ratingBox.currentIndex > 0) || 
                                        (installedButton.checked) ||
-                                       (favButton.checked) ||
+                                       (favButton.checked && (typeof window !== "undefined" ? window.currentPlatformId !== "favorites" : true)) ||
                                        (selectedTags.length > 0)
 
+    function getFilterState() {
+        return {
+            genre: (genreBox.currentIndex > 0 && genreBox.currentText) ? genreBox.currentText : "All Genres",
+            region: (regionBox.currentIndex > 0 && regionBox.currentText) ? regionBox.currentText : "All Regions",
+            developer: (developerBox.currentIndex > 0 && developerBox.currentText) ? developerBox.currentText : "All Developers",
+            publisher: (publisherBox.currentIndex > 0 && publisherBox.currentText) ? publisherBox.currentText : "All Publishers",
+            year: (yearBox.currentIndex > 0 && yearBox.currentText) ? yearBox.currentText : "All Years",
+            rating: ratingBox.currentIndex * 10,
+            installed_only: installedButton.checked,
+            favorites_only: (typeof window !== "undefined" && window.currentPlatformId === "favorites") ? false : favButton.checked,
+            tags: selectedTags.slice()
+        }
+    }
+
+    function setTargetFilters(f) {
+        currentTargetFilters = f ? JSON.parse(JSON.stringify(f)) : null
+        suppressSave = true
+
+        var fObj = f || {}
+        genreBox.currentIndex = 0
+        regionBox.currentIndex = 0
+        developerBox.currentIndex = 0
+        publisherBox.currentIndex = 0
+        yearBox.currentIndex = 0
+        installedButton.checked = !!fObj.installed_only
+        favButton.checked = (typeof window !== "undefined" && window.currentPlatformId === "favorites") || !!fObj.favorites_only
+        selectedTags = (fObj.tags && Array.isArray(fObj.tags)) ? fObj.tags.slice() : []
+        ratingBox.currentIndex = Math.max(0, Math.min(10, Math.floor((fObj.rating || 0) / 10)))
+
+        refreshModels()
+
+        suppressSave = false
+    }
+
     function clearFilters() {
+        suppressSave = true
         genreBox.currentIndex = 0
         regionBox.currentIndex = 0
         developerBox.currentIndex = 0
@@ -42,20 +79,18 @@ Rectangle {
         yearBox.currentIndex = 0
         ratingBox.currentIndex = 0
         installedButton.checked = false
-        favButton.checked = false
+        favButton.checked = (typeof window !== "undefined" && window.currentPlatformId === "favorites")
         selectedTags = []
+        currentTargetFilters = null
+        suppressSave = false
         
         if (gameModel) {
-            gameModel.setGenreFilter("All Genres")
-            gameModel.setRegionFilter("All Regions")
-            gameModel.setDeveloperFilter("All Developers")
-            gameModel.setPublisherFilter("All Publishers")
-            gameModel.setYearFilter("All Years")
-            gameModel.setRatingFilter(0)
-            gameModel.setInstalledOnly(false)
-            gameModel.setFavoritesOnly(false)
-            gameModel.clearTagFilters()
+            gameModel.clearAllSecondaryFilters()
+            if (typeof window !== "undefined" && window.currentPlatformId === "favorites") {
+                gameModel.setFavoritesOnly(true)
+            }
         }
+        root.filterChanged()
     }
 
     function toggleTag(tag, active) {
@@ -72,6 +107,8 @@ Rectangle {
         }
         selectedTags = tags.slice() // Trigger re-evaluation
         if (gameModel) gameModel.setTagFilter(tag, active)
+        currentTargetFilters = root.isFiltered ? root.getFilterState() : null
+        root.filterChanged()
     }
 
     Flow {
@@ -97,6 +134,8 @@ Rectangle {
             
             onClicked: {
                 if (gameModel) gameModel.setInstalledOnly(checked)
+                currentTargetFilters = root.isFiltered ? root.getFilterState() : null
+                root.filterChanged()
             }
         }
 
@@ -110,6 +149,8 @@ Rectangle {
             
             onClicked: {
                 if (gameModel) gameModel.setFavoritesOnly(checked)
+                currentTargetFilters = root.isFiltered ? root.getFilterState() : null
+                root.filterChanged()
             }
         }
 
@@ -120,12 +161,8 @@ Rectangle {
             
             onActivated: {
                 if (gameModel) gameModel.setGenreFilter(currentText)
-            }
-            
-            Component.onCompleted: {
-                if (gameModel) {
-                    model = gameModel.getGenres()
-                }
+                currentTargetFilters = root.isFiltered ? root.getFilterState() : null
+                root.filterChanged()
             }
         }
 
@@ -136,12 +173,8 @@ Rectangle {
             
             onActivated: {
                 if (gameModel) gameModel.setRegionFilter(currentText)
-            }
-            
-            Component.onCompleted: {
-                if (gameModel) {
-                    model = gameModel.getRegions()
-                }
+                currentTargetFilters = root.isFiltered ? root.getFilterState() : null
+                root.filterChanged()
             }
         }
 
@@ -152,12 +185,8 @@ Rectangle {
             
             onActivated: {
                 if (gameModel) gameModel.setDeveloperFilter(currentText)
-            }
-            
-            Component.onCompleted: {
-                if (gameModel) {
-                    model = gameModel.getDevelopers()
-                }
+                currentTargetFilters = root.isFiltered ? root.getFilterState() : null
+                root.filterChanged()
             }
         }
 
@@ -168,12 +197,8 @@ Rectangle {
             
             onActivated: {
                 if (gameModel) gameModel.setPublisherFilter(currentText)
-            }
-            
-            Component.onCompleted: {
-                if (gameModel) {
-                    model = gameModel.getPublishers()
-                }
+                currentTargetFilters = root.isFiltered ? root.getFilterState() : null
+                root.filterChanged()
             }
         }
 
@@ -184,12 +209,8 @@ Rectangle {
             
             onActivated: {
                 if (gameModel) gameModel.setYearFilter(currentText)
-            }
-            
-            Component.onCompleted: {
-                if (gameModel) {
-                    model = gameModel.getYears()
-                }
+                currentTargetFilters = root.isFiltered ? root.getFilterState() : null
+                root.filterChanged()
             }
         }
 
@@ -203,6 +224,8 @@ Rectangle {
                     // Rust divides by 10.0 for the f32 comparison (e.g., 10 -> 1.0)
                     gameModel.setRatingFilter(index * 10)
                 }
+                currentTargetFilters = root.isFiltered ? root.getFilterState() : null
+                root.filterChanged()
             }
         }
 
@@ -282,6 +305,8 @@ Rectangle {
                             root.selectedTags = []
                             if (gameModel) gameModel.clearTagFilters()
                             tagPopup.close()
+                            currentTargetFilters = root.isFiltered ? root.getFilterState() : null
+                            root.filterChanged()
                         }
                     }
                 }
@@ -297,46 +322,66 @@ Rectangle {
     }
     
     function refreshModels() {
-        if (gameModel) {
-            var oldGenre = genreBox.currentText
-            var oldRegion = regionBox.currentText
-            var oldDev = developerBox.currentText
-            var oldPub = publisherBox.currentText
-            var oldYear = yearBox.currentText
+        if (!gameModel) return
 
-            genreBox.model = gameModel.getGenres()
-            regionBox.model = gameModel.getRegions()
-            developerBox.model = gameModel.getDevelopers()
-            publisherBox.model = gameModel.getPublishers()
-            yearBox.model = gameModel.getYears()
-            allTags = gameModel.getTags()
+        var targetGenre = (currentTargetFilters && currentTargetFilters.genre) ? currentTargetFilters.genre : "All Genres"
+        var targetRegion = (currentTargetFilters && currentTargetFilters.region) ? currentTargetFilters.region : "All Regions"
+        var targetDev = (currentTargetFilters && currentTargetFilters.developer) ? currentTargetFilters.developer : "All Developers"
+        var targetPub = (currentTargetFilters && currentTargetFilters.publisher) ? currentTargetFilters.publisher : "All Publishers"
+        var targetYear = (currentTargetFilters && currentTargetFilters.year) ? currentTargetFilters.year : "All Years"
 
-            // Restore selections if they still exist in the new models
-            var idx = genreBox.find(oldGenre)
-            if (idx >= 0) genreBox.currentIndex = idx
-            
-            idx = regionBox.find(oldRegion)
-            if (idx >= 0) regionBox.currentIndex = idx
-            
-            idx = developerBox.find(oldDev)
-            if (idx >= 0) developerBox.currentIndex = idx
-            
-            idx = publisherBox.find(oldPub)
-            if (idx >= 0) publisherBox.currentIndex = idx
-            
-            idx = yearBox.find(oldYear)
-            if (idx >= 0) yearBox.currentIndex = idx
+        genreBox.model = gameModel.getGenres()
+        regionBox.model = gameModel.getRegions()
+        developerBox.model = gameModel.getDevelopers()
+        publisherBox.model = gameModel.getPublishers()
+        yearBox.model = gameModel.getYears()
+        allTags = gameModel.getTags()
+
+        var idx = genreBox.find(targetGenre)
+        genreBox.currentIndex = idx >= 0 ? idx : 0
+        if (idx < 0 && targetGenre !== "All Genres" && !suppressSave) {
+            gameModel.setGenreFilter("All Genres")
+            if (currentTargetFilters) currentTargetFilters.genre = "All Genres"
         }
+
+        idx = regionBox.find(targetRegion)
+        regionBox.currentIndex = idx >= 0 ? idx : 0
+        if (idx < 0 && targetRegion !== "All Regions" && !suppressSave) {
+            gameModel.setRegionFilter("All Regions")
+            if (currentTargetFilters) currentTargetFilters.region = "All Regions"
+        }
+
+        idx = developerBox.find(targetDev)
+        developerBox.currentIndex = idx >= 0 ? idx : 0
+        if (idx < 0 && targetDev !== "All Developers" && !suppressSave) {
+            gameModel.setDeveloperFilter("All Developers")
+            if (currentTargetFilters) currentTargetFilters.developer = "All Developers"
+        }
+
+        idx = publisherBox.find(targetPub)
+        publisherBox.currentIndex = idx >= 0 ? idx : 0
+        if (idx < 0 && targetPub !== "All Publishers" && !suppressSave) {
+            gameModel.setPublisherFilter("All Publishers")
+            if (currentTargetFilters) currentTargetFilters.publisher = "All Publishers"
+        }
+
+        idx = yearBox.find(targetYear)
+        yearBox.currentIndex = idx >= 0 ? idx : 0
+        if (idx < 0 && targetYear !== "All Years" && !suppressSave) {
+            gameModel.setYearFilter("All Years")
+            if (currentTargetFilters) currentTargetFilters.year = "All Years"
+        }
+
+        currentTargetFilters = root.isFiltered ? root.getFilterState() : null
     }
 
     function selectRegion(name) {
         if (!regionBox.model) return
         var idx = regionBox.model.indexOf(name)
-        if (idx >= 0) {
-            regionBox.currentIndex = idx
-        } else {
-            regionBox.currentIndex = 0
-        }
+        regionBox.currentIndex = idx >= 0 ? idx : 0
+        if (gameModel) gameModel.setRegionFilter(regionBox.currentText)
+        currentTargetFilters = root.isFiltered ? root.getFilterState() : null
+        root.filterChanged()
     }
 
     function selectGenre(name) {
@@ -352,6 +397,8 @@ Rectangle {
         if (idx >= 0) {
             genreBox.currentIndex = idx
             if (gameModel) gameModel.setGenreFilter(genreBox.model[idx])
+            currentTargetFilters = root.isFiltered ? root.getFilterState() : null
+            root.filterChanged()
         }
     }
 }

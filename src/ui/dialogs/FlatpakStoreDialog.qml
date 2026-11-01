@@ -159,6 +159,7 @@ Dialog {
             if (root.currentCategory !== "Featured") {
                 mainStack.currentIndex = 1
             }
+            detailsView.details = null
             
             root.loading = false
         }
@@ -193,6 +194,7 @@ Dialog {
                 
                 // Ensure we are viewing the featured page
                 mainStack.currentIndex = 0
+                detailsView.details = null
             } catch (e) {
 
             }
@@ -407,7 +409,6 @@ Dialog {
                                 
                                 // Fetch new category from backend
                                 root.loading = true
-                                storeModel.clear() // Clear immediately to show loading state cleanly
                                 storeBridge.browse_store(filter)
                             }
                         }
@@ -458,6 +459,10 @@ Dialog {
                     id: mainStack
                     anchors.fill: parent
                     currentIndex: 0
+                    opacity: root.loading ? 0.35 : 1.0
+                    Behavior on opacity {
+                        NumberAnimation { duration: 200 }
+                    }
                 
                 // Index 0: Featured View
                 ScrollView {
@@ -668,7 +673,7 @@ Dialog {
                         cellWidth: 240
                         cellHeight: 240
                         clip: true
-                        visible: !root.loading && filteredModel.count > 0
+                        visible: filteredModel.count > 0
 
                         ScrollBar.vertical: TheophanyScrollBar {
                             policy: ScrollBar.AsNeeded
@@ -765,7 +770,7 @@ Dialog {
 
                     ColumnLayout {
                         anchors.centerIn: parent
-                        visible: !root.loading && filteredModel.count === 0 && mainStack.currentIndex === 0
+                        visible: !root.loading && filteredModel.count === 0 && mainStack.currentIndex === 1
                         spacing: 15
                         Text {
                             text: root.activeSearch !== "" ? "No games found for '" + root.activeSearch + "'." : "No games in this category."
@@ -802,12 +807,36 @@ Dialog {
                 }
             } // End of mainStackLayout
 
-            // Loading Overlay centered over both Featured and Grid views
-            BusyIndicator {
+            // Dimming overlay over main content area
+            Rectangle {
+                id: contentDimmer
+                anchors.fill: parent
+                color: Theme.background
+                opacity: root.loading ? 0.5 : 0.0
+                visible: opacity > 0
+                z: 90
+                radius: 8
+
+                Behavior on opacity {
+                    NumberAnimation { duration: 200 }
+                }
+
+                // Intercept mouse interactions while loading
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: root.loading
+                    hoverEnabled: true
+                    acceptedButtons: Qt.AllButtons
+                    cursorShape: Qt.BusyCursor
+                }
+            }
+
+            // Themed Loading Spinner centered over main content area
+            TheophanySpinner {
                 anchors.centerIn: parent
-                // Show if loading and we are NOT on the details view (2)
-                running: root.loading && mainStack.currentIndex !== 2
+                running: root.loading
                 visible: running
+                size: 56
                 z: 100
             }
         }

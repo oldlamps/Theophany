@@ -48,6 +48,8 @@ struct SettingsData {
     #[serde(default)]
     pub collection_sorts: String,
     #[serde(default)]
+    pub collection_filters: String,
+    #[serde(default)]
     pub default_ignore_on_delete: bool,
     #[serde(default = "default_hotkeys")]
     pub hotkeys: HashMap<String, String>,
@@ -160,6 +162,7 @@ impl Default for SettingsData {
             ai_description_prompt: default_description_prompt(),
             column_widths: String::new(),
             collection_sorts: String::new(),
+            collection_filters: String::new(),
             default_ignore_on_delete: false,
             hotkeys: default_hotkeys(),
             active_metadata_scraper: default_metadata_scraper(),
@@ -294,6 +297,7 @@ pub struct AppSettings {
     aiDescriptionPrompt: qt_property!(QString; NOTIFY settingsChanged),
     columnWidths: qt_property!(QString; NOTIFY settingsChanged),
     collectionSorts: qt_property!(QString; NOTIFY settingsChanged),
+    collectionFilters: qt_property!(QString; NOTIFY settingsChanged),
     defaultIgnoreOnDelete: qt_property!(bool; NOTIFY settingsChanged),
     hotkeysJson: qt_property!(QString; NOTIFY settingsChanged),
     activeMetadataScraper: qt_property!(QString; NOTIFY settingsChanged),
@@ -436,6 +440,7 @@ impl AppSettings {
             ai_description_prompt: self.aiDescriptionPrompt.to_string(),
             column_widths: self.columnWidths.to_string(),
             collection_sorts: self.collectionSorts.to_string(),
+            collection_filters: self.collectionFilters.to_string(),
             default_ignore_on_delete: self.defaultIgnoreOnDelete,
             hotkeys: self.data.hotkeys.clone(),
             active_metadata_scraper: self.activeMetadataScraper.to_string(),
@@ -526,6 +531,7 @@ impl AppSettings {
                     self.aiDescriptionPrompt = QString::from(data.ai_description_prompt);
                     self.columnWidths = QString::from(data.column_widths);
                     self.collectionSorts = QString::from(data.collection_sorts);
+                    self.collectionFilters = QString::from(data.collection_filters);
                     self.defaultIgnoreOnDelete = data.default_ignore_on_delete;
                     
                     // Merge loaded hotkeys with defaults to ensure new defaults appear
@@ -600,13 +606,24 @@ impl AppSettings {
 // ... (omitting remaining methods as they don't change or only minorly)
     fn isPlatformRaActive(&self, slug: String) -> bool {
         let platforms = super::static_platforms::get_default_platforms();
-        for p in platforms {
+        for p in &platforms {
             if p.slug.eq_ignore_ascii_case(&slug) || p.name.eq_ignore_ascii_case(&slug) {
                 return p.is_active;
             }
         }
-        // Fallback for types that might not be in the RA list (like PC)
-        if slug.to_lowercase().contains("pc") {
+        // Check if recognized by RetroAchievements console ID mapping (e.g. "PC Engine", "PC-FX", etc.)
+        if let Some(console_id) = crate::core::ra_mapping::get_console_id(&slug) {
+            for p in &platforms {
+                if p.id == console_id {
+                    return p.is_active;
+                }
+            }
+            return true;
+        }
+        // Fallback for types that are not RA platforms (PC platforms and storefronts)
+        let s = slug.to_lowercase();
+        if s == "pc" || s.starts_with("pc (") || s == "windows" || s == "linux"
+            || s == "steam" || s == "epic" || s == "gog" || s == "amazon" || s == "heroic" || s == "lutris" {
              return false;
         }
 
@@ -654,6 +671,7 @@ impl Default for AppSettings {
             aiDescriptionPrompt: Default::default(),
             columnWidths: Default::default(),
             collectionSorts: Default::default(),
+            collectionFilters: Default::default(),
             defaultIgnoreOnDelete: Default::default(),
             hotkeysJson: Default::default(),
             activeMetadataScraper: Default::default(),
@@ -737,6 +755,7 @@ impl Default for AppSettings {
         s.aiDescriptionPrompt = QString::from(s.data.ai_description_prompt.clone());
         s.columnWidths = QString::from(s.data.column_widths.clone());
         s.collectionSorts = QString::from(s.data.collection_sorts.clone());
+        s.collectionFilters = QString::from(s.data.collection_filters.clone());
         s.defaultIgnoreOnDelete = s.data.default_ignore_on_delete;
         s.gridScale = s.data.grid_scale;
         s.sidebarLibraryCollapsed = s.data.sidebar_library_collapsed;
